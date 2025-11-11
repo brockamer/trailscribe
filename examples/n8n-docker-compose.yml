@@ -1,0 +1,32 @@
+version: '3'
+
+services:
+  n8n:
+    image: n8nio/n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n-data:/home/node/.n8n
+    environment:
+      # Enable basic auth for the n8n editor UI
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=strongpassword
+      # Set your timezone to match your location
+      - GENERIC_TIMEZONE=America/New_York
+      # (Optional) Expose webhooks via a tunnel (e.g. if behind NAT)
+      # - WEBHOOK_TUNNEL_URL=https://your.tunnel.url
+      # Include TrailScribe configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TODOIST_API_TOKEN=${TODOIST_API_TOKEN}
+      - POSTHAVEN_TO=${POSTHAVEN_TO}
+      - GMAIL_SENDER=${GMAIL_SENDER}
+      - GOOGLE_MAPS_BASE=${GOOGLE_MAPS_BASE}
+      - MAPSHARE_BASE=${MAPSHARE_BASE}
+      - APPEND_COST_SUFFIX=${APPEND_COST_SUFFIX}
+      - OPENAI_INPUT_COST_PER_1K=${OPENAI_INPUT_COST_PER_1K}
+      - OPENAI_OUTPUT_COST_PER_1K=${OPENAI_OUTPUT_COST_PER_1K}
+      - LEDGER_BACKEND=${LEDGER_BACKEND}
+volumes:
+  n8n-data:

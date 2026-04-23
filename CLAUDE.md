@@ -71,13 +71,37 @@ materials/                      # input PDFs + extracted txt; don't edit
 plans/                          # per-milestone sprint plans (phase-0-scaffolding.md, etc.)
 ```
 
-## Status (as of 2026-04-22)
+## Status (as of 2026-04-23)
 
-**Phase:** PRD drafted (`docs/PRD.md`). Awaiting sign-off on 9 decisions (D1–D9 in PRD §8) before Phase 0.
+**Phase:** Phase 0 scaffolding 90% complete. 18 of 20 stories done; 2 user-gated stories remain (P0-07 KV namespace creation, P0-20 staging end-to-end verify).
 
-**Existing repo state:** scaffold quality. Grammar + types + docs are salvageable; everything else is stub (`console.log`). Broken bits: `require.main` in ESM; CI `cd ./trailscribe`; `!mail subj` regex; unpublished-package imports in Pipedream example; in-memory idempotency/ledger fatal on serverless. See `git log` + earlier onboarding analysis for full list.
+**Done in Phase 0:**
+- P0-01: branch rename master → main (remote + local + init.defaultBranch)
+- P0-02: CI repair (typecheck + test on PR to main; lint deferred)
+- P0-03: package.json rewrite (Hono + zod + Vitest + Wrangler)
+- P0-04: tsconfig for Workers (ES2022/bundler, workers-types)
+- P0-05: Vitest + 14-test grammar suite (incl. !mail-subj-with-spaces regression)
+- P0-06: wrangler.toml (4 KV bindings × 3 envs, observability, secrets documented)
+- P0-08: .dev.vars.example with provisioning notes
+- P0-09: src/core/grammar.ts + types.ts + links.ts (salvaged + subsetted to 6 α cmds)
+- P0-10: src/env.ts zod schema + helpers (parseEnv, imeiAllowSet, dailyTokenBudget)
+- P0-11: src/app.ts + src/index.ts — Hono /garmin/ipc with bearer + KV idempotency
+- P0-12: adapter stubs (kv + logging real; resend/todoist/openai/github-pages/geocode/weather/ipc-inbound stubs)
+- P0-13: docs/archive/ for Pipedream + n8n; README rewrite (persona table, MVP table)
+- P0-14: docs/architecture.md rewrite (Workers flow + module map)
+- P0-15: docs/setup-cloudflare.md (NEW — full provisioning walkthrough)
+- P0-16: .github/workflows/deploy-cloudflare.yml (staging + prod, CF API secrets)
+- P0-17: docs/garmin-setup.md rewrite (Pro tier, bearer token, X-API-Key, 160-char limit)
+- P0-18: old src/, examples/, stale tests deleted
+- P0-19: [your-email@example.com] placeholders replaced; CONTRIBUTING.md rewritten
 
-**Next action after sign-off:** draft `plans/phase-0-scaffolding.md` (fix scaffolding, Wrangler + KV + secrets, replace Jest with Vitest, replace Express with Hono, branch rename).
+**User-gated, remaining:**
+- P0-07: `wrangler login` + create 8-16 KV namespaces (dev preview + staging + prod); paste IDs into wrangler.toml
+- P0-20: deploy staging; curl the canonical fixture; verify idempotency via `wrangler tail`
+
+**Verification:** `pnpm typecheck` clean; `pnpm test` 24/24 green; both commits on `main` locally (not yet pushed).
+
+**Next:** push to main (user-approved) → CI runs → user performs P0-07 → P0-20 gate → Phase 0 complete → draft plans/phase-1-alpha-mvp.md.
 
 ## Known bugs / drift
 

@@ -1,84 +1,167 @@
 # TrailScribe
 
-**AI-native satellite messaging for Garmin inReach.** Send compact `!commands`
-from the backcountry; TrailScribe enriches them with location, weather, and
-narrative, routes them to Gmail / Todoist / your blog, and replies in two SMS
-or less — all for under $0.05 per transaction.
+A command-driven assistant for Garmin inReach. From a satellite messenger, you
+send a short `!command`; a Cloudflare Worker enriches it with location and
+weather, runs an LLM where it helps, performs the action (email, task, blog
+post), and replies in two SMS or fewer. Design target: **~$0.03 per
+transaction** — less than a single premium satellite message.
+
+> **Status (2026-04-23).** α-MVP, Phase 0 scaffolding at 18/20 stories.
+> The Worker today receives Garmin IPC Outbound webhooks, verifies a bearer
+> token, enforces an IMEI allowlist, and deduplicates replays via KV. Tool
+> adapters (OpenAI, Resend, Todoist, GitHub Pages) and reply delivery are
+> stubbed — they wire up in Phase 1. Progress tracked on the
+> [project board](https://github.com/users/brockamer/projects/3) and in
+> [`plans/phase-0-scaffolding.md`](plans/phase-0-scaffolding.md).
+
+---
+
+## The gap
+
+Satellite messengers keep you safe where cell coverage doesn't reach — the
+Eastern Sierra, the Brooks Range, Patagonia. They also isolate you from the
+rest of your workflow. Today's options are to type `OK AT CAMP` and call it
+done, or burn rest days in a café re-entering everything. TrailScribe takes
+the 160-character window the device already has and turns it into a command
+interface. Enrichment happens server-side; the device sees a short
+confirmation come back.
+
+## What it does
+
+α-MVP is six commands. The parser (`src/core/grammar.ts`) is salvaged from
+earlier iterations and subsetted to this list; the full 13-verb grammar and
+the deferred commands (`!where`, `!weather`, `!brief`, `!ai`, `!camp`,
+`!blast`, `!share`, `!drop`) are spec'd in [`docs/PRD.md`](docs/PRD.md) §2.
+
+| Command | What it does |
+|---|---|
+| `!post <note>` | Turns a note + GPS into a titled, geotagged entry committed to a GitHub Pages journal as markdown. Narrative via OpenAI. |
+| `!mail to:_ subj:_ body:_` | Sends an email with coordinates, place name, elevation, and weather appended. No AI call. |
+| `!todo <task>` | Creates a Todoist task with GPS + timestamp in the note. No AI call. |
+| `!ping` | Health check → `pong`. |
+| `!help` | One-SMS command summary. |
+| `!cost` | Month-to-date requests, tokens, and USD. |
+
+Every reply fits in ≤ 320 characters (two Iridium SMS, 160 each). Content
+that doesn't fit — full narratives, detailed help, error stack traces — goes
+to the blog or email. Never to the device.
+
+## How it works
+
+```
+  inReach                           Cloudflare Worker (Hono)
+  ───────                           ─────────────────────────
+   !post … ──HTTPS──▶  POST /garmin/ipc
+                       1. verify  Authorization: Bearer …
+                       2. IMEI allowlist
+                       3. dedupe (KV, 48 h TTL)
+                       4. dispatch to orchestrator
+                          └─▶ geocode · weather · OpenAI
+                              └─▶ GitHub Pages · Todoist · Resend
+                       5. return 200 OK  (always — see below)
+                                   │
+   ◄─ ≤ 2 SMS ─ Garmin IPC Inbound  ◄─ reply (≤ 160 chars × 2)
+```
+
+Steps 1–3 run today. Step 4 and the IPC Inbound reply land in Phase 1; the
+orchestrator and every tool adapter are stubs in the current commit.
+
+The always-200 rule is non-negotiable. Garmin retries at 2 / 4 / 8 / 16 / 32
+/ 64 / 128 seconds on non-200, then pauses 12 h × 5 days before suspending
+the integration. App-level errors surface through the IPC Inbound reply
+instead (`"Error: Todoist auth failed"`) — never as an HTTP error back to
+Garmin.
+
+State lives in four KV namespaces — `TS_IDEMPOTENCY` (48 h TTL), `TS_LEDGER`
+(monthly rollup), `TS_CONTEXT` (per-IMEI rolling window), `TS_CACHE`
+(geocode + weather). Durable Objects and D1 come in later phases. Full
+detail in [`docs/architecture.md`](docs/architecture.md) and
+[`docs/PRD.md`](docs/PRD.md) §3.
+
+## What it will cost
+
+Estimated per-transaction cost, from [`docs/PRD.md`](docs/PRD.md) §6. These
+are design targets, not measurements — one α launch criterion is verifying
+≥ 20 real `!post` transactions against this table before calling Phase 1 done.
+
+| Command | OpenAI | Workers infra | Third-party | Total |
+|---|---|---|---|---|
+| `!post` | $0.020–0.030 | ~$0.001 | $0 (GitHub / Nominatim / Open-Meteo) | **$0.021–0.031** |
+| `!mail` | — | ~$0.0005 | $0 (Resend free tier) | **~$0.001** |
+| `!todo` | — | ~$0.0002 | $0 (Todoist free) | **~$0.0002** |
+| `!ping` / `!help` / `!cost` | — | ~$0.0002 | — | **~$0.0002** |
+
+`!post` dominates cost; non-AI commands are effectively free. A daily token
+budget (`DAILY_TOKEN_BUDGET=50000`, ≈ 150 narratives/day) short-circuits the
+OpenAI call if exceeded.
 
 ## Who it's for
 
+Three canonical personas driving scope (from the product decks):
+
 | Persona | Off-grid work | Wins with |
 |---|---|---|
-| **Natalie** — field botanist, Eastern Sierra | 10–15 days/mo at 8–13k ft | `!post` auto-journals; `!mail lab@...` enriches specimen-ID requests |
-| **Marcus** — expedition guide, PNW / Alaska / Patagonia | 8–12 day trips, 6–10 clients | Evening `!post` publishes to an expedition blog families follow |
-| **Yuki** — solo bikepacker / storyteller, Iceland / Mongolia | 3–6 week trips | Blog never goes dark; real-time narrative without café data-entry days |
+| **Natalie** — field botanist, Eastern Sierra | 10–15 days/mo at 8–13k ft | `!post` auto-journals; `!mail lab@…` attaches coordinates, elevation, and weather to specimen-ID requests |
+| **Marcus** — expedition guide, PNW / Alaska / Patagonia | 8–12 day trips, 6–10 clients | Evening `!post` publishes to a private expedition blog families follow |
+| **Yuki** — solo bikepacker and storyteller, Iceland / Mongolia | 3–6 week trips | Blog never goes dark; real-time narrative without café data-entry days |
 
-## α-MVP commands (6)
+## Stack
 
-```
-!ping                                      status check
-!help                                      command summary
-!cost                                      month-to-date usage
-!post <note>                               journal entry (AI narrative + blog publish)
-!mail to:<addr> subj:<subj> body:<body>    enriched email with location context
-!todo <task>                               Todoist task with GPS + timestamp
-```
+| Component | Choice |
+|---|---|
+| Runtime | Cloudflare Workers |
+| Language | TypeScript (strict, ESM) |
+| HTTP | Hono |
+| Validation | zod |
+| State (α) | Cloudflare KV — four namespaces |
+| Testing | Vitest + Miniflare |
+| Deploy | Wrangler via GitHub Actions |
+| Package manager | pnpm 9 |
 
-All replies fit in ≤320 characters (two SMS). See `docs/PRD.md` §2 for the full
-MVP spec and the deferred-commands table.
+## Quick start
 
-## Architecture
-
-Cloudflare Workers + KV. Single Worker receives Garmin IPC Outbound webhooks,
-verifies a static bearer token, dedupes via KV, and dispatches to per-command
-handlers. Replies route through Garmin IPC Inbound. See
-[`docs/architecture.md`](docs/architecture.md) for the full flow and
-[`docs/PRD.md`](docs/PRD.md) §3 for design rationale.
-
-## Status
-
-**α-MVP in development.** PRD signed 2026-04-22; Phase 0 scaffolding in
-progress. Follow [`plans/phase-0-scaffolding.md`](plans/phase-0-scaffolding.md)
-for the current milestone.
-
-## Development
-
-Prerequisites: Node ≥20, pnpm 9+ (via corepack), a Cloudflare account, and
-Wrangler CLI (`pnpm install` pulls it in).
+Prerequisites: Node ≥ 20, pnpm 9+ (via corepack), a Cloudflare account, and
+a Garmin **inReach Professional** plan — IPC Outbound + Inbound APIs are not
+available on consumer plans. See [`docs/PRD.md`](docs/PRD.md) §8 for the
+tier-requirement rationale.
 
 ```bash
 pnpm install
-cp .dev.vars.example .dev.vars      # fill in secrets
-pnpm test                            # run the Vitest suite
-pnpm dev                             # wrangler dev (local worker)
+cp .dev.vars.example .dev.vars          # fill in secrets
+pnpm test                                # 24 tests, 2 files
+pnpm dev                                 # wrangler dev (local worker)
 ```
 
-For first-time Cloudflare setup (KV namespaces, secrets, staging +
-production envs), follow [`docs/setup-cloudflare.md`](docs/setup-cloudflare.md).
-
-For Garmin IPC configuration (Portal Connect, bearer token, API key), follow
-[`docs/garmin-setup.md`](docs/garmin-setup.md) — requires **inReach
-Professional** tier.
-
-## Deployment
+Provisioning (KV namespaces, Wrangler secrets, staging + production
+environments) is documented in
+[`docs/setup-cloudflare.md`](docs/setup-cloudflare.md). Garmin Portal Connect
+configuration (bearer token, X-API-Key, IMEI) is in
+[`docs/garmin-setup.md`](docs/garmin-setup.md).
 
 ```bash
-pnpm deploy:staging                  # wrangler deploy --env staging
-pnpm deploy:prod                     # wrangler deploy --env production
+pnpm deploy:staging                      # wrangler deploy --env staging
+pnpm deploy:prod                         # wrangler deploy --env production
 ```
 
 Pushes to `staging/**` and `main` auto-deploy via
 [`.github/workflows/deploy-cloudflare.yml`](.github/workflows/deploy-cloudflare.yml).
 
-## Governance
+## Documentation
 
-- **License:** MIT (`LICENSE`)
-- **Security:** see [`SECURITY.md`](SECURITY.md)
-- **Contributing:** see [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- **Code of conduct:** see [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
+| Doc | Contents |
+|---|---|
+| [`docs/PRD.md`](docs/PRD.md) | **Canonical product + engineering spec** (signed 2026-04-22). Start here. |
+| [`docs/architecture.md`](docs/architecture.md) | Full system diagram, module map, data contracts |
+| [`docs/setup-cloudflare.md`](docs/setup-cloudflare.md) | Provisioning walkthrough — KV, secrets, envs |
+| [`docs/garmin-setup.md`](docs/garmin-setup.md) | Portal Connect config, Professional-tier prerequisites |
+| [`docs/field-commands.md`](docs/field-commands.md) | Command UX reference (including deferred verbs) |
+| [`plans/phase-0-scaffolding.md`](plans/phase-0-scaffolding.md) | Current-milestone sprint plan |
 
-## Historical notes
+Earlier Pipedream and self-hosted n8n deployment paths are archived under
+[`docs/archive/`](docs/archive/) — kept for reference, not maintained.
 
-Earlier iterations targeted Pipedream and self-hosted n8n. Those deployment
-paths are archived in [`docs/archive/`](docs/archive/) for reference only —
-they are not maintained and should not be followed for new deploys.
+## License
+
+MIT. See [`LICENSE`](LICENSE); [`SECURITY.md`](SECURITY.md),
+[`CONTRIBUTING.md`](CONTRIBUTING.md), and
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) live at the repo root.

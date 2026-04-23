@@ -1,7 +1,7 @@
 {
   "name": "trailscribe",
   "version": "0.1.0",
-  "description": "AI-native satellite messaging for Garmin inReach",
+  "description": "Command-driven assistant for Garmin inReach — send !post/!mail/!todo from the backcountry, get back enriched replies in two SMS.",
   "license": "MIT",
   "private": true,
   "type": "module",

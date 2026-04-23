@@ -1,39 +1,132 @@
 # Garmin IPC Setup
 
-TrailScribe relies on Garmin’s inReach **IPC Outbound** and **IPC Inbound** services to receive messages from your device and send replies. This guide walks you through configuring both services.
+Configure Garmin's Portal Connect so your inReach Professional device can
+send messages to TrailScribe (IPC Outbound) and receive replies (IPC Inbound).
+
+> **Prerequisite: inReach Professional or Enterprise tier.** IPC Outbound and
+> IPC Inbound are Professional-tier features. Consumer inReach plans do not
+> expose these APIs. If you do not have Professional, the architecture in
+> `docs/architecture.md` cannot run as-is.
+
+Authoritative references:
+- [`../materials/Garmin IPC Outbound.txt`](../materials/Garmin%20IPC%20Outbound.txt) — v2.0.8
+- [`../materials/Garmin IPC Inbound.txt`](../materials/Garmin%20IPC%20Inbound.txt) — v3.1.1
 
 ## 1. Portal Connect access
 
-1. Sign in to [explore.garmin.com](https://explore.garmin.com) with your enterprise or professional account.
-2. Navigate to **Portal Connect** (sometimes called “inReach Portal Connect”). You may need administrative privileges to access this section.
+1. Sign in to [explore.garmin.com](https://explore.garmin.com) with your
+   Professional / Enterprise account.
+2. Navigate to **Admin Controls → Portal Connect**. Toggle **Inbound
+   Settings** on if it is not already.
 
-## 2. IPC Outbound (webhook)
+## 2. Look up your IMEI
 
-1. In Portal Connect, locate the **IPC Outbound** section and choose **Add Endpoint**.
-2. Enter the **Webhook URL** provided by your Pipedream workflow, n8n webhook, or Cloudflare Worker.
-3. Select **Event Schema V3 or V4**. Schema V4 includes media attachments; Schema V3 includes only text. TrailScribe uses only the `msgId`, `message`/`freeText`, `latitude` and `longitude` fields from the event. An example event in the documentation shows these fields inside the `point` object and `freeText` message【570752019469997†L679-L706】.
-4. Save the endpoint. Garmin will begin sending HTTP POST requests to your webhook whenever your device sends a message.
+Your inReach's 15-digit IMEI is printed on the device (Menu → About →
+Device Info) and is also shown in the Portal Connect device list. Add it to
+the `IMEI_ALLOWLIST` secret for each environment (comma-separated if you
+have multiple devices).
 
-### Test the webhook
+## 3. IPC Outbound (device → TrailScribe)
 
-Send a message from your device containing `!ping`. You should see a response from TrailScribe (“pong”) arrive via email or inReach. If you receive duplicates, ensure idempotency is working and that the message ID is being recorded.
+1. **Portal Connect → IPC Outbound → Add Endpoint.**
+2. **URL:** `https://<your-worker>.workers.dev/garmin/ipc`
+   (staging + production Workers are separate endpoints — wire each
+   environment against the right URL).
+3. **Event Schema:** **V2**. V3 adds `transportMode` and V4 adds media; both
+   are fine (the Worker tolerates extra fields) but V2 is smallest and matches
+   what TrailScribe is tested against.
+4. **Authorization:** **Static Token**. Paste the value of
+   `GARMIN_INBOUND_TOKEN` (generate via `openssl rand -hex 32`; see
+   [`setup-cloudflare.md`](setup-cloudflare.md) §2).
+   - Garmin will include this value in the `Authorization` header on every
+     POST; TrailScribe verifies it before any side-effect work.
+5. **Save.** Send `!ping` from the device to validate — watch `wrangler tail`.
 
-## 3. IPC Inbound (replies)
+### What the Worker does with the POST
 
-1. In Portal Connect, open the **IPC Inbound API** section. Garmin exposes multiple endpoints (e.g. `/SendMessage`, `/Binary`, `/Media`) for sending messages back to the device【445103924098990†L204-L213】. For simple text replies TrailScribe uses `/SendMessage`.
-2. Generate API credentials (client ID/secret) for your application. Store them in your environment variables or secret manager.
-3. Configure your reply logic to call `/SendMessage` with the device’s IMEI and your response text. If you choose to use email instead of IPC Inbound, ensure that your inReach device is configured to receive emails from your Gmail account.
+Per event in the envelope:
+1. Verify `Authorization: Bearer <token>`.
+2. Validate the V2 envelope shape.
+3. Confirm `imei` is in the allowlist.
+4. Compute composite idempotency key: `sha256(imei : timeStamp : messageCode : sha256(freeText))`.
+5. Short-circuit if the key is already present in `TS_IDEMPOTENCY`.
+6. Write `{ status: "received", receivedAt }` with 48h TTL.
+7. Dispatch to orchestrator (Phase 1) — currently a stub in Phase 0.
+8. **Always return 200 OK** — any non-200 triggers Garmin's retry cascade
+   (2/4/8/16/32/64/128s for up to 12h; 12h pauses × 5d then service
+   suspension). App-level errors are surfaced via IPC Inbound reply, not
+   via webhook status.
 
-## 4. MapShare link
+### Retry / failure behavior (Garmin side)
 
-TrailScribe appends your [MapShare](https://share.garmin.com) link to every message when coordinates are present. To enable this:
+- Initial retries at 2, 4, 8, 16, 32, 64, 128 seconds on non-200.
+- After 12 hours of continuous failure, Garmin pauses delivery for 12h and
+  emails the customer contact.
+- 5× pause cycles = 5 days of failure → IPC suspension; must contact Garmin
+  Support to resume.
+- Messages older than 5 days in the queue are dropped.
+
+## 4. IPC Inbound (TrailScribe → device)
+
+1. **Portal Connect → Admin Controls → Portal Connect → Inbound Settings →
+   Generate API Key.** Copy the key; this is your `GARMIN_IPC_INBOUND_API_KEY`
+   secret. You can have up to 3 active keys simultaneously — useful for
+   rotation.
+2. **Note the Inbound URL** shown on the Inbound Settings page. Looks like
+   `https://<tenant>.inreachapp.com` or `https://enterprise.inreach.garmin.com`.
+   Strip the protocol prefix if necessary and store the full base (including
+   `/api`) as `GARMIN_IPC_INBOUND_BASE_URL`. E.g.:
+   `https://ipcinbound.inreachapp.com/api`
+3. TrailScribe POSTs replies to `{base}/Messaging/Message` with
+   `X-API-Key: <key>` and a JSON body per the Inbound v3.1.1 contract.
+
+### Critical constraints (from Inbound spec)
+
+- **Message body: 160 characters MAX** per message (Iridium limit; 422
+  `InvalidMessageError` on overage). TrailScribe pages longer replies into
+  two messages with `(1/2)` / `(2/2)` prefixes.
+- **Timestamp:** `"/Date(<ms-since-epoch>)/"` format; cannot be in the
+  future; cannot be before 2011-01-01.
+- **Response:** 200 OK with `{ "count": N }`. Errors: 401 (key missing), 403
+  (key wrong), 422 (well-formed but semantically invalid — check `Code` and
+  `Description`), 429 (rate-limited; respect `Retry-After`), 500.
+- Each outbound message incurs a small Iridium charge — keep replies terse.
+
+## 5. MapShare (optional)
+
+If you want MapShare links appended to position-bearing replies:
 
 1. Enable MapShare in your inReach account and set a public MapShare ID.
-2. Set the environment variable `MAPSHARE_BASE` to `https://share.garmin.com/<your_mapshare_id>`.
-3. When TrailScribe sends a reply with coordinates, recipients can click the MapShare link to view your current position on Garmin’s map.
+2. Set `MAPSHARE_BASE` var in `wrangler.toml` (and per-env override) to
+   `https://share.garmin.com/<your_mapshare_id>`.
 
-## 5. Security considerations
+If `MAPSHARE_BASE` is empty, the link builder returns empty string and no
+MapShare URL is appended.
 
-- **Authentication:** Garmin sends a shared secret with each webhook request (optional). Configure this in Portal Connect and verify the secret in your webhook code.
-- **Encryption:** IPC Outbound supports encrypted payloads. TrailScribe does not currently decrypt encrypted messages. Select the plaintext schema or implement decryption if required.
-- **Rate limits:** Garmin may retry delivery if your server returns an error. TrailScribe’s idempotency logic uses `msgId` to ignore duplicates.
+## 6. Security checklist
+
+- **Bearer token** is sufficient auth for α-MVP; rotate yearly.
+- **IMEI allowlist** is defense-in-depth: even with the correct bearer, we
+  silently drop events from unregistered IMEIs.
+- **IPC Inbound API key** rotation: up to 3 active keys. Generate new →
+  update Wrangler Secret → confirm traffic → delete old key.
+- **SOS is not touched by TrailScribe.** Emergency declarations go through
+  Garmin native + IERCC/GEOS and bypass our Worker entirely.
+- **Encrypted messaging (schema V4 encrypted variants):** not handled by
+  TrailScribe — configure plaintext schema in Portal Connect.
+
+## 7. Test checklist
+
+After setup, with the staging worker deployed:
+
+- [ ] Send `!ping` from device → reply `pong` arrives within ~30s (Iridium
+      latency).
+- [ ] `wrangler tail --env staging` shows `event_received` with your IMEI
+      and the decoded `freeText`.
+- [ ] Re-send the same `!ping` (if Garmin retries, you'll see this
+      naturally) → log shows `idempotent_replay`.
+- [ ] Intentionally misconfigure the static token at Garmin side and send
+      again → log shows `auth_fail` and no KV write.
+
+Only after all four checks pass should you point the production environment
+at Garmin.

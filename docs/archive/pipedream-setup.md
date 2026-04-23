@@ -1,3 +1,6 @@
+> **Archived 2026-04-22** — superseded by Workers-first architecture in `docs/architecture.md`.
+> Kept for historical reference only. Do not follow these instructions for new deploys.
+
 # Pipedream Setup
 
 Pipedream is the primary deployment target for TrailScribe because it offers generous free credits and built‑in connectors for Gmail and Todoist. This document outlines how to set up TrailScribe on Pipedream with a single workflow.

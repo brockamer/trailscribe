@@ -1,39 +1,107 @@
-# Architecture Overview
+# Architecture
 
-TrailScribe is a satellite‑controlled agent that connects your Garmin inReach device to a suite of modern cloud services. The system receives **IPC Outbound** webhooks from Garmin, parses the incoming message, invokes the appropriate tool (OpenAI, Gmail, Todoist, etc.), tracks token usage, and replies back via Garmin IPC Inbound or email.
+TrailScribe is a single Cloudflare Worker that receives Garmin IPC Outbound
+webhooks, dispatches `!command` actions to per-integration adapters, and
+replies via Garmin IPC Inbound. All state lives in Cloudflare KV for α-MVP;
+Durable Objects and D1 come in later phases. See [`PRD.md`](PRD.md) §3 for
+design rationale and phased-evolution detail.
 
-## High‑level flow
+## System flow
 
-1. **Garmin IPC Outbound** sends an HTTP POST to your webhook URL whenever a message is sent from your inReach device. The payload conforms to Garmin’s Event schema. Each event contains metadata such as `msgId`, `freeText`, `timeStamp`, `point` (latitude/longitude), battery status, and destination addresses【570752019469997†L679-L706】.
-2. Your webhook server (deployed on Pipedream, n8n, or a self‑hosted Node server) receives the POST, verifies it hasn’t been processed before (idempotency), and extracts the message text.
-3. **Grammar parser** interprets the message. Commands begin with `!` and support a range of actions such as `!todo`, `!mail`, `!drop`, `!post`, `!ai`, `!brief`, etc.
-4. The **Orchestrator** dispatches the command to the appropriate tool module. For example, it might call Todoist’s API to create a task, send an email via Gmail, or use OpenAI’s API to answer a question. It also calls the **Context** module to compute nearest location and weather summaries when a position is available.
-5. After processing, the Orchestrator composes a concise reply (≤ 2 SMS messages), appends Google Maps and MapShare links when coordinates are present, and updates the **Ledger** with token counts and costs. The Ledger stores monthly usage statistics and implements the `!cost` command.
-6. **Reply helper** sends the response back to the device via Garmin IPC Inbound. On Pipedream and self‑hosted setups, replies are delivered via Gmail to the device’s email address as a fallback.
+```
+ ┌────────────────┐         HTTPS POST           ┌─────────────────────┐
+ │  Garmin inReach│ ────────────────────────────▶│  Garmin Gateway     │
+ │   (device)     │                              │  (IPC Outbound)     │
+ └────────────────┘                              └──────────┬──────────┘
+                                                            │ JSON Event V2
+                                                            ▼
+                   ┌────────────────────────────────────────────────────┐
+                   │  Cloudflare Worker  (src/index.ts → src/app.ts)    │
+                   │                                                    │
+                   │  POST /garmin/ipc                                  │
+                   │    1. verify Authorization: Bearer <token>         │
+                   │    2. parse Garmin V2 envelope                     │
+                   │    3. per event:                                   │
+                   │        a. IMEI allowlist check                     │
+                   │        b. idempotency key (sha256 composite)       │
+                   │        c. KV.get idem:<key> → skip if hit          │
+                   │        d. KV.put idem:<key>, TTL 48h               │
+                   │        e. dispatch to orchestrator (Phase 1)       │
+                   │    4. ALWAYS return 200 OK to avoid retry cascade  │
+                   └──┬──────────────────────────────────────────────┬──┘
+                      │                                              │
+              ┌───────┴───────┐                        ┌─────────────┴─────────────┐
+              │  KV           │                        │  Tool adapters            │
+              │  TS_IDEMPOTENCY TS_LEDGER              │  openai · resend · todoist│
+              │  TS_CONTEXT   TS_CACHE                 │  github-pages · nominatim │
+              └───────────────┘                        │  open-meteo               │
+                                                       └─────────────┬─────────────┘
+                                                                     │
+                                                                     ▼
+                                  ┌─────────────────────────────────────────────┐
+                                  │  Garmin IPC Inbound API                     │
+                                  │  POST {base}/api/Messaging/Message          │
+                                  │  Auth: X-API-Key: <key>                     │
+                                  │  Body: ≤160 chars; pagination for two SMS   │
+                                  └──────────────────────────┬──────────────────┘
+                                                             │
+                                                             ▼
+                                                ┌────────────────────┐
+                                                │  Garmin inReach    │
+                                                │  (reply displayed) │
+                                                └────────────────────┘
+```
 
 ## Modules
 
-- **src/http/router.ts** – Express app that receives Garmin webhooks, handles deduplication, parses commands, runs the orchestrator, and sends replies.
-- **src/agent/grammar.ts** – Parses SMS‑style commands (`!ping`, `!todo`, `!mail`, etc.) into structured objects.
-- **src/agent/orchestrator.ts** – Implements command dispatch, integrates tools, updates the ledger, and truncates replies to two SMS messages.
-- **src/tools** – Individual adapters for Gmail, Todoist, Posthaven, optional web search, and link construction (Google Maps and MapShare).
-- **src/runtime/idempotency.ts** – Keeps track of processed `msgId` values to prevent duplicate processing.
-- **src/runtime/ledger.ts** – Tracks requests, token usage, and costs within monthly cycles; implements the `!cost` command.
-- **src/runtime/context.ts** – Returns a short description of the nearest place and weather given latitude/longitude (stubbed; integrate your own geocoding and weather APIs).
-- **src/config/env.ts** – Validates and loads environment variables using `zod`.
+| Path | Role |
+|---|---|
+| `src/index.ts` | Worker entry; `export default { fetch }`; delegates to Hono app |
+| `src/app.ts` | Hono factory; routes, bearer verification, envelope parse, idempotency |
+| `src/env.ts` | Typed `Env` binding + zod `EnvSchema` + helpers (`imeiAllowSet`, `dailyTokenBudget`, …) |
+| `src/core/types.ts` | `ParsedCommand`, `GarminEvent`, `GarminEnvelope`, `CommandResult` |
+| `src/core/grammar.ts` | `parseCommand()` — α-MVP verb parser |
+| `src/core/idempotency.ts` | Composite-key derivation, SHA-256 helper, `IdempotencyRecord` |
+| `src/core/orchestrator.ts` | Dispatch by command type (Phase 1 wires real adapters) |
+| `src/core/narrative.ts` | Prompt + JSON-mode OpenAI call (Phase 1) |
+| `src/core/context.ts` | Per-IMEI rolling window in `TS_CONTEXT` (Phase 1) |
+| `src/core/ledger.ts` | Monthly rollup in `TS_LEDGER` using real OpenAI usage (Phase 1) |
+| `src/core/commands.ts` | Thin per-command handler registry (Phase 1) |
+| `src/core/links.ts` | Google Maps + MapShare link builders |
+| `src/adapters/inbound/…` | (reserved — single Hono route today; keep for multi-gateway future) |
+| `src/adapters/outbound/garmin-ipc-inbound.ts` | `sendReply(imei, msg, env)` — POST /Messaging/Message (Phase 1) |
+| `src/adapters/mail/resend.ts` | `sendEmail()` — Resend transactional API (Phase 1) |
+| `src/adapters/tasks/todoist.ts` | `addTask()` — Todoist REST (Phase 1) |
+| `src/adapters/publish/github-pages.ts` | `publishPost()` — GitHub Contents API commits (Phase 1) |
+| `src/adapters/location/geocode.ts` | `reverseGeocode()` — Nominatim, cached in `TS_CACHE` (Phase 1) |
+| `src/adapters/location/weather.ts` | `currentWeather()` — Open-Meteo, cached (Phase 1) |
+| `src/adapters/ai/openai.ts` | `generateNarrative()` — JSON-mode + real `usage` (Phase 1) |
+| `src/adapters/storage/kv.ts` | Typed KV helpers (`getJSON`, `putJSON`, `exists`) |
+| `src/adapters/logging/worker-logs.ts` | Structured JSON logger |
 
-## Data formats
+## Data contracts
 
-Garmin’s IPC Outbound messages follow an Event schema with a `Version` and an array of `Events`. Each `Event` includes fields like `imei` (device ID), `messageCode`, `freeText`, `timeStamp`, `addresses`, and `point` with `latitude`, `longitude`, `altitude`, `course` and `speed`【570752019469997†L679-L706】. Additional fields exist for media events (mediaId, mediaBytes, mediaType) in schema V4【570752019469997†L520-L545】. TrailScribe only requires the `msgId`, `message/freeText`, `latitude` and `longitude` for its operations.
+- **Inbound (Garmin → us):** `{ Version, Events: [GarminEvent, …] }` — schema V2 with tolerance for V3/V4 extras. See [`materials/Garmin IPC Outbound.txt`](../materials/Garmin%20IPC%20Outbound.txt).
+- **Outbound (us → Garmin):** `POST /api/Messaging/Message` with `{ Messages: [{ Recipients: [imei], Sender, Timestamp: "/Date(ms)/", Message }] }`. 160-char hard cap; we paginate for two-SMS replies. See [`materials/Garmin IPC Inbound.txt`](../materials/Garmin%20IPC%20Inbound.txt).
+- **Auth:** incoming = static bearer token in `Authorization: Bearer <GARMIN_INBOUND_TOKEN>`; outgoing = `X-API-Key: <GARMIN_IPC_INBOUND_API_KEY>`.
 
-Replies are short strings (≤ 320 characters) and may include map links. When location is present, the reply helper appends a Google Maps link (`https://www.google.com/maps/search/?api=1&query=lat,lon`) and your MapShare link (`https://share.garmin.com/...`) to the message.
+## Idempotency (α)
 
-## Deployment options
+Key = `sha256(imei : timeStamp : messageCode : sha256(freeText||payload||""))`.
+Stored under `idem:<key>` in `TS_IDEMPOTENCY` with TTL 48h. Replays short-circuit
+before any side-effecting work. Op-level checkpoints (for partial-failure
+recovery) are Phase 1. Durable Objects (strong consistency) is Phase 2. Full
+detail in [`PRD.md`](PRD.md) §5.
 
-- **Pipedream (primary)** – Use an HTTP trigger and a single Node.js step to handle the webhook. Pipedream’s built‑in Gmail and Todoist connectors send emails and create tasks. See `examples/pipedream-steps.md` for paste‑ready code and tips.
-- **Self‑hosted on Proxmox → Docker VM** – Deploy n8n using the provided `docker-compose.yml`. Create a webhook trigger in n8n, then add Gmail/Todoist nodes and a custom function node for parsing and orchestrating commands. See `docs/selfhost-n8n-proxmox.md` for details.
-- **Cloudflare Workers + KV** – A minimal option that runs the agent on Cloudflare’s edge. Cost ledger is stored in a KV namespace. See `examples/workers-minimal.md`.
+## Reply budget
 
-## Cost tracking
+Hard contract: total reply ≤ 320 characters across ≤ 2 Garmin Inbound messages
+(160 each). `APPEND_COST_SUFFIX=true` appends `· $X.XX` which counts against
+the budget. Longer content (full narratives, detailed help) goes to the blog
+or email — never to the device.
 
-The ledger reads the number of input and output tokens for each request and multiplies them by configurable per‑1K token rates. It resets monthly and returns a summary with the `!cost` command. By appending the running total to every reply (configurable via `APPEND_COST_SUFFIX`), you always know your usage and expenses.
+## Historical deployment targets
+
+Pipedream and n8n-on-Proxmox were explored in earlier iterations; the code
+paths were broken (unpublished package imports, in-memory state on serverless)
+and those docs are archived at [`archive/`](archive/). Do not use them.

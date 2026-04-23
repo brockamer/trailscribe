@@ -1,3 +1,6 @@
+> **Archived 2026-04-22** — superseded by Workers-first architecture in `docs/architecture.md`.
+> Kept for historical reference only. Do not follow these instructions for new deploys.
+
 # Self‑hosting on Proxmox with n8n
 
 If you prefer to keep everything under your control, you can run TrailScribe on a Proxmox server using a Docker VM. The simplest approach is to deploy [n8n](https://n8n.io/), an open‑source workflow automation tool, and recreate the Pipedream workflow.

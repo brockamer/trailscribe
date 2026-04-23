@@ -2,38 +2,34 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Use Node.js
-        uses: actions/setup-node@v3
+      - uses: pnpm/action-setup@v4
         with:
-          node-version: 20
-          cache: 'pnpm'
+          version: 9
 
-      - name: Install pnpm
-        run: npm install -g pnpm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install
-        working-directory: ./trailscribe
+        run: pnpm install --frozen-lockfile
 
-      - name: Build TypeScript
-        run: pnpm run build --if-present
-        working-directory: ./trailscribe
+      - name: Typecheck
+        run: pnpm typecheck
 
-      - name: Lint
-        run: pnpm run lint --if-present
-        working-directory: ./trailscribe
-
-      - name: Run tests
+      - name: Test
         run: pnpm test
-        working-directory: ./trailscribe
+
+      # Lint deferred to post-Phase-0 — needs @typescript-eslint config.
+      # - name: Lint
+      #   run: pnpm lint

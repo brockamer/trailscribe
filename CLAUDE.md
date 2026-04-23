@@ -71,9 +71,18 @@ materials/                      # input PDFs + extracted txt; don't edit
 plans/                          # per-milestone sprint plans (phase-0-scaffolding.md, etc.)
 ```
 
-## Status (as of 2026-04-23)
+## Session state (wrapped 2026-04-23 ~07:40 PDT)
 
-**Phase:** Phase 0 scaffolding 90% complete. 18 of 20 stories done; 2 user-gated stories remain (P0-07 KV namespace creation, P0-20 staging end-to-end verify).
+**Phase 0 code-side:** 18/20 stories complete, 5 commits on `main`. Remaining: P0-07 (KV namespace creation) and P0-20 (staging smoke test) — both user-gated on Cloudflare credentials.
+
+**Jared board:** bootstrapped at `https://github.com/users/brockamer/projects/3` (public). 12 of 27 planned issues filed (P0-01 through P0-13 as retroactive Done). Filing hit GitHub GraphQL rate limit at iteration 12; root cause is `jared file` fetching the full project item list per call — separate improvement prompt drafted for the jared plugin repo. 15 issues remain to file when rate limit resets or when someone picks up the leaner manual path.
+
+**Next session should:**
+1. Finish filing remaining 15 issues (6 retroactive Done: P0-14–P0-19; 2 open P0: P0-07 + P0-20; 5 new: Cloudflare email rename [now retroactively Done — completed 2026-04-23], Resend DNS, Worker custom domain, docs update, lint config; 2 epics: Phase 0 + Phase 1)
+2. Resume the Cloudflare setup walkthrough — user completed the account email rename (personal → project address) but had not yet performed P0-07 (KV namespace creation) or first deploy
+3. After P0-07 + P0-20 close, draft `plans/phase-1-alpha-mvp.md` for sign-off
+
+**Status:** Phase 0 scaffolding 90% complete. 18 of 20 stories done; 2 user-gated stories remain.
 
 **Done in Phase 0:**
 - P0-01: branch rename master → main (remote + local + init.defaultBranch)

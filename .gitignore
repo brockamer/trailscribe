@@ -20,3 +20,10 @@ pnpm-debug.log\*
 # OS metadata
 .DS_Store
 Thumbs.db
+
+# Derived PDF text extracts (regenerable via pdftotext)
+materials/*.txt
+
+# Wrangler local dev
+.dev.vars
+.wrangler/

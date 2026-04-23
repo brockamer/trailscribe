@@ -1,0 +1,39 @@
+# TrailScribe local-dev secrets template.
+# Copy to `.dev.vars` (gitignored) and fill in real values for `wrangler dev`.
+# For staging/production, use `wrangler secret put <NAME> --env <staging|production>` instead.
+# See docs/setup-cloudflare.md for the full setup sequence.
+
+# ---- Garmin IPC ----
+# Static bearer token Garmin sends on every Outbound webhook (we verify it).
+# Generate a strong random 32+ byte value: `openssl rand -hex 32`
+# Paste the same value into Garmin Portal Connect → IPC Outbound → Static Token.
+GARMIN_INBOUND_TOKEN=
+
+# X-API-Key generated in Garmin Portal Connect → Admin Controls → Portal Connect → Inbound Settings → Generate API Key.
+GARMIN_IPC_INBOUND_API_KEY=
+
+# Per-tenant IPC Inbound base URL (find via explore.garmin.com → Admin Controls → Portal Connect → Inbound Settings → Inbound URL).
+# Example: https://ipcinbound.inreachapp.com/api
+GARMIN_IPC_INBOUND_BASE_URL=
+
+# Comma-separated 15-digit IMEIs we accept from Outbound webhooks.
+# α-MVP has exactly one device (your inReach).
+IMEI_ALLOWLIST=
+
+# ---- OpenAI ----
+OPENAI_API_KEY=
+
+# ---- Todoist ----
+# Get from Todoist → Settings → Integrations → Developer → API token.
+TODOIST_API_TOKEN=
+
+# ---- Resend (outbound transactional email) ----
+# Create an API key at https://resend.com/api-keys with 'Send' permission.
+RESEND_API_KEY=
+
+# ---- GitHub Pages journal ----
+# Fine-grained PAT scoped to exactly the journal repo with `contents:write`.
+# Create at https://github.com/settings/personal-access-tokens/new.
+GITHUB_JOURNAL_TOKEN=
+GITHUB_JOURNAL_REPO=brockamer/trailscribe-journal
+GITHUB_JOURNAL_BRANCH=main

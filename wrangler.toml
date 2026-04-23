@@ -1,0 +1,151 @@
+# TrailScribe — Cloudflare Workers config
+# See docs/setup-cloudflare.md for first-time setup, secret provisioning,
+# and KV namespace creation. KV IDs in this file are placeholders until
+# `wrangler kv namespace create <BINDING>` is run (see P0-07).
+
+name = "trailscribe"
+main = "src/index.ts"
+compatibility_date = "2026-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Default env = development (used by `wrangler dev`). Bindings here mirror the
+# Env interface in src/env.ts. `[env.staging]` and `[env.production]` override
+# below.
+
+[vars]
+TRAILSCRIBE_ENV = "development"
+GOOGLE_MAPS_BASE = "https://www.google.com/maps/search/?api=1&query="
+MAPSHARE_BASE = ""
+OPENAI_MODEL = "gpt-5-mini"
+OPENAI_INPUT_COST_PER_1K = "0.00"
+OPENAI_OUTPUT_COST_PER_1K = "0.00"
+APPEND_COST_SUFFIX = "false"
+DAILY_TOKEN_BUDGET = "50000"
+IPC_SCHEMA_VERSION = "2"
+RESEND_FROM_EMAIL = "trailscribe@resend.dev"
+RESEND_FROM_NAME = "TrailScribe"
+JOURNAL_POST_PATH_TEMPLATE = "content/posts/{yyyy}-{mm}-{dd}-{slug}.md"
+
+# KV namespaces (P0-07 fills these IDs via `wrangler kv namespace create`).
+# For each binding below, run:
+#   wrangler kv namespace create TS_IDEMPOTENCY
+#   wrangler kv namespace create TS_IDEMPOTENCY --preview
+#   wrangler kv namespace create TS_IDEMPOTENCY --env staging
+#   wrangler kv namespace create TS_IDEMPOTENCY --env production
+# then replace each PLACEHOLDER* with the returned ID.
+
+[[kv_namespaces]]
+binding = "TS_IDEMPOTENCY"
+id = "PLACEHOLDER_dev_idempotency"
+preview_id = "PLACEHOLDER_dev_idempotency_preview"
+
+[[kv_namespaces]]
+binding = "TS_LEDGER"
+id = "PLACEHOLDER_dev_ledger"
+preview_id = "PLACEHOLDER_dev_ledger_preview"
+
+[[kv_namespaces]]
+binding = "TS_CONTEXT"
+id = "PLACEHOLDER_dev_context"
+preview_id = "PLACEHOLDER_dev_context_preview"
+
+[[kv_namespaces]]
+binding = "TS_CACHE"
+id = "PLACEHOLDER_dev_cache"
+preview_id = "PLACEHOLDER_dev_cache_preview"
+
+# Required Wrangler Secrets (run `wrangler secret put <NAME>` per env):
+#   GARMIN_INBOUND_TOKEN          — static bearer for Garmin IPC Outbound webhook
+#   GARMIN_IPC_INBOUND_API_KEY    — X-API-Key for POST /api/Messaging/Message
+#   GARMIN_IPC_INBOUND_BASE_URL   — per-tenant (e.g. https://ipcinbound.inreachapp.com/api)
+#   IMEI_ALLOWLIST                — comma-separated 15-digit IMEIs we accept
+#   OPENAI_API_KEY                — OpenAI API key
+#   TODOIST_API_TOKEN             — Todoist REST API token
+#   RESEND_API_KEY                — Resend transactional email API key
+#   GITHUB_JOURNAL_TOKEN          — fine-grained PAT (contents:write on journal repo)
+#   GITHUB_JOURNAL_REPO           — e.g. brockamer/trailscribe-journal
+#   GITHUB_JOURNAL_BRANCH         — e.g. main
+
+# -----------------------------------------------------------------------------
+# Staging environment (auto-deployed by .github/workflows/deploy-cloudflare.yml
+# on push to branches matching `staging/*`; see P0-16).
+# -----------------------------------------------------------------------------
+
+[env.staging]
+name = "trailscribe-staging"
+
+[env.staging.vars]
+TRAILSCRIBE_ENV = "staging"
+GOOGLE_MAPS_BASE = "https://www.google.com/maps/search/?api=1&query="
+MAPSHARE_BASE = ""
+OPENAI_MODEL = "gpt-5-mini"
+OPENAI_INPUT_COST_PER_1K = "0.00"
+OPENAI_OUTPUT_COST_PER_1K = "0.00"
+APPEND_COST_SUFFIX = "false"
+DAILY_TOKEN_BUDGET = "50000"
+IPC_SCHEMA_VERSION = "2"
+RESEND_FROM_EMAIL = "trailscribe@resend.dev"
+RESEND_FROM_NAME = "TrailScribe (staging)"
+JOURNAL_POST_PATH_TEMPLATE = "content/posts/{yyyy}-{mm}-{dd}-{slug}.md"
+
+[[env.staging.kv_namespaces]]
+binding = "TS_IDEMPOTENCY"
+id = "PLACEHOLDER_staging_idempotency"
+
+[[env.staging.kv_namespaces]]
+binding = "TS_LEDGER"
+id = "PLACEHOLDER_staging_ledger"
+
+[[env.staging.kv_namespaces]]
+binding = "TS_CONTEXT"
+id = "PLACEHOLDER_staging_context"
+
+[[env.staging.kv_namespaces]]
+binding = "TS_CACHE"
+id = "PLACEHOLDER_staging_cache"
+
+# -----------------------------------------------------------------------------
+# Production environment (auto-deployed by .github/workflows/deploy-cloudflare.yml
+# on push to main; see P0-16).
+# -----------------------------------------------------------------------------
+
+[env.production]
+name = "trailscribe"
+
+[env.production.vars]
+TRAILSCRIBE_ENV = "production"
+GOOGLE_MAPS_BASE = "https://www.google.com/maps/search/?api=1&query="
+MAPSHARE_BASE = ""
+OPENAI_MODEL = "gpt-5-mini"
+OPENAI_INPUT_COST_PER_1K = "0.00"
+OPENAI_OUTPUT_COST_PER_1K = "0.00"
+APPEND_COST_SUFFIX = "false"
+DAILY_TOKEN_BUDGET = "50000"
+IPC_SCHEMA_VERSION = "2"
+RESEND_FROM_EMAIL = "trailscribe@resend.dev"
+RESEND_FROM_NAME = "TrailScribe"
+JOURNAL_POST_PATH_TEMPLATE = "content/posts/{yyyy}-{mm}-{dd}-{slug}.md"
+
+[[env.production.kv_namespaces]]
+binding = "TS_IDEMPOTENCY"
+id = "PLACEHOLDER_production_idempotency"
+
+[[env.production.kv_namespaces]]
+binding = "TS_LEDGER"
+id = "PLACEHOLDER_production_ledger"
+
+[[env.production.kv_namespaces]]
+binding = "TS_CONTEXT"
+id = "PLACEHOLDER_production_context"
+
+[[env.production.kv_namespaces]]
+binding = "TS_CACHE"
+id = "PLACEHOLDER_production_cache"
+
+# -----------------------------------------------------------------------------
+# Observability — Workers Logs (free tier, structured log tail via `wrangler tail`)
+# -----------------------------------------------------------------------------
+
+[observability]
+enabled = true
+head_sampling_rate = 1.0

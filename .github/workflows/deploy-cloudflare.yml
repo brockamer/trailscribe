@@ -34,8 +34,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -51,14 +49,14 @@ jobs:
           command: deploy --env staging
 
   deploy-production:
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && inputs.target == 'production')
+    # TEMP: gated to manual dispatch until P0-07 (KV namespaces) + CF secrets are set.
+    # Re-enable `github.ref == 'refs/heads/main'` once the first successful prod deploy lands.
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'production'
     runs-on: ubuntu-latest
     environment: production
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: "20"

@@ -1,0 +1,7 @@
+node_modules
+.wrangler
+pnpm-lock.yaml
+materials
+dist
+coverage
+*.log

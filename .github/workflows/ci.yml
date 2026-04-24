@@ -28,6 +28,5 @@ jobs:
       - name: Test
         run: pnpm test
 
-      # Lint deferred to post-Phase-0 — needs @typescript-eslint config.
-      # - name: Lint
-      #   run: pnpm lint
+      - name: Lint
+        run: pnpm lint

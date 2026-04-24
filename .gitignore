@@ -27,3 +27,7 @@ materials/*.txt
 # Wrangler local dev
 .dev.vars
 .wrangler/
+
+# Personal Claude Code config (not shared with team)
+CLAUDE.local.md
+

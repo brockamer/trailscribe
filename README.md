@@ -6,13 +6,13 @@ weather, runs an LLM where it helps, performs the action (email, task, blog
 post), and replies in two SMS or fewer. Design target: **~$0.03 per
 transaction** — less than a single premium satellite message.
 
-> **Status (2026-04-23).** α-MVP, Phase 0 scaffolding at 18/20 stories.
-> The Worker today receives Garmin IPC Outbound webhooks, verifies a bearer
-> token, enforces an IMEI allowlist, and deduplicates replays via KV. Tool
-> adapters (OpenAI, Resend, Todoist, GitHub Pages) and reply delivery are
-> stubbed — they wire up in Phase 1. Progress tracked on the
-> [project board](https://github.com/users/brockamer/projects/3) and in
-> [`plans/phase-0-scaffolding.md`](plans/phase-0-scaffolding.md).
+> **Status (2026-04-24).** α-MVP, Phase 0 complete. A staging Worker at
+> `trailscribe-staging.trailscribe.workers.dev` receives Garmin IPC Outbound
+> webhooks, verifies a bearer token, enforces an IMEI allowlist, and
+> deduplicates replays via KV (verified end-to-end). Tool adapters (LLM,
+> Resend, Todoist, GitHub Pages) and reply delivery are stubbed — they wire
+> up in Phase 1. Progress tracked on the
+> [project board](https://github.com/users/brockamer/projects/3).
 
 ---
 
@@ -35,7 +35,7 @@ the deferred commands (`!where`, `!weather`, `!brief`, `!ai`, `!camp`,
 
 | Command | What it does |
 |---|---|
-| `!post <note>` | Turns a note + GPS into a titled, geotagged entry committed to a GitHub Pages journal as markdown. Narrative via OpenAI. |
+| `!post <note>` | Turns a note + GPS into a titled, geotagged entry committed to a GitHub Pages journal as markdown. Narrative via LLM. |
 | `!mail to:_ subj:_ body:_` | Sends an email with coordinates, place name, elevation, and weather appended. No AI call. |
 | `!todo <task>` | Creates a Todoist task with GPS + timestamp in the note. No AI call. |
 | `!ping` | Health check → `pong`. |
@@ -56,7 +56,7 @@ to the blog or email. Never to the device.
                        2. IMEI allowlist
                        3. dedupe (KV, 48 h TTL)
                        4. dispatch to orchestrator
-                          └─▶ geocode · weather · OpenAI
+                          └─▶ geocode · weather · LLM
                               └─▶ GitHub Pages · Todoist · Resend
                        5. return 200 OK  (always — see below)
                                    │
@@ -84,7 +84,7 @@ Estimated per-transaction cost, from [`docs/PRD.md`](docs/PRD.md) §6. These
 are design targets, not measurements — one α launch criterion is verifying
 ≥ 20 real `!post` transactions against this table before calling Phase 1 done.
 
-| Command | OpenAI | Workers infra | Third-party | Total |
+| Command | LLM | Workers infra | Third-party | Total |
 |---|---|---|---|---|
 | `!post` | $0.020–0.030 | ~$0.001 | $0 (GitHub / Nominatim / Open-Meteo) | **$0.021–0.031** |
 | `!mail` | — | ~$0.0005 | $0 (Resend free tier) | **~$0.001** |
@@ -93,7 +93,7 @@ are design targets, not measurements — one α launch criterion is verifying
 
 `!post` dominates cost; non-AI commands are effectively free. A daily token
 budget (`DAILY_TOKEN_BUDGET=50000`, ≈ 150 narratives/day) short-circuits the
-OpenAI call if exceeded.
+LLM call if exceeded.
 
 ## Who it's for
 
@@ -143,8 +143,10 @@ pnpm deploy:staging                      # wrangler deploy --env staging
 pnpm deploy:prod                         # wrangler deploy --env production
 ```
 
-Pushes to `staging/**` and `main` auto-deploy via
+Pushes to `staging/**` branches auto-deploy to staging via
 [`.github/workflows/deploy-cloudflare.yml`](.github/workflows/deploy-cloudflare.yml).
+Production deploy is currently gated to manual `workflow_dispatch` until the
+first prod deploy lands; it'll flip back to auto-on-`main` after that.
 
 ## Documentation
 

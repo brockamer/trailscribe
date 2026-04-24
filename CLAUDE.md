@@ -79,14 +79,14 @@ plans/                          # per-milestone sprint plans (phase-0-scaffoldin
 
 ## Status
 
-Phase 0 scaffolding ~90% code-complete. 18/20 stories done; 2 user-gated remain:
+Phase 0 complete (2026-04-24). All 20 P0 stories shipped.
 
-- **P0-07** — `wrangler login` + create KV namespaces (dev preview + staging + prod); paste IDs into `wrangler.toml`.
-- **P0-20** — deploy staging; curl canonical fixture; verify idempotency via `wrangler tail`.
+- Staging Worker live at `https://trailscribe-staging.trailscribe.workers.dev` — bearer auth + IMEI allowlist + KV idempotency verified against the canonical V2 fixture.
+- 16 KV namespaces provisioned across dev/staging/prod.
+- CI green on PR: typecheck + Vitest (24 tests) + ESLint.
+- `deploy-production` workflow temporarily gated to manual dispatch until first prod deploy lands.
 
-After P0-07 + P0-20 close → draft `plans/phase-1-alpha-mvp.md` for sign-off.
-
-Verification: `pnpm typecheck` clean; `pnpm test` green.
+**Phase 1 next.** Draft `plans/phase-1-alpha-mvp.md` for sign-off before implementation starts (see epic #30). Note issue #31 — AI/LLM layer routes through OpenRouter, not OpenAI directly, which supersedes the `gpt-5-mini` / `OPENAI_*` decisions below.
 
 ## Conventions
 

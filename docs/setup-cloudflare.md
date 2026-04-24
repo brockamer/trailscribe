@@ -5,6 +5,12 @@ per environment (staging, production).
 
 ## Prerequisites
 
+> **Project-dedicated Cloudflare account.** TrailScribe runs under a
+> project-owned Cloudflare account (not any contributor's personal account).
+> When you `pnpm wrangler login`, confirm you're authenticating against the
+> project account — `pnpm wrangler whoami` will print the account email and
+> ID. Account ID for this project: `d445b6851a9736b713eca837cf6254fd`.
+
 - Cloudflare account ([dash.cloudflare.com](https://dash.cloudflare.com))
 - Node ≥20 and pnpm 9+ (via `corepack enable`)
 - Wrangler CLI (installed as a dev dep; use `pnpm wrangler ...`)

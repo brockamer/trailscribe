@@ -12,6 +12,13 @@ Authoritative references:
 - [`../materials/Garmin IPC Outbound.txt`](../materials/Garmin%20IPC%20Outbound.txt) — v2.0.8
 - [`../materials/Garmin IPC Inbound.txt`](../materials/Garmin%20IPC%20Inbound.txt) — v3.1.1
 
+> **Project-owned Garmin Pro tenant.** TrailScribe's Garmin Professional
+> tenant is provisioned under the project-owner email
+> (`trailscribeapp@gmail.com`), not any contributor's personal inReach
+> account. Device user provisioning, Portal Connect config, API keys, and
+> billing all live on that tenant. Any legacy Pro tenant on a personal
+> email is being migrated to consumer tier — tracked in issue #14.
+
 ## 1. Portal Connect access
 
 1. Sign in to [explore.garmin.com](https://explore.garmin.com) with your

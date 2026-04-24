@@ -5,9 +5,17 @@ Living context file for Claude Code. Keep concise; update as decisions are made.
 **Canonical PRD:** `docs/PRD.md` (source of truth for product scope, architecture, and phased plan — read it first).
 **Input materials:** `materials/` (PDFs + spec + deep research report + Garmin IPC docs — read via `materials/*.txt` for extracted text).
 
+## Commands
+
+- `pnpm dev` — `wrangler dev` local Worker
+- `pnpm test` / `pnpm test:watch` — Vitest
+- `pnpm typecheck` — `tsc --noEmit`
+- `pnpm lint` / `pnpm format`
+- `pnpm deploy:staging` / `pnpm deploy:prod`
+
 ## Product
 
-**TrailScribe** is an AI-native serverless agent that turns a Garmin inReach into a command interface for enriched off-grid workflows. User sends short `!command` messages; a Cloudflare Worker parses them, enriches with context (place names, weather, map links), runs an LLM where appropriate, invokes tools (Gmail, Todoist, Posthaven), and replies via Garmin IPC Inbound in ≤2 SMS.
+**TrailScribe** is an AI-native serverless agent that turns a Garmin inReach into a command interface for enriched off-grid workflows. User sends short `!command` messages; a Cloudflare Worker parses them, enriches with context (place names, weather, map links), runs an LLM where appropriate, invokes tools (Resend, Todoist, GitHub Pages), and replies via Garmin IPC Inbound in ≤2 SMS.
 
 - **Personas (canonical, from product decks):** Natalie (field botanist, Eastern Sierra), Marcus (expedition guide, PNW/Alaska/Patagonia), Yuki (solo bikepacker/storyteller, Iceland/Mongolia/Patagonia). See PRD §1.
 - **Hard constraints:** Garmin IPC Inbound messages are 160 chars max. Reply budget 320 chars (two SMS). Idempotency matters — Garmin retries 2/4/8/16/32/64/128s then pauses 12h × 5d.
@@ -20,9 +28,9 @@ Living context file for Claude Code. Keep concise; update as decisions are made.
 
 **Deferred (13-cmd original set is post-MVP):** `!where`, `!weather` (P2), `!drop`, `!brief` (P2), `!ai`, `!camp` (P3), `!blast`, `!share` (P4). Reasons in PRD §2.
 
-Parser lives in `src/agent/grammar.ts` today; will move to `src/core/grammar.ts` in Phase 0 rebuild (salvaged per Verdict B).
+Parser is in `src/core/grammar.ts` (salvaged per Verdict B).
 
-## Tech stack (target — Phase 0 rebuild)
+## Tech stack
 
 - **Runtime:** Cloudflare Workers (TS, strict, ESM)
 - **HTTP:** Hono (not Express)
@@ -33,9 +41,7 @@ Parser lives in `src/agent/grammar.ts` today; will move to `src/core/grammar.ts`
 - **Package mgr:** pnpm
 - **Formatting/lint:** ESLint + Prettier
 
-**Existing repo (pre-rebuild):** Node 18 / ESM / Express / Jest. Being replaced; salvage grammar, `ParsedCommand` type, `links.ts`, zod env pattern, docs.
-
-## Architecture (target module map — Phase 0+)
+## Architecture
 
 ```
 src/
@@ -71,58 +77,16 @@ materials/                      # input PDFs + extracted txt; don't edit
 plans/                          # per-milestone sprint plans (phase-0-scaffolding.md, etc.)
 ```
 
-## Session state (wrapped 2026-04-23 ~07:40 PDT)
+## Status
 
-**Phase 0 code-side:** 18/20 stories complete, 5 commits on `main`. Remaining: P0-07 (KV namespace creation) and P0-20 (staging smoke test) — both user-gated on Cloudflare credentials.
+Phase 0 scaffolding ~90% code-complete. 18/20 stories done; 2 user-gated remain:
 
-**Jared board:** bootstrapped at `https://github.com/users/brockamer/projects/3` (public). 12 of 27 planned issues filed (P0-01 through P0-13 as retroactive Done). Filing hit GitHub GraphQL rate limit at iteration 12; root cause is `jared file` fetching the full project item list per call — separate improvement prompt drafted for the jared plugin repo. 15 issues remain to file when rate limit resets or when someone picks up the leaner manual path.
+- **P0-07** — `wrangler login` + create KV namespaces (dev preview + staging + prod); paste IDs into `wrangler.toml`.
+- **P0-20** — deploy staging; curl canonical fixture; verify idempotency via `wrangler tail`.
 
-**Next session should:**
-1. Finish filing remaining 15 issues (6 retroactive Done: P0-14–P0-19; 2 open P0: P0-07 + P0-20; 5 new: Cloudflare email rename [now retroactively Done — completed 2026-04-23], Resend DNS, Worker custom domain, docs update, lint config; 2 epics: Phase 0 + Phase 1)
-2. Resume the Cloudflare setup walkthrough — user completed the account email rename (personal → project address) but had not yet performed P0-07 (KV namespace creation) or first deploy
-3. After P0-07 + P0-20 close, draft `plans/phase-1-alpha-mvp.md` for sign-off
+After P0-07 + P0-20 close → draft `plans/phase-1-alpha-mvp.md` for sign-off.
 
-**Status:** Phase 0 scaffolding 90% complete. 18 of 20 stories done; 2 user-gated stories remain.
-
-**Done in Phase 0:**
-- P0-01: branch rename master → main (remote + local + init.defaultBranch)
-- P0-02: CI repair (typecheck + test on PR to main; lint deferred)
-- P0-03: package.json rewrite (Hono + zod + Vitest + Wrangler)
-- P0-04: tsconfig for Workers (ES2022/bundler, workers-types)
-- P0-05: Vitest + 14-test grammar suite (incl. !mail-subj-with-spaces regression)
-- P0-06: wrangler.toml (4 KV bindings × 3 envs, observability, secrets documented)
-- P0-08: .dev.vars.example with provisioning notes
-- P0-09: src/core/grammar.ts + types.ts + links.ts (salvaged + subsetted to 6 α cmds)
-- P0-10: src/env.ts zod schema + helpers (parseEnv, imeiAllowSet, dailyTokenBudget)
-- P0-11: src/app.ts + src/index.ts — Hono /garmin/ipc with bearer + KV idempotency
-- P0-12: adapter stubs (kv + logging real; resend/todoist/openai/github-pages/geocode/weather/ipc-inbound stubs)
-- P0-13: docs/archive/ for Pipedream + n8n; README rewrite (persona table, MVP table)
-- P0-14: docs/architecture.md rewrite (Workers flow + module map)
-- P0-15: docs/setup-cloudflare.md (NEW — full provisioning walkthrough)
-- P0-16: .github/workflows/deploy-cloudflare.yml (staging + prod, CF API secrets)
-- P0-17: docs/garmin-setup.md rewrite (Pro tier, bearer token, X-API-Key, 160-char limit)
-- P0-18: old src/, examples/, stale tests deleted
-- P0-19: [your-email@example.com] placeholders replaced; CONTRIBUTING.md rewritten
-
-**User-gated, remaining:**
-- P0-07: `wrangler login` + create 8-16 KV namespaces (dev preview + staging + prod); paste IDs into wrangler.toml
-- P0-20: deploy staging; curl the canonical fixture; verify idempotency via `wrangler tail`
-
-**Verification:** `pnpm typecheck` clean; `pnpm test` 24/24 green; both commits on `main` locally (not yet pushed).
-
-**Next:** push to main (user-approved) → CI runs → user performs P0-07 → P0-20 gate → Phase 0 complete → draft plans/phase-1-alpha-mvp.md.
-
-## Known bugs / drift
-
-- `!mail` regex `subj:([^\s]+)` disallows spaces in subject — almost certainly wrong.
-- `router.ts` uses `require.main === module` (CJS) under `"type": "module"` — won't execute.
-- `package.json` is missing `ts-node-dev`/`jest`/etc. in dependencies *and* in deps graph no actual HTTP client or zod runtime check has been exercised.
-- `.github/workflows/ci.yml` uses `working-directory: ./trailscribe` — that path doesn't exist in the repo root, CI will fail.
-- `examples/pipedream-steps.md` imports from `trailscribe/dist/...` as if it's a published npm package — it isn't.
-- Ledger uses `JSON.stringify(command).length` / `reply.length` as a proxy for tokens — inaccurate.
-- `grammar.ts` accepts `!todoist` as alias for `!todo` but this isn't documented.
-- Gmail "sender" may be used as the reply-to on unknown-command paths, creating a self-reply loop.
-- Idempotency `Set` grows unbounded (memory leak on long-running instances; irrelevant on serverless because state is lost anyway).
+Verification: `pnpm typecheck` clean; `pnpm test` green.
 
 ## Conventions
 
@@ -148,7 +112,7 @@ plans/                          # per-milestone sprint plans (phase-0-scaffoldin
 - **D8 Outbound email:** Resend (`trailscribe@resend.dev` for α).
 - **D9 Email-fallback reply:** skipped for α.
 
-## External services (target env bindings — Phase 0+, assuming D5/D8 recommendations accepted)
+## External services
 
 **Secrets (Wrangler Secrets):**
 - `GARMIN_INBOUND_TOKEN` — static bearer; verify `Authorization: Bearer <token>` on Outbound webhooks
@@ -182,8 +146,9 @@ plans/                          # per-milestone sprint plans (phase-0-scaffoldin
 
 ## Workflow
 
-- **jared** (GitHub Projects v2 PM) will manage the board after Phase 0 ships — do NOT run `/jared-init` yet. No issues, PRs, or project exist today.
-- Git: `origin` = `https://github.com/brockamer/trailscribe.git`. Default branch currently `master`; PRD §8 D7 proposes rename to `main` at Phase 0.
+- **jared** manages the board: https://github.com/users/brockamer/projects/3 (see `docs/project-board.md`).
+- Active plan: `plans/phase-0-scaffolding.md` (linked to epic #29).
+- Git: `origin` = `https://github.com/brockamer/trailscribe.git`, default branch `main`.
 - Commit sign-off: `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
 
 ## Ground rules

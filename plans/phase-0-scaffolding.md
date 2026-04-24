@@ -4,6 +4,12 @@
 
 **Source of truth:** `docs/PRD.md` (signed off 2026-04-22).
 
+## Issue(s)
+
+- Epic: [#29 — Epic: Phase 0 — Workers scaffold + provisioning](https://github.com/brockamer/trailscribe/issues/29)
+- Milestone: [Phase 0 — Workers scaffold](https://github.com/brockamer/trailscribe/milestone/1)
+- Remaining stories: [#16 P0-07](https://github.com/brockamer/trailscribe/issues/16), [#17 P0-20](https://github.com/brockamer/trailscribe/issues/17) (both user-gated on Cloudflare credentials)
+
 **Milestone exit criteria (all must be true):**
 - [ ] `wrangler dev` serves a stub `POST /garmin/ipc` that verifies bearer auth, parses a Garmin V2 event, short-circuits duplicates via KV, and returns 200 OK
 - [ ] `wrangler deploy --env staging` succeeds; staging URL receives a test Garmin payload and returns 200 OK

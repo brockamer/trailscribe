@@ -1,7 +1,6 @@
 # TrailScribe — Cloudflare Workers config
-# See docs/setup-cloudflare.md for first-time setup, secret provisioning,
-# and KV namespace creation. KV IDs in this file are placeholders until
-# `wrangler kv namespace create <BINDING>` is run (see P0-07).
+# See docs/setup-cloudflare.md for first-time setup and secret provisioning.
+# KV namespaces were provisioned 2026-04-24 (issue #16 / P0-07).
 
 name = "trailscribe"
 main = "src/index.ts"
@@ -26,33 +25,28 @@ RESEND_FROM_EMAIL = "trailscribe@resend.dev"
 RESEND_FROM_NAME = "TrailScribe"
 JOURNAL_POST_PATH_TEMPLATE = "content/posts/{yyyy}-{mm}-{dd}-{slug}.md"
 
-# KV namespaces (P0-07 fills these IDs via `wrangler kv namespace create`).
-# For each binding below, run:
-#   wrangler kv namespace create TS_IDEMPOTENCY
-#   wrangler kv namespace create TS_IDEMPOTENCY --preview
-#   wrangler kv namespace create TS_IDEMPOTENCY --env staging
-#   wrangler kv namespace create TS_IDEMPOTENCY --env production
-# then replace each PLACEHOLDER* with the returned ID.
+# KV namespaces — provisioned per env (dev main + dev preview + staging + production).
+# To recreate from scratch: `wrangler kv namespace create <BINDING> [--preview | --env <env>]`.
 
 [[kv_namespaces]]
 binding = "TS_IDEMPOTENCY"
-id = "PLACEHOLDER_dev_idempotency"
-preview_id = "PLACEHOLDER_dev_idempotency_preview"
+id = "aa70601292a2470091a4bfa42e31c98b"
+preview_id = "fffdbadbe7d64b739c3d572fd774ea74"
 
 [[kv_namespaces]]
 binding = "TS_LEDGER"
-id = "PLACEHOLDER_dev_ledger"
-preview_id = "PLACEHOLDER_dev_ledger_preview"
+id = "2c633da0f119410397c281f779d14a6d"
+preview_id = "3682336ddf3447d095958826a9f4e5f8"
 
 [[kv_namespaces]]
 binding = "TS_CONTEXT"
-id = "PLACEHOLDER_dev_context"
-preview_id = "PLACEHOLDER_dev_context_preview"
+id = "ac1e4d9d7d8f4146ad6c783a94e94751"
+preview_id = "847d79d8c3f2496fb808bdbc61fee6f4"
 
 [[kv_namespaces]]
 binding = "TS_CACHE"
-id = "PLACEHOLDER_dev_cache"
-preview_id = "PLACEHOLDER_dev_cache_preview"
+id = "78ac7fd25f4e4850b7bb29b666a24286"
+preview_id = "dd4bbcafe4974a65b3f554566c1e2a59"
 
 # Required Wrangler Secrets (run `wrangler secret put <NAME>` per env):
 #   GARMIN_INBOUND_TOKEN          — static bearer for Garmin IPC Outbound webhook
@@ -90,19 +84,19 @@ JOURNAL_POST_PATH_TEMPLATE = "content/posts/{yyyy}-{mm}-{dd}-{slug}.md"
 
 [[env.staging.kv_namespaces]]
 binding = "TS_IDEMPOTENCY"
-id = "PLACEHOLDER_staging_idempotency"
+id = "f112c7a6f54a4d78ae161803fe063552"
 
 [[env.staging.kv_namespaces]]
 binding = "TS_LEDGER"
-id = "PLACEHOLDER_staging_ledger"
+id = "369022699a11438d891717077b5ae286"
 
 [[env.staging.kv_namespaces]]
 binding = "TS_CONTEXT"
-id = "PLACEHOLDER_staging_context"
+id = "e0e010f099554885b9fb621e90e6ec42"
 
 [[env.staging.kv_namespaces]]
 binding = "TS_CACHE"
-id = "PLACEHOLDER_staging_cache"
+id = "bc1d8155c3f8414d95a94b664c4b892a"
 
 # -----------------------------------------------------------------------------
 # Production environment (auto-deployed by .github/workflows/deploy-cloudflare.yml
@@ -128,19 +122,19 @@ JOURNAL_POST_PATH_TEMPLATE = "content/posts/{yyyy}-{mm}-{dd}-{slug}.md"
 
 [[env.production.kv_namespaces]]
 binding = "TS_IDEMPOTENCY"
-id = "PLACEHOLDER_production_idempotency"
+id = "47b262c7f7f544d9bdb8cce1cacb81a0"
 
 [[env.production.kv_namespaces]]
 binding = "TS_LEDGER"
-id = "PLACEHOLDER_production_ledger"
+id = "c393be65c9734b4fb3590ed8c243becb"
 
 [[env.production.kv_namespaces]]
 binding = "TS_CONTEXT"
-id = "PLACEHOLDER_production_context"
+id = "cf9b3ca56ff44b12aa89ea412b890366"
 
 [[env.production.kv_namespaces]]
 binding = "TS_CACHE"
-id = "PLACEHOLDER_production_cache"
+id = "5733216e963345178a070755ca908473"
 
 # -----------------------------------------------------------------------------
 # Observability — Workers Logs (free tier, structured log tail via `wrangler tail`)

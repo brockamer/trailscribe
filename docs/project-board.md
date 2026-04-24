@@ -44,15 +44,15 @@ file directly.
 
 | Column | Meaning |
 |---|---|
-| **Todo** | (describe) |
+| **Todo** | Staged or backlog. Needs Priority set before being pulled. Ordered — the top item is what gets worked next. |
 | **In Progress** | Actively being worked on right now. |
 | **Done** | Closed issues. Auto-populated when an issue closes. |
 
 **Rules:**
 
 - In Progress stays small. More than ~3 items means focus is scattered.
-- Up Next is ordered — top item is what gets worked next. Priority field breaks ties.
-- Nothing in In Progress without Priority and Work Stream set.
+- Todo is ordered — top item is what gets worked next. Priority field breaks ties.
+- Nothing in In Progress without Priority set. (Work Stream has no options defined yet — see `/jared-reshape` to populate.)
 - When an issue closes, it moves to Done automatically.
 
 ## Priority field

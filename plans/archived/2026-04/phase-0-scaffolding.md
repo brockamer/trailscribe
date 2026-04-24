@@ -1,3 +1,7 @@
+---
+**Shipped in #16, #17, #29 on 2026-04-24. Final decisions captured in issue body.**
+---
+
 # Phase 0 — Scaffolding
 
 **Goal:** reach a state where Phase 1 (α-MVP implementation) is purely additive. Every broken thing in the current repo is fixed or replaced; Workers is the target; Hono + Vitest are wired; secrets model is defined; CI + staging deploy are green; grammar + link helpers are salvaged. **No α-MVP feature work in this milestone** — `!post`, `!mail`, `!todo` adapters stay stubs that return a canned "not implemented in α" string.

@@ -46,7 +46,7 @@ describe("addTask — happy path", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
 
     const [url, init] = fetchSpy.mock.calls[0];
-    expect(String(url)).toBe("https://api.todoist.com/rest/v2/tasks");
+    expect(String(url)).toBe("https://api.todoist.com/api/v1/tasks");
     expect((init as RequestInit).method).toBe("POST");
     const headers = (init as RequestInit).headers as Record<string, string>;
     expect(headers["Authorization"]).toBe(`Bearer ${env.TODOIST_API_TOKEN}`);

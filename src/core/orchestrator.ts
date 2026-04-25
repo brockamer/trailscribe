@@ -2,6 +2,8 @@ import type { ParsedCommand, CommandResult } from "./types.js";
 import type { Env } from "../env.js";
 import { monthlyTotals, recordTransaction, type LedgerSnapshot } from "./ledger.js";
 import { handlePost } from "./commands/post.js";
+import { handleMail } from "./commands/mail.js";
+import { handleTodo } from "./commands/todo.js";
 
 export interface OrchestratorContext {
   env: Env;
@@ -47,9 +49,9 @@ export async function orchestrate(
     case "post":
       return handlePost(command, ctx);
     case "mail":
-      return { body: "α: !mail not yet implemented (Phase 1)" };
+      return handleMail(command, ctx);
     case "todo":
-      return { body: "α: !todo not yet implemented (Phase 1)" };
+      return handleTodo(command, ctx);
   }
 }
 

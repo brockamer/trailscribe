@@ -1,0 +1,28 @@
+{
+  "Version": "2.0",
+  "Events": [
+    {
+      "imei": "123456789012345",
+      "messageCode": 3,
+      "freeText": "!ping",
+      "timeStamp": 1739802018000,
+      "addresses": [
+        { "address": "trailscribe@resend.dev" }
+      ],
+      "point": {
+        "latitude": 0,
+        "longitude": 0,
+        "altitude": 0,
+        "gpsFix": 2,
+        "course": 0,
+        "speed": 0
+      },
+      "status": {
+        "autonomous": 0,
+        "lowBattery": 0,
+        "intervalChange": 0,
+        "resetDetected": 0
+      }
+    }
+  ]
+}

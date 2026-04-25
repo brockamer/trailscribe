@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach } from "vitest";
 import { makeApp } from "../src/app.js";
 import { makeTestEnv, kvSize, kvKeys } from "./helpers/env.js";
 import type { Env } from "../src/env.js";
-import fixture from "./fixtures/garmin-outbound-v2-freetext.json";
+import fixture from "./fixtures/garmin/free-text-ping.json";
 
 let app: ReturnType<typeof makeApp>;
 let env: Env;

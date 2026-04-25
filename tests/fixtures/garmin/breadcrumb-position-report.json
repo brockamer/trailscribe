@@ -1,0 +1,25 @@
+{
+  "Version": "2.0",
+  "Events": [
+    {
+      "imei": "123456789012345",
+      "messageCode": 0,
+      "timeStamp": 1739753925000,
+      "addresses": [],
+      "point": {
+        "latitude": 34.1310668,
+        "longitude": -118.7624431,
+        "altitude": -422,
+        "gpsFix": 2,
+        "course": 0,
+        "speed": 0
+      },
+      "status": {
+        "autonomous": 0,
+        "lowBattery": 0,
+        "intervalChange": 2,
+        "resetDetected": 0
+      }
+    }
+  ]
+}

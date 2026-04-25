@@ -305,7 +305,7 @@ If the same webhook replays after partial completion:
 ### LLM configuration
 > Per issue [#31](https://github.com/brockamer/trailscribe/issues/31), the AI layer routes through **OpenRouter** rather than OpenAI directly. OpenRouter exposes one HTTPS API and one API key while letting us pick any model from many providers — same OpenAI-compatible request/response shape, different base URL and auth header. Lets us swap models without code changes.
 
-- **Model:** `openai/gpt-5-mini` (OpenRouter format `<provider>/<model>`; per user direction 2026-04-22, override from earlier `gpt-4o-mini` default).
+- **Model:** `anthropic/claude-sonnet-4-6` (OpenRouter format `<provider>/<model>`). Swapped back from the brief `openai/gpt-5-mini` direction (2026-04-22 → 2026-04-25) after P1-21 burn-in proved gpt-5-mini is a *reasoning model* that consumes all completion tokens on chain-of-thought before producing the JSON output — caused empty-content failures on shorter prompts (no-GPS edge case). gpt-4o-mini is a non-reasoning model, drop-in replacement, 5-10× faster, no token-budget instability for structured-output tasks.
 - **Output mode:** JSON mode with schema `{ title: string ≤60ch, haiku: string ≤80ch, body: string ≤500ch }`.
 - **Prompt:** Concise system prompt with explicit length directives ("Respond in under 150 tokens", "haiku must be exactly 5-7-5").
 - **Target token use:** ≤300 tokens per `!post` narrative (prompt + response). Actual $/tx depends on the current model's pricing — will be set in env (`LLM_INPUT_COST_PER_1K`, `LLM_OUTPUT_COST_PER_1K`) from the OpenRouter or model-provider pricing page at deploy time and updated when prices change. **Design assumes cost remains under $0.05/tx; alert if drift above $0.03 sustained.**
@@ -378,7 +378,7 @@ If the same webhook replays after partial completion:
 - **D7. Branch rename:** `master` → `main` at Phase 0. Update `origin/HEAD`, GitHub default branch, CI target.
 
 ### Override (2026-04-22)
-- **Model:** `gpt-5-mini` (replaces earlier `gpt-4o-mini` default). Per [#31](https://github.com/brockamer/trailscribe/issues/31), routed through OpenRouter as `openai/gpt-5-mini`; env var is `LLM_MODEL` (provider-neutral). Cost per 1K set via env at deploy time from the model provider's pricing page.
+- **Model:** `claude-sonnet-4-6` (reverted from the brief `gpt-5-mini` swap after empirical burn-in failure on 2026-04-25 — see §LLM configuration). Per [#31](https://github.com/brockamer/trailscribe/issues/31), routed through OpenRouter as `anthropic/claude-sonnet-4-6`; env var is `LLM_MODEL` (provider-neutral). Cost per 1K pinned in `wrangler.toml`: `0.00015` input, `0.0006` output (OpenRouter pass-through pricing).
 
 ### Resolved 2026-04-22 (replaces "Still open" section below)
 

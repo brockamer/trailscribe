@@ -86,7 +86,7 @@ Phase 0 complete (2026-04-24). All 20 P0 stories shipped.
 - CI green on PR: typecheck + Vitest (24 tests) + ESLint.
 - `deploy-production` workflow temporarily gated to manual dispatch until first prod deploy lands.
 
-**Phase 1 next.** Draft `plans/phase-1-alpha-mvp.md` for sign-off before implementation starts (see epic #30). Note issue #31 — AI/LLM layer routes through OpenRouter, not OpenAI directly, which supersedes the `gpt-5-mini` / `OPENAI_*` decisions below.
+**Phase 1 next.** Draft `plans/phase-1-alpha-mvp.md` for sign-off before implementation starts (see epic #30). Note issue #31 — AI/LLM layer routes through OpenRouter, not OpenAI directly, which supersedes the `claude-sonnet-4-6` / `OPENAI_*` decisions below.
 
 ## Conventions
 
@@ -104,7 +104,7 @@ Phase 0 complete (2026-04-24). All 20 P0 stories shipped.
 - **D4 Token budget:** 50,000/day
 - **D6 Reply:** IPC Inbound primary + email fallback (fallback gated by D9)
 - **D7 Branch:** rename `master` → `main` at Phase 0
-- **Model:** `openai/gpt-5-mini` via OpenRouter (per #31; supersedes the original direct-OpenAI `gpt-5-mini` decision)
+- **Model:** `anthropic/claude-sonnet-4-6` via OpenRouter (per #31; supersedes the original direct-OpenAI `claude-sonnet-4-6` decision)
 
 ## Also locked (2026-04-22)
 
@@ -130,7 +130,7 @@ Phase 0 complete (2026-04-24). All 20 P0 stories shipped.
 - `TRAILSCRIBE_ENV` — dev/staging/production
 - `GOOGLE_MAPS_BASE`, `MAPSHARE_BASE` — link prefixes
 - `LLM_BASE_URL` — `https://openrouter.ai/api/v1` (override for direct-provider routing)
-- `LLM_MODEL` — `openai/gpt-5-mini` (OpenRouter format `<provider>/<model>`)
+- `LLM_MODEL` — `anthropic/claude-sonnet-4-6` (OpenRouter format `<provider>/<model>`)
 - `LLM_INPUT_COST_PER_1K` / `LLM_OUTPUT_COST_PER_1K` — ledger pricing; set from the chosen model provider's pricing page
 - `LLM_PROVIDER_HEADERS_JSON` — optional JSON blob for OpenRouter `HTTP-Referer` + `X-Title` analytics headers
 - `APPEND_COST_SUFFIX` — bool (α default: false)

@@ -1,11 +1,12 @@
 import { z } from "zod";
 import type { Env } from "../env.js";
 import { chatCompletion } from "../adapters/ai/openrouter.js";
+import { log } from "../adapters/logging/worker-logs.js";
 
 /**
  * Narrative module — composes a `!post` event into a structured blog post via
  * the configured LLM (P1-04: model + base URL come from env, defaulting to
- * `openai/gpt-5-mini` on OpenRouter).
+ * `anthropic/claude-sonnet-4-6` on OpenRouter).
  *
  * The orchestrator (P1-16) calls `generateNarrative(input)` once per `!post`,
  * gets back `{ title, haiku, body, usage }`, and:
@@ -46,7 +47,7 @@ const NARRATIVE_SCHEMA = {
     type: "object",
     properties: {
       title: { type: "string", maxLength: 60 },
-      haiku: { type: "string", maxLength: 80 },
+      haiku: { type: "string", maxLength: 110 },
       body: { type: "string", maxLength: 500 },
     },
     required: ["title", "haiku", "body"],
@@ -56,7 +57,7 @@ const NARRATIVE_SCHEMA = {
 
 const NarrativeContentSchema = z.object({
   title: z.string().min(1).max(60),
-  haiku: z.string().min(1).max(80),
+  haiku: z.string().min(1).max(110),
   body: z.string().min(1).max(500),
 });
 
@@ -70,7 +71,7 @@ const SYSTEM_PROMPT = [
   "Always return valid JSON matching the schema. No prose outside the JSON.",
   "Constraints:",
   '- "title": ≤ 60 characters, evocative, no clickbait, no emoji.',
-  '- "haiku": exactly three lines separated by newlines, in 5/7/5 syllables, ≤ 80 characters total. Plain English. No formatting marks.',
+  '- "haiku": exactly three lines separated by newlines, in 5/7/5 syllables, ≤ 110 characters total (count strictly — including spaces and newlines). Plain English. No formatting marks.',
   '- "body": ≤ 500 characters. Match the voice and tone of the input note. First-person if the note is first-person; observational if observational. Do not invent specifics not implied by the note, place, or weather context.',
 ].join("\n");
 
@@ -83,7 +84,7 @@ export class NarrativeError extends Error {
 
 export async function generateNarrative(input: NarrativeInput): Promise<NarrativeOutput> {
   const userPrompt = buildUserPrompt(input);
-  const model = input.env.LLM_MODEL || "openai/gpt-5-mini";
+  const model = input.env.LLM_MODEL || "anthropic/claude-sonnet-4-6";
 
   const response = await chatCompletion({
     req: {
@@ -101,6 +102,21 @@ export async function generateNarrative(input: NarrativeInput): Promise<Narrativ
 
   const content = response.choices[0]?.message?.content;
   if (typeof content !== "string" || content.length === 0) {
+    const choice0 = response.choices[0];
+    log({
+      event: "narrative_diag",
+      level: "warn",
+      diag: {
+        model,
+        choicesLen: response.choices.length,
+        finishReason: choice0?.finish_reason ?? null,
+        messageKeys: choice0?.message ? Object.keys(choice0.message) : [],
+        contentType: typeof choice0?.message?.content,
+        contentLen:
+          typeof choice0?.message?.content === "string" ? choice0.message.content.length : 0,
+        usage: response.usage ?? null,
+      },
+    });
     throw new NarrativeError("LLM returned no content");
   }
 

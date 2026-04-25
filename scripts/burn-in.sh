@@ -50,8 +50,9 @@ for CMD in "${CMDS[@]}"; do
   TS=$(date +%s%3N)
   PAYLOAD=$(jq --arg ts "$TS" '.Events[0].timeStamp = ($ts | tonumber)' "$FIXTURE")
 
+  # 60s timeout: gpt-5-mini reasoning + journal commit can take 25-40s on !post.
   STATUS=$(curl --silent --output /dev/null --write-out "%{http_code}" \
-    --max-time 30 \
+    --max-time 60 \
     -X POST "$STAGING_URL" \
     -H "X-Outbound-Auth-Token: $GARMIN_INBOUND_TOKEN" \
     -H "Content-Type: application/json" \

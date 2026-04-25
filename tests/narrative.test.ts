@@ -84,7 +84,7 @@ describe("generateNarrative — happy path", () => {
     expect(headers["Content-Type"]).toBe("application/json");
   });
 
-  test("uses LLM_MODEL from env (default: openai/gpt-5-mini)", async () => {
+  test("uses LLM_MODEL from env (default: anthropic/claude-sonnet-4-6)", async () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
     );
@@ -93,7 +93,7 @@ describe("generateNarrative — happy path", () => {
 
     const init = fetchSpy.mock.calls[0][1] as RequestInit;
     const body = JSON.parse(init.body as string) as { model: string };
-    expect(body.model).toBe("openai/gpt-5-mini");
+    expect(body.model).toBe("anthropic/claude-sonnet-4-6");
   });
 
   test("requests json_schema structured output", async () => {

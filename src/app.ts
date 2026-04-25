@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "./env.js";
-import { imeiAllowSet } from "./env.js";
-import type { GarminEnvelope, GarminEvent } from "./core/types.js";
+import { appendCostSuffix, imeiAllowSet } from "./env.js";
+import type { CommandResult, GarminEnvelope, GarminEvent } from "./core/types.js";
 import {
   idempotencyKey,
   readRecord,
@@ -14,6 +14,8 @@ import { log } from "./adapters/logging/worker-logs.js";
 import { parseCommand } from "./core/grammar.js";
 import { orchestrate } from "./core/orchestrator.js";
 import { sendReply } from "./adapters/outbound/garmin-ipc-inbound.js";
+import { buildReply } from "./core/reply.js";
+import { monthlyTotals } from "./core/ledger.js";
 
 /**
  * Hono app factory. Lives in its own module so tests can call `makeApp()`
@@ -144,15 +146,15 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
       freeText: event.freeText ?? null,
       key,
     });
-    await trySendReplyWithCheckpoint(env, key, event.imei, "Unknown command. Try !help");
+    const messages = buildReply({ body: "Unknown command. Try !help", env });
+    await trySendReplyWithCheckpoint(env, key, event.imei, messages);
     await markCompleted(env, key);
     return;
   }
 
-  let body: string;
+  let result: CommandResult;
   try {
-    const result = await orchestrate(command, { env, imei: event.imei, lat, lon });
-    body = result.body;
+    result = await orchestrate(command, { env, imei: event.imei, lat, lon });
     log({
       event: "orchestrate_ok",
       level: "info",
@@ -170,15 +172,30 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
       error: msg,
       key,
     });
-    body = `Error: ${msg.slice(0, 80)}`;
     await markFailed(env, key, msg);
+    const errMessages = buildReply({ body: `Error: ${msg.slice(0, 80)}`, env });
     // Still try to deliver the error reply to the user, but don't mark
     // completed — replay will retry orchestrate.
-    await trySendReplyWithCheckpoint(env, key, event.imei, body);
+    await trySendReplyWithCheckpoint(env, key, event.imei, errMessages);
     return;
   }
 
-  const replyOk = await trySendReplyWithCheckpoint(env, key, event.imei, body);
+  // The cost suffix is opt-in; only read the ledger when the flag is on, to
+  // save the KV round-trip on every reply. The orchestrator already updated
+  // the ledger for !ping et al, so this read sees the just-written total.
+  const costUsdMtd = appendCostSuffix(env)
+    ? (await monthlyTotals(env)).usd_cost
+    : undefined;
+
+  const messages = buildReply({
+    body: result.body,
+    lat: result.lat,
+    lon: result.lon,
+    costUsdMtd,
+    env,
+  });
+
+  const replyOk = await trySendReplyWithCheckpoint(env, key, event.imei, messages);
   if (replyOk) {
     await markCompleted(env, key);
   }
@@ -187,18 +204,18 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
 /**
  * Wrap the IPC Inbound send in a withCheckpoint so a webhook replay after a
  * successful send (but before markCompleted reached KV) doesn't double-send to
- * the device. Returns true on first-call success or cache-hit replay; false on
- * send failure.
+ * the device. Takes a pre-built page array (1 or 2 entries) from buildReply.
+ * Returns true on first-call success or cache-hit replay; false on send failure.
  */
 async function trySendReplyWithCheckpoint(
   env: Env,
   idemKey: string,
   imei: string,
-  message: string,
+  messages: string[],
 ): Promise<boolean> {
   try {
     await withCheckpoint(env, idemKey, "reply", async () => {
-      await sendReply(imei, [message], env);
+      await sendReply(imei, messages, env);
       return { sentAt: Date.now() };
     });
     return true;

@@ -36,6 +36,7 @@ export async function sha256Hex(input: string): Promise<string> {
 export interface IdempotencyRecord {
   status: "received" | "processing" | "completed" | "failed";
   receivedAt: number;
+  completedAt?: number;
   completedOps?: string[];
   error?: string;
 }

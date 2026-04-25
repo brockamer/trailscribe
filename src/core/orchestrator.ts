@@ -1,12 +1,19 @@
 import type { ParsedCommand, CommandResult } from "./types.js";
 import type { Env } from "../env.js";
 import { monthlyTotals, recordTransaction, type LedgerSnapshot } from "./ledger.js";
+import { handlePost } from "./commands/post.js";
 
 export interface OrchestratorContext {
   env: Env;
   imei: string;
   lat?: number;
   lon?: number;
+  /**
+   * Idempotency key for the inbound webhook delivery. Threaded into command
+   * handlers so per-op `withCheckpoint` calls (P1-13) can short-circuit on
+   * replay. Required from Phase 1 onward.
+   */
+  idemKey: string;
 }
 
 /**
@@ -38,7 +45,7 @@ export async function orchestrate(
       return { body: formatCostBody(snap) };
     }
     case "post":
-      return { body: "α: !post not yet implemented (Phase 1)" };
+      return handlePost(command, ctx);
     case "mail":
       return { body: "α: !mail not yet implemented (Phase 1)" };
     case "todo":

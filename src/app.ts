@@ -154,7 +154,7 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
 
   let result: CommandResult;
   try {
-    result = await orchestrate(command, { env, imei: event.imei, lat, lon });
+    result = await orchestrate(command, { env, imei: event.imei, lat, lon, idemKey: key });
     log({
       event: "orchestrate_ok",
       level: "info",

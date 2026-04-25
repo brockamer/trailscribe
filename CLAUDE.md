@@ -139,7 +139,7 @@ Phase 0 complete (2026-04-24). All 20 P0 stories shipped.
 - `IPC_INBOUND_SENDER` — `Sender` field for outbound IPC Inbound messages (the on-device "From" string); defaults to `RESEND_FROM_EMAIL` but decoupled
 - `RESEND_FROM_EMAIL` — e.g. `trailscribe@resend.dev`
 - `RESEND_FROM_NAME` — e.g. `TrailScribe`
-- `JOURNAL_POST_PATH_TEMPLATE` — e.g. `content/posts/{yyyy}-{mm}-{dd}-{slug}.md`
+- `JOURNAL_POST_PATH_TEMPLATE` — e.g. `_posts/{yyyy}-{mm}-{dd}-{slug}.md`
 - `JOURNAL_URL_TEMPLATE` — public URL pattern for committed posts; pinned by P1-20
 
 ## Garmin IPC quick-ref (authoritative sources in `materials/`)

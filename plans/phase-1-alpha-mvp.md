@@ -253,7 +253,7 @@ Reply budget is 320 chars (two SMS). Each `Message` field is hard-capped at 160 
 
 **Context.** `src/adapters/publish/github-pages.ts` is a stub. We commit one markdown file per `!post` to a dedicated journal repo (`GITHUB_JOURNAL_REPO`, e.g. `brockamer/trailscribe-journal`). Endpoint is the **GitHub Contents API**: `PUT /repos/{owner}/{repo}/contents/{path}` with a base64 file body and a commit message. Auth via fine-grained PAT with `contents:write` on exactly the journal repo.
 
-Path template comes from `JOURNAL_POST_PATH_TEMPLATE`, default `content/posts/{yyyy}-{mm}-{dd}-{slug}.md`. Public URL uses `JOURNAL_URL_TEMPLATE` (P1-04) so the reply link survives a theme swap.
+Path template comes from `JOURNAL_POST_PATH_TEMPLATE`, default `_posts/{yyyy}-{mm}-{dd}-{slug}.md`. Public URL uses `JOURNAL_URL_TEMPLATE` (P1-04) so the reply link survives a theme swap.
 
 The slug is derived from the narrative title (lowercase, alphanumerics + hyphens, ≤ 50 chars).
 
@@ -567,7 +567,7 @@ Every side-effecting step (4, 5, 8) goes through `withCheckpoint` (P1-13) so rep
 - [ ] Repo `brockamer/trailscribe-journal` (or whatever the user picks) created, public.
 - [ ] GitHub Pages enabled, source = `main` branch, `/` root.
 - [ ] Theme picked: Jekyll `minima` (recommended — zero-config, GitHub builds automatically) or Hugo `terminal`-style (needs an Action). Theme committed.
-- [ ] `content/posts/2026-04-26-hello.md` placeholder committed with the same frontmatter shape P1-08 emits; visible at the public Pages URL.
+- [ ] `_posts/2026-04-26-hello.md` placeholder committed with the same frontmatter shape P1-08 emits; visible at the public Pages URL.
 - [ ] **Pin `JOURNAL_URL_TEMPLATE`** in `wrangler.toml` to match the theme's actual URL pattern (Jekyll default: `{owner}.github.io/{repo}/{yyyy}/{mm}/{dd}/{slug}.html`). Verify by clicking the placeholder post's URL.
 - [ ] Fine-grained PAT with `contents:write` scoped to *only* this repo generated; stored as `GITHUB_JOURNAL_TOKEN` secret in staging + production via `wrangler secret put`.
 - [ ] `docs/setup-cloudflare.md` updated with the journal-repo setup steps (theme choice, Pages config, PAT scoping, URL template).

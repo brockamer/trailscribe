@@ -370,7 +370,7 @@ If the same webhook replays after partial completion:
 
 ### Signed off (2026-04-22)
 
-- **D1. Inbound auth:** Static bearer token stored as `GARMIN_INBOUND_TOKEN` Wrangler Secret. Verify `Authorization: Bearer <token>` on every Outbound webhook. Rotation yearly.
+- **D1. Inbound auth:** Static token stored as `GARMIN_INBOUND_TOKEN` Wrangler Secret. Garmin IPC Outbound sends the token as a raw value in the `X-Outbound-Auth-Token` header (not the standard `Authorization: Bearer` form — verified against the live Garmin gateway 2026-04-25). Rotation yearly.
 - **D2. Garmin Professional tier:** Available. Full IPC Outbound + IPC Inbound path enabled.
 - **D3. Schema version:** V2 for α. Code tolerant of V3/V4 fields.
 - **D4. Daily token budget:** `DAILY_TOKEN_BUDGET=50000` tokens/day (≈ 150 `!post` narratives/day). Revise after one week of real usage.

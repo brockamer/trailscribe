@@ -116,7 +116,7 @@ for i in $(seq 1 "$N"); do
   status=$(curl --silent --output /dev/null --write-out "%{http_code}" \
     --max-time 30 \
     -X POST "$STAGING_URL" \
-    -H "Authorization: Bearer $GARMIN_INBOUND_TOKEN" \
+    -H "X-Outbound-Auth-Token: $GARMIN_INBOUND_TOKEN" \
     -H "Content-Type: application/json" \
     --data-binary "@$FIXTURE")
   if [[ "$status" != "200" ]]; then

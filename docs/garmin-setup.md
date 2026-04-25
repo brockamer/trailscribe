@@ -45,14 +45,16 @@ have multiple devices).
 4. **Authorization:** **Static Token**. Paste the value of
    `GARMIN_INBOUND_TOKEN` (generate via `openssl rand -hex 32`; see
    [`setup-cloudflare.md`](setup-cloudflare.md) §2).
-   - Garmin will include this value in the `Authorization` header on every
-     POST; TrailScribe verifies it before any side-effect work.
+   - Garmin sends this as a raw token in the `X-Outbound-Auth-Token`
+     header (not the standard `Authorization: Bearer` form — verified
+     empirically against the live Garmin gateway, 2026-04-25). TrailScribe
+     verifies it before any side-effect work.
 5. **Save.** Send `!ping` from the device to validate — watch `wrangler tail`.
 
 ### What the Worker does with the POST
 
 Per event in the envelope:
-1. Verify `Authorization: Bearer <token>`.
+1. Verify `X-Outbound-Auth-Token: <token>` (Garmin's custom header, not standard `Authorization`).
 2. Validate the V2 envelope shape.
 3. Confirm `imei` is in the allowlist.
 4. Compute composite idempotency key: `sha256(imei : timeStamp : messageCode : sha256(freeText))`.

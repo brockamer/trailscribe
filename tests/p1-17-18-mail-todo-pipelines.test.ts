@@ -57,7 +57,7 @@ async function postIpc(body: unknown): Promise<Response> {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${env.GARMIN_INBOUND_TOKEN}`,
+        "x-outbound-auth-token": env.GARMIN_INBOUND_TOKEN,
       },
       body: JSON.stringify(body),
     },

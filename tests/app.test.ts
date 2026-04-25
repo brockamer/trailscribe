@@ -19,7 +19,7 @@ beforeEach(() => {
 async function postIpc(body: unknown, opts: { bearer?: string } = {}): Promise<Response> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (opts.bearer !== undefined) {
-    headers["authorization"] = `Bearer ${opts.bearer}`;
+    headers["x-outbound-auth-token"] = opts.bearer;
   }
   return app.request(
     "/garmin/ipc",
@@ -83,7 +83,7 @@ describe("Worker /garmin/ipc — Phase 0 behavior", () => {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          authorization: `Bearer ${env.GARMIN_INBOUND_TOKEN}`,
+          "x-outbound-auth-token": env.GARMIN_INBOUND_TOKEN,
         },
         body: "{ this is not json",
       },
@@ -111,7 +111,7 @@ describe("Worker /garmin/ipc — Phase 0 behavior", () => {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          authorization: `Bearer ${env2.GARMIN_INBOUND_TOKEN}`,
+          "x-outbound-auth-token": env2.GARMIN_INBOUND_TOKEN,
         },
         body: JSON.stringify(fixture),
       },

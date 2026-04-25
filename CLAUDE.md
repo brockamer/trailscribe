@@ -115,9 +115,9 @@ Phase 0 complete (2026-04-24). All 20 P0 stories shipped.
 ## External services
 
 **Secrets (Wrangler Secrets):**
-- `GARMIN_INBOUND_TOKEN` — static bearer; verify `Authorization: Bearer <token>` on Outbound webhooks
+- `GARMIN_INBOUND_TOKEN` — static token; verify `X-Outbound-Auth-Token: <token>` on Outbound webhooks (Garmin sends raw token in custom header, not standard `Authorization: Bearer`)
 - `GARMIN_IPC_INBOUND_API_KEY` — `X-API-Key` for Garmin IPC Inbound
-- `GARMIN_IPC_INBOUND_BASE_URL` — per-tenant (e.g. `https://ipcinbound.inreachapp.com/api`)
+- `GARMIN_IPC_INBOUND_BASE_URL` — per-tenant; **host only, no path** (e.g. `https://ipcinbound.inreachapp.com`). Code appends `/api/Messaging/Message`. Found in Garmin Explore → IPC → Inbound Settings → "Inbound URL".
 - `IMEI_ALLOWLIST` — comma-sep accepted IMEIs (defense-in-depth)
 - `LLM_API_KEY` — OpenRouter API key (provider-neutral; supersedes `OPENAI_API_KEY` per #31)
 - `TODOIST_API_TOKEN`

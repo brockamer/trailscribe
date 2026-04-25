@@ -55,8 +55,8 @@ export function makeApp() {
    *      cascade for app-level failures.
    */
   app.post("/garmin/ipc", async (c) => {
-    const auth = c.req.header("authorization");
-    const expected = `Bearer ${c.env.GARMIN_INBOUND_TOKEN}`;
+    const auth = c.req.header("x-outbound-auth-token");
+    const expected = c.env.GARMIN_INBOUND_TOKEN;
     if (!auth || auth !== expected) {
       log({ event: "auth_fail", level: "warn", path: "/garmin/ipc" });
       return c.text("ok", 200);

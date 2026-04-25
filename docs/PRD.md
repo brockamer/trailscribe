@@ -302,14 +302,16 @@ If the same webhook replays after partial completion:
 
 **Headline:** `!post` dominates cost. Non-AI commands are effectively free.
 
-### OpenAI configuration
-- **Model:** `gpt-5-mini` (per user direction 2026-04-22, override from earlier `gpt-4o-mini` default).
+### LLM configuration
+> Per issue [#31](https://github.com/brockamer/trailscribe/issues/31), the AI layer routes through **OpenRouter** rather than OpenAI directly. OpenRouter exposes one HTTPS API and one API key while letting us pick any model from many providers — same OpenAI-compatible request/response shape, different base URL and auth header. Lets us swap models without code changes.
+
+- **Model:** `openai/gpt-5-mini` (OpenRouter format `<provider>/<model>`; per user direction 2026-04-22, override from earlier `gpt-4o-mini` default).
 - **Output mode:** JSON mode with schema `{ title: string ≤60ch, haiku: string ≤80ch, body: string ≤500ch }`.
 - **Prompt:** Concise system prompt with explicit length directives ("Respond in under 150 tokens", "haiku must be exactly 5-7-5").
-- **Target token use:** ≤300 tokens per `!post` narrative (prompt + response). Actual $/tx depends on current GPT-5-mini pricing — will be set in env (`OPENAI_INPUT_COST_PER_1K`, `OPENAI_OUTPUT_COST_PER_1K`) from the OpenAI pricing page at deploy time and updated when OpenAI changes rates. **Design assumes cost remains under $0.05/tx; alert if drift above $0.03 sustained.**
+- **Target token use:** ≤300 tokens per `!post` narrative (prompt + response). Actual $/tx depends on the current model's pricing — will be set in env (`LLM_INPUT_COST_PER_1K`, `LLM_OUTPUT_COST_PER_1K`) from the OpenRouter or model-provider pricing page at deploy time and updated when prices change. **Design assumes cost remains under $0.05/tx; alert if drift above $0.03 sustained.**
 
 ### Token accounting (ground truth)
-- Read `usage.prompt_tokens` and `usage.completion_tokens` from OpenAI response. **Never use character-count proxies** (as existing code does).
+- Read `usage.prompt_tokens` and `usage.completion_tokens` from the LLM response (OpenRouter mirrors the OpenAI response shape). **Never use character-count proxies** (as existing code does).
 - Ledger records: `{ command, timestamp, prompt_tokens, completion_tokens, usd_cost, command_tags }`.
 - Monthly rollup via `ledger:<YYYY-MM>` KV key.
 
@@ -376,7 +378,7 @@ If the same webhook replays after partial completion:
 - **D7. Branch rename:** `master` → `main` at Phase 0. Update `origin/HEAD`, GitHub default branch, CI target.
 
 ### Override (2026-04-22)
-- **Model:** `gpt-5-mini` (replaces earlier `gpt-4o-mini` default). Cost per 1K set via env at deploy time from OpenAI pricing page.
+- **Model:** `gpt-5-mini` (replaces earlier `gpt-4o-mini` default). Per [#31](https://github.com/brockamer/trailscribe/issues/31), routed through OpenRouter as `openai/gpt-5-mini`; env var is `LLM_MODEL` (provider-neutral). Cost per 1K set via env at deploy time from the model provider's pricing page.
 
 ### Resolved 2026-04-22 (replaces "Still open" section below)
 

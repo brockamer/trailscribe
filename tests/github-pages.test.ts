@@ -32,7 +32,7 @@ beforeEach(() => {
     GITHUB_JOURNAL_REPO: "brockamer/trailscribe-journal",
     GITHUB_JOURNAL_BRANCH: "main",
     GITHUB_JOURNAL_TOKEN: "ghp_test_token_xyz123",
-    JOURNAL_POST_PATH_TEMPLATE: "content/posts/{yyyy}-{mm}-{dd}-{slug}.md",
+    JOURNAL_POST_PATH_TEMPLATE: "_posts/{yyyy}-{mm}-{dd}-{slug}.md",
     JOURNAL_URL_TEMPLATE: "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html",
   });
   fetchSpy = vi.fn();
@@ -79,7 +79,7 @@ describe("publishPost — happy path", () => {
       .mockResolvedValueOnce(new Response(null, { status: 404 })) // GET path: free
       .mockResolvedValueOnce(
         jsonResponse({
-          content: { sha: "blob-sha", path: "content/posts/2026-04-25-test.md", html_url: "x" },
+          content: { sha: "blob-sha", path: "_posts/2026-04-25-test.md", html_url: "x" },
           commit: { sha: "commit-sha-abc123" },
         }),
       );
@@ -95,7 +95,7 @@ describe("publishPost — happy path", () => {
     expect(result.url).toBe(
       "https://brockamer.github.io/trailscribe-journal/2026/04/25/test-title.html",
     );
-    expect(result.path).toBe("content/posts/2026-04-25-test-title.md");
+    expect(result.path).toBe("_posts/2026-04-25-test-title.md");
     expect(result.sha).toBe("commit-sha-abc123");
   });
 
@@ -248,7 +248,7 @@ describe("publishPost — slug collision", () => {
       now: () => NOW,
     });
 
-    expect(result.path).toBe("content/posts/2026-04-25-test-2.md");
+    expect(result.path).toBe("_posts/2026-04-25-test-2.md");
     expect(result.url).toContain("/2026/04/25/test-2.html");
     expect(fetchSpy).toHaveBeenCalledTimes(3);
   });

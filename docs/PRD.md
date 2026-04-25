@@ -382,7 +382,7 @@ If the same webhook replays after partial completion:
 
 ### Resolved 2026-04-22 (replaces "Still open" section below)
 
-- **D5. Blog platform:** **GitHub Pages + markdown commits via GitHub Contents API.** Journal lives in a dedicated repo (e.g., `brockamer/trailscribe-journal`); Worker commits `content/posts/YYYY-MM-DD-<slug>.md` with frontmatter. Theme TBD at Phase 0 (default: Jekyll `minima` for zero-config, swap to Hugo later if desired).
+- **D5. Blog platform:** **GitHub Pages + markdown commits via GitHub Contents API.** Journal lives in a dedicated repo (e.g., `brockamer/trailscribe-journal`); Worker commits `_posts/YYYY-MM-DD-<slug>.md` with frontmatter. Theme TBD at Phase 0 (default: Jekyll `minima` for zero-config, swap to Hugo later if desired).
 - **D8. Outbound email:** **Resend.** `RESEND_API_KEY` secret; `RESEND_FROM_EMAIL=trailscribe@resend.dev` for α, move to own-domain later. Replaces all Gmail OAuth bindings in §3.
 - **D9. Email-fallback reply:** **skipped for α.** If IPC Inbound returns 5xx after 3 retries (1s/4s/16s backoff), write ledger entry `reply_delivery: failed` and return 200 OK to Garmin. Side effects (blog post, email, task) still persist. Revisit in Phase 2 if reliability data warrants.
 
@@ -404,7 +404,7 @@ Options considered:
 → **My recommendation: GitHub Pages + markdown commits via GitHub Contents API.**
 - Reasons: you already have GitHub SSH/token set up; zero subscription; posts are durable markdown in a repo (easy to migrate, easy to audit, easy to edit after); Worker commits a file, done; satisfies Yuki-style "blog never dark" without vendor lock-in.
 - Tradeoff: requires picking a theme (Hugo minimal theme like `hugo-theme-terminal` or Jekyll `minima` — 30min setup) and wiring a deploy action (GitHub's built-in Pages auto-builds Jekyll; Hugo needs one Action). Theme/deploy setup happens once at Phase 0; not in the hot path.
-- Binding: repo name → `trailscribe-journal` or similar, public, branch `main`, path `content/posts/YYYY-MM-DD-<slug>.md`.
+- Binding: repo name → `trailscribe-journal` or similar, public, branch `main`, path `_posts/YYYY-MM-DD-<slug>.md`.
 
 → **Thumbs-up / thumbs-down, or name a different platform.** If thumbs-up, I'll default the adapter to GitHub Pages in the Phase 0 plan and you can later swap for Ghost with a single-file change.
 

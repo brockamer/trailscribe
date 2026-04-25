@@ -75,7 +75,7 @@ export function makeTestEnv(overrides: Partial<Env> = {}): Env {
     IPC_INBOUND_SENDER: "trailscribe@resend.dev",
     RESEND_FROM_EMAIL: "trailscribe@resend.dev",
     RESEND_FROM_NAME: "TrailScribe",
-    JOURNAL_POST_PATH_TEMPLATE: "content/posts/{yyyy}-{mm}-{dd}-{slug}.md",
+    JOURNAL_POST_PATH_TEMPLATE: "_posts/{yyyy}-{mm}-{dd}-{slug}.md",
     JOURNAL_URL_TEMPLATE: "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html",
 
     GARMIN_INBOUND_TOKEN: "test-bearer-token-abcdef0123456789",

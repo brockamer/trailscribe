@@ -1,0 +1,28 @@
+{
+  "Version": "2.0",
+  "Events": [
+    {
+      "imei": "REPLACE_WITH_REAL_IMEI",
+      "messageCode": 3,
+      "freeText": "!todo replay-test idempotency check",
+      "timeStamp": 1745596920000,
+      "addresses": [
+        { "address": "trailscribe@resend.dev" }
+      ],
+      "point": {
+        "latitude": 37.1682,
+        "longitude": -118.5891,
+        "altitude": 3307,
+        "gpsFix": 2,
+        "course": 180,
+        "speed": 0
+      },
+      "status": {
+        "autonomous": 1,
+        "lowBattery": 0,
+        "intervalChange": 0,
+        "resetDetected": 0
+      }
+    }
+  ]
+}

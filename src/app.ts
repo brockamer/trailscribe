@@ -181,7 +181,7 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
 
 async function trySendReply(imei: string, message: string, env: Env): Promise<boolean> {
   try {
-    await sendReply(imei, message, env);
+    await sendReply(imei, [message], env);
     return true;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

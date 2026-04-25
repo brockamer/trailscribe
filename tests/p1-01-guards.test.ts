@@ -64,7 +64,7 @@ beforeEach(() => {
   orchestrateMock.mockReset();
   orchestrateMock.mockResolvedValue({ body: "pong" });
   sendReplyMock.mockReset();
-  sendReplyMock.mockResolvedValue(undefined);
+  sendReplyMock.mockResolvedValue({ count: 1 });
   logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -110,9 +110,9 @@ describe("P1-01 — messageCode guard (Guard 1)", () => {
     expect(ctx.lon).toBeCloseTo(-118.5891, 4);
 
     expect(sendReplyMock).toHaveBeenCalledTimes(1);
-    const [imei, message] = sendReplyMock.mock.calls[0];
+    const [imei, messages] = sendReplyMock.mock.calls[0];
     expect(imei).toBe("123456789012345");
-    expect(message).toBe("pong");
+    expect(messages).toEqual(["pong"]);
 
     expect(kvSize(env.TS_IDEMPOTENCY)).toBe(1);
     const rec = await readIdemRecord(freeTextPing.Events[0]);
@@ -186,7 +186,7 @@ describe("P1-01 — parse + orchestrate failure paths", () => {
 
     expect(orchestrateMock).not.toHaveBeenCalled();
     expect(sendReplyMock).toHaveBeenCalledTimes(1);
-    expect(sendReplyMock.mock.calls[0][1]).toBe("Unknown command. Try !help");
+    expect(sendReplyMock.mock.calls[0][1]).toEqual(["Unknown command. Try !help"]);
 
     const events = loggedEvents().map((e) => e.event);
     expect(events).toContain("parse_unknown");
@@ -198,7 +198,7 @@ describe("P1-01 — parse + orchestrate failure paths", () => {
     expect(res.status).toBe(200);
 
     expect(sendReplyMock).toHaveBeenCalledTimes(1);
-    expect(sendReplyMock.mock.calls[0][1]).toMatch(/^Error: /);
+    expect((sendReplyMock.mock.calls[0][1] as string[])[0]).toMatch(/^Error: /);
 
     const events = loggedEvents().map((e) => e.event);
     expect(events).toContain("orchestrate_error");

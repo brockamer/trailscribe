@@ -1,6 +1,9 @@
 import type { Env } from "../../env.js";
 
-const TODOIST_URL = "https://api.todoist.com/rest/v2/tasks";
+// Todoist consolidated all REST/Sync APIs into a unified `/api/v1/` namespace.
+// Old `/rest/v2/tasks` returns HTTP 410 Gone (verified against live API
+// 2026-04-25). Request/response shape is unchanged.
+const TODOIST_URL = "https://api.todoist.com/api/v1/tasks";
 const TODOIST_TASK_URL = "https://todoist.com/showTask?id=";
 const RETRY_DELAYS_MS = [1000, 4000, 16000] as const;
 

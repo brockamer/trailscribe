@@ -2,9 +2,14 @@ import { Hono } from "hono";
 import type { Env } from "./env.js";
 import { imeiAllowSet } from "./env.js";
 import type { GarminEnvelope, GarminEvent } from "./core/types.js";
-import { idempotencyKey, IDEMPOTENCY_TTL_SECONDS } from "./core/idempotency.js";
-import type { IdempotencyRecord } from "./core/idempotency.js";
-import { putJSON } from "./adapters/storage/kv.js";
+import {
+  idempotencyKey,
+  readRecord,
+  writeRecord,
+  withCheckpoint,
+  markCompleted,
+  markFailed,
+} from "./core/idempotency.js";
 import { log } from "./adapters/logging/worker-logs.js";
 import { parseCommand } from "./core/grammar.js";
 import { orchestrate } from "./core/orchestrator.js";
@@ -30,11 +35,13 @@ export function makeApp() {
   /**
    * Garmin IPC Outbound receiver.
    *
-   * Per PRD §4, §5 + plan P1-01:
+   * Per PRD §4, §5 + plan P1-01 + P1-13:
    *   1. Verify bearer token (static, configured on Garmin Portal Connect).
    *   2. Parse body as Garmin V2 envelope.
-   *   3. Per event: verify IMEI allowlist; compute idempotency key;
-   *      short-circuit on replay; write `received` record on first delivery.
+   *   3. Per event: verify IMEI allowlist; compute idempotency key; on
+   *      `status="completed"` replay short-circuit immediately. Other states
+   *      (received/processing/failed) fall through; per-op `withCheckpoint`
+   *      calls skip already-done sub-ops.
    *   4. Guard 1 — only `messageCode === 3` (Free Text) dispatches. SOS
    *      (`messageCode === 4`) is logged and dropped per PRD §1 ("not a
    *      safety system"). Position Reports (`messageCode === 0`) and other
@@ -84,10 +91,9 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
   }
 
   const key = await idempotencyKey(event);
-  const kvKey = `idem:${key}`;
 
-  const existing = await env.TS_IDEMPOTENCY.get(kvKey);
-  if (existing !== null) {
+  const existing = await readRecord(env, key);
+  if (existing?.status === "completed") {
     log({
       event: "idempotent_replay",
       level: "info",
@@ -98,13 +104,13 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
     return;
   }
 
-  const record: IdempotencyRecord = {
-    status: "received",
-    receivedAt: Date.now(),
-  };
-  await putJSON(env.TS_IDEMPOTENCY, kvKey, record, {
-    expirationTtl: IDEMPOTENCY_TTL_SECONDS,
-  });
+  // First delivery (or partial-progress replay): seed/refresh the record.
+  // Subsequent withCheckpoint calls and the terminal markCompleted/markFailed
+  // overwrite this entry, preserving any completedOps/opResults from a prior
+  // partial run.
+  if (!existing) {
+    await writeRecord(env, key, { status: "received", receivedAt: Date.now() });
+  }
 
   if (event.messageCode !== 3) {
     if (event.messageCode === 4) {
@@ -138,7 +144,8 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
       freeText: event.freeText ?? null,
       key,
     });
-    await trySendReply(event.imei, "Unknown command. Try !help", env);
+    await trySendReplyWithCheckpoint(env, key, event.imei, "Unknown command. Try !help");
+    await markCompleted(env, key);
     return;
   }
 
@@ -164,24 +171,36 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
       key,
     });
     body = `Error: ${msg.slice(0, 80)}`;
+    await markFailed(env, key, msg);
+    // Still try to deliver the error reply to the user, but don't mark
+    // completed — replay will retry orchestrate.
+    await trySendReplyWithCheckpoint(env, key, event.imei, body);
+    return;
   }
 
-  const replyOk = await trySendReply(event.imei, body, env);
+  const replyOk = await trySendReplyWithCheckpoint(env, key, event.imei, body);
   if (replyOk) {
-    const completed: IdempotencyRecord = {
-      status: "completed",
-      receivedAt: record.receivedAt,
-      completedAt: Date.now(),
-    };
-    await putJSON(env.TS_IDEMPOTENCY, kvKey, completed, {
-      expirationTtl: IDEMPOTENCY_TTL_SECONDS,
-    });
+    await markCompleted(env, key);
   }
 }
 
-async function trySendReply(imei: string, message: string, env: Env): Promise<boolean> {
+/**
+ * Wrap the IPC Inbound send in a withCheckpoint so a webhook replay after a
+ * successful send (but before markCompleted reached KV) doesn't double-send to
+ * the device. Returns true on first-call success or cache-hit replay; false on
+ * send failure.
+ */
+async function trySendReplyWithCheckpoint(
+  env: Env,
+  idemKey: string,
+  imei: string,
+  message: string,
+): Promise<boolean> {
   try {
-    await sendReply(imei, [message], env);
+    await withCheckpoint(env, idemKey, "reply", async () => {
+      await sendReply(imei, [message], env);
+      return { sentAt: Date.now() };
+    });
     return true;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

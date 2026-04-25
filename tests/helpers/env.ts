@@ -15,13 +15,17 @@ export function makeMemKV(): MemKV {
   const store = new Map<string, { value: string; expires?: number }>();
 
   const ns = {
-    async get(key: string, _options?: unknown) {
+    async get(key: string, options?: unknown) {
       const rec = store.get(key);
       if (!rec) return null;
       if (rec.expires && Date.now() > rec.expires) {
         store.delete(key);
         return null;
       }
+      // Mirror Cloudflare KV's get(key, "json") parse-on-read behavior.
+      const type =
+        typeof options === "string" ? options : (options as { type?: string } | undefined)?.type;
+      if (type === "json") return JSON.parse(rec.value);
       return rec.value;
     },
     async put(key: string, value: string, opts?: { expirationTtl?: number }) {

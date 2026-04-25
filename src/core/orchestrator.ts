@@ -1,5 +1,6 @@
 import type { ParsedCommand, CommandResult } from "./types.js";
 import type { Env } from "../env.js";
+import { monthlyTotals, recordTransaction, type LedgerSnapshot } from "./ledger.js";
 
 export interface OrchestratorContext {
   env: Env;
@@ -11,25 +12,31 @@ export interface OrchestratorContext {
 /**
  * Dispatch a parsed command to its handler.
  *
- * Phase 0: not wired to the Worker fetch path. `ping` / `help` / `cost` return
- * real replies; `post` / `mail` / `todo` return a canned "not implemented in α"
- * string until Phase 1 fills in the adapters.
- *
- * Phase 1 adds: budget gate (reject expensive commands over DAILY_TOKEN_BUDGET),
- * idempotency op-level checkpoints (skip already-completed sub-ops on replay),
- * context rolling window writes.
+ * Phase 1 (P1-19): `!ping`/`!help`/`!cost` return real bodies; `!ping` records
+ * a 0-cost transaction in the ledger so it counts toward `!cost` totals;
+ * `!cost` reads `monthlyTotals(env)` and formats it. The post/mail/todo handlers
+ * remain canned until P1-16/17/18 wire their adapter pipelines.
  */
 export async function orchestrate(
   command: ParsedCommand,
-  _ctx: OrchestratorContext,
+  ctx: OrchestratorContext,
 ): Promise<CommandResult> {
   switch (command.type) {
     case "ping":
-      return { body: "pong" };
+      await recordTransaction({
+        command: "ping",
+        usage: { prompt_tokens: 0, completion_tokens: 0 },
+        env: ctx.env,
+      });
+      // Propagate GPS into the reply so the device confirms its fix on
+      // first commission test. Map links land on whichever page has room.
+      return { body: "pong", lat: ctx.lat, lon: ctx.lon };
     case "help":
       return { body: helpText() };
-    case "cost":
-      return { body: "0 req · 0 tok · $0.00 (Phase 1 wires real ledger)" };
+    case "cost": {
+      const snap = await monthlyTotals(ctx.env);
+      return { body: formatCostBody(snap) };
+    }
     case "post":
       return { body: "α: !post not yet implemented (Phase 1)" };
     case "mail":
@@ -51,4 +58,18 @@ function helpText(): string {
     "!cost — usage",
     "!help",
   ].join("\n");
+}
+
+/**
+ * Format the `!cost` reply body. Per plan P1-19:
+ *   "<requests> req · <tokens>k tok · $<cost> (since <YYYY-MM-01>)"
+ * Tokens are summed (prompt + completion) and rendered in thousands with one
+ * decimal. Total width capped at ~52 chars in realistic ranges.
+ */
+function formatCostBody(snap: LedgerSnapshot): string {
+  const totalTokens = snap.prompt_tokens + snap.completion_tokens;
+  const tokensK = (totalTokens / 1000).toFixed(1);
+  const cost = snap.usd_cost.toFixed(2);
+  const sinceDate = `${snap.period}-01`;
+  return `${snap.requests} req · ${tokensK}k tok · $${cost} (since ${sinceDate})`;
 }

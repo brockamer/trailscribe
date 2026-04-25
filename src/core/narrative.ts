@@ -1,0 +1,156 @@
+import { z } from "zod";
+import type { Env } from "../env.js";
+import { chatCompletion } from "../adapters/ai/openrouter.js";
+
+/**
+ * Narrative module — composes a `!post` event into a structured blog post via
+ * the configured LLM (P1-04: model + base URL come from env, defaulting to
+ * `openai/gpt-5-mini` on OpenRouter).
+ *
+ * The orchestrator (P1-16) calls `generateNarrative(input)` once per `!post`,
+ * gets back `{ title, haiku, body, usage }`, and:
+ *   - feeds `title` + a short summary into the device reply (≤ 160 chars);
+ *   - feeds the full `body` (+ frontmatter using title/haiku) into the journal
+ *     publish (P1-08).
+ *
+ * Token usage from the OpenRouter response is propagated as-is — we never use
+ * character-count proxies (drift over time, undercounts on multi-byte text).
+ */
+export interface NarrativeInput {
+  /** The user's note text from `!post <note>`. */
+  note: string;
+  lat?: number;
+  lon?: number;
+  /** Reverse-geocoded place name (P1-09). Optional — omitted prompt when absent. */
+  placeName?: string;
+  /** Weather summary (P1-10). Optional — omitted prompt when absent. */
+  weather?: string;
+  env: Env;
+}
+
+export interface NarrativeOutput {
+  title: string;
+  haiku: string;
+  body: string;
+  usage: {
+    prompt_tokens: number;
+    completion_tokens: number;
+  };
+}
+
+/** JSON-schema enforced by the LLM provider's structured-output mode. */
+const NARRATIVE_SCHEMA = {
+  name: "narrative",
+  strict: true,
+  schema: {
+    type: "object",
+    properties: {
+      title: { type: "string", maxLength: 60 },
+      haiku: { type: "string", maxLength: 80 },
+      body: { type: "string", maxLength: 500 },
+    },
+    required: ["title", "haiku", "body"],
+    additionalProperties: false,
+  },
+} as const;
+
+const NarrativeContentSchema = z.object({
+  title: z.string().min(1).max(60),
+  haiku: z.string().min(1).max(80),
+  body: z.string().min(1).max(500),
+});
+
+/**
+ * The system prompt drives tone and the hard caps. The schema enforces the
+ * length caps server-side; the prompt is what makes the model actually *try*
+ * to stay within them and to match the user's voice.
+ */
+const SYSTEM_PROMPT = [
+  "You write short field-journal entries from a backcountry traveller's brief notes.",
+  "Always return valid JSON matching the schema. No prose outside the JSON.",
+  "Constraints:",
+  '- "title": ≤ 60 characters, evocative, no clickbait, no emoji.',
+  '- "haiku": exactly three lines separated by newlines, in 5/7/5 syllables, ≤ 80 characters total. Plain English. No formatting marks.',
+  '- "body": ≤ 500 characters. Match the voice and tone of the input note. First-person if the note is first-person; observational if observational. Do not invent specifics not implied by the note, place, or weather context.',
+].join("\n");
+
+export class NarrativeError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "NarrativeError";
+  }
+}
+
+export async function generateNarrative(input: NarrativeInput): Promise<NarrativeOutput> {
+  const userPrompt = buildUserPrompt(input);
+  const model = input.env.LLM_MODEL || "openai/gpt-5-mini";
+
+  const response = await chatCompletion({
+    req: {
+      model,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_schema", json_schema: NARRATIVE_SCHEMA },
+      temperature: 0.7,
+      max_tokens: 600,
+    },
+    env: input.env,
+  });
+
+  const content = response.choices[0]?.message?.content;
+  if (typeof content !== "string" || content.length === 0) {
+    throw new NarrativeError("LLM returned no content");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (e) {
+    throw new NarrativeError(`LLM returned non-JSON content: ${content.slice(0, 120)}`, {
+      cause: e,
+    });
+  }
+
+  const validated = NarrativeContentSchema.safeParse(parsed);
+  if (!validated.success) {
+    const issues = validated.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+    throw new NarrativeError(`LLM output failed schema: ${issues}`);
+  }
+
+  return {
+    title: validated.data.title,
+    haiku: validated.data.haiku,
+    body: validated.data.body,
+    usage: {
+      prompt_tokens: response.usage.prompt_tokens,
+      completion_tokens: response.usage.completion_tokens,
+    },
+  };
+}
+
+/**
+ * Compose the user-facing prompt. When lat/lon/placeName/weather are absent
+ * (no GPS fix or geocode/weather lookup failed upstream), those lines are
+ * omitted entirely — no "(unknown)" or "(0,0)" placeholders that would steer
+ * the model toward synthesising location-specific detail.
+ */
+function buildUserPrompt(input: NarrativeInput): string {
+  const lines: string[] = [];
+  lines.push(`Note: ${input.note}`);
+
+  if (
+    input.placeName !== undefined &&
+    input.lat !== undefined &&
+    input.lon !== undefined
+  ) {
+    lines.push(`Location: ${input.placeName} (${input.lat.toFixed(4)}, ${input.lon.toFixed(4)})`);
+  }
+
+  if (input.weather !== undefined) {
+    lines.push(`Weather: ${input.weather}`);
+  }
+
+  return lines.join("\n");
+}

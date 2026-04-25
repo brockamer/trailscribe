@@ -1,8 +1,12 @@
-import { describe, test, expect, beforeEach } from "vitest";
+import { describe, test, expect, beforeEach, vi } from "vitest";
 import { makeApp } from "../src/app.js";
 import { makeTestEnv, kvSize, kvKeys } from "./helpers/env.js";
 import type { Env } from "../src/env.js";
 import fixture from "./fixtures/garmin/free-text-ping.json";
+
+vi.mock("../src/adapters/outbound/garmin-ipc-inbound.js", () => ({
+  sendReply: vi.fn().mockResolvedValue({ count: 1 }),
+}));
 
 let app: ReturnType<typeof makeApp>;
 let env: Env;

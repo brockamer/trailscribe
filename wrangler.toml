@@ -15,15 +15,19 @@ compatibility_flags = ["nodejs_compat"]
 TRAILSCRIBE_ENV = "development"
 GOOGLE_MAPS_BASE = "https://www.google.com/maps/search/?api=1&query="
 MAPSHARE_BASE = ""
-OPENAI_MODEL = "gpt-5-mini"
-OPENAI_INPUT_COST_PER_1K = "0.00"
-OPENAI_OUTPUT_COST_PER_1K = "0.00"
+LLM_BASE_URL = "https://openrouter.ai/api/v1"
+LLM_MODEL = "openai/gpt-5-mini"
+LLM_INPUT_COST_PER_1K = "0.00"
+LLM_OUTPUT_COST_PER_1K = "0.00"
+LLM_PROVIDER_HEADERS_JSON = ""
 APPEND_COST_SUFFIX = "false"
 DAILY_TOKEN_BUDGET = "50000"
 IPC_SCHEMA_VERSION = "2"
+IPC_INBOUND_SENDER = "trailscribe@resend.dev"
 RESEND_FROM_EMAIL = "trailscribe@resend.dev"
 RESEND_FROM_NAME = "TrailScribe"
 JOURNAL_POST_PATH_TEMPLATE = "content/posts/{yyyy}-{mm}-{dd}-{slug}.md"
+JOURNAL_URL_TEMPLATE = "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html"
 
 # KV namespaces — provisioned per env (dev main + dev preview + staging + production).
 # To recreate from scratch: `wrangler kv namespace create <BINDING> [--preview | --env <env>]`.
@@ -53,7 +57,7 @@ preview_id = "dd4bbcafe4974a65b3f554566c1e2a59"
 #   GARMIN_IPC_INBOUND_API_KEY    — X-API-Key for POST /api/Messaging/Message
 #   GARMIN_IPC_INBOUND_BASE_URL   — per-tenant (e.g. https://ipcinbound.inreachapp.com/api)
 #   IMEI_ALLOWLIST                — comma-separated 15-digit IMEIs we accept
-#   OPENAI_API_KEY                — OpenAI API key
+#   LLM_API_KEY                   — OpenRouter API key (provider-neutral; see LLM_BASE_URL)
 #   TODOIST_API_TOKEN             — Todoist REST API token
 #   RESEND_API_KEY                — Resend transactional email API key
 #   GITHUB_JOURNAL_TOKEN          — fine-grained PAT (contents:write on journal repo)
@@ -72,15 +76,19 @@ name = "trailscribe-staging"
 TRAILSCRIBE_ENV = "staging"
 GOOGLE_MAPS_BASE = "https://www.google.com/maps/search/?api=1&query="
 MAPSHARE_BASE = ""
-OPENAI_MODEL = "gpt-5-mini"
-OPENAI_INPUT_COST_PER_1K = "0.00"
-OPENAI_OUTPUT_COST_PER_1K = "0.00"
+LLM_BASE_URL = "https://openrouter.ai/api/v1"
+LLM_MODEL = "openai/gpt-5-mini"
+LLM_INPUT_COST_PER_1K = "0.00"
+LLM_OUTPUT_COST_PER_1K = "0.00"
+LLM_PROVIDER_HEADERS_JSON = ""
 APPEND_COST_SUFFIX = "false"
 DAILY_TOKEN_BUDGET = "50000"
 IPC_SCHEMA_VERSION = "2"
+IPC_INBOUND_SENDER = "trailscribe@resend.dev"
 RESEND_FROM_EMAIL = "trailscribe@resend.dev"
 RESEND_FROM_NAME = "TrailScribe (staging)"
 JOURNAL_POST_PATH_TEMPLATE = "content/posts/{yyyy}-{mm}-{dd}-{slug}.md"
+JOURNAL_URL_TEMPLATE = "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html"
 
 [[env.staging.kv_namespaces]]
 binding = "TS_IDEMPOTENCY"
@@ -110,15 +118,19 @@ name = "trailscribe"
 TRAILSCRIBE_ENV = "production"
 GOOGLE_MAPS_BASE = "https://www.google.com/maps/search/?api=1&query="
 MAPSHARE_BASE = ""
-OPENAI_MODEL = "gpt-5-mini"
-OPENAI_INPUT_COST_PER_1K = "0.00"
-OPENAI_OUTPUT_COST_PER_1K = "0.00"
+LLM_BASE_URL = "https://openrouter.ai/api/v1"
+LLM_MODEL = "openai/gpt-5-mini"
+LLM_INPUT_COST_PER_1K = "0.00"
+LLM_OUTPUT_COST_PER_1K = "0.00"
+LLM_PROVIDER_HEADERS_JSON = ""
 APPEND_COST_SUFFIX = "false"
 DAILY_TOKEN_BUDGET = "50000"
 IPC_SCHEMA_VERSION = "2"
+IPC_INBOUND_SENDER = "trailscribe@resend.dev"
 RESEND_FROM_EMAIL = "trailscribe@resend.dev"
 RESEND_FROM_NAME = "TrailScribe"
 JOURNAL_POST_PATH_TEMPLATE = "content/posts/{yyyy}-{mm}-{dd}-{slug}.md"
+JOURNAL_URL_TEMPLATE = "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html"
 
 [[env.production.kv_namespaces]]
 binding = "TS_IDEMPOTENCY"

@@ -104,7 +104,7 @@ Phase 0 complete (2026-04-24). All 20 P0 stories shipped.
 - **D4 Token budget:** 50,000/day
 - **D6 Reply:** IPC Inbound primary + email fallback (fallback gated by D9)
 - **D7 Branch:** rename `master` → `main` at Phase 0
-- **Model:** `gpt-5-mini` (user override from `gpt-4o-mini`)
+- **Model:** `openai/gpt-5-mini` via OpenRouter (per #31; supersedes the original direct-OpenAI `gpt-5-mini` decision)
 
 ## Also locked (2026-04-22)
 
@@ -119,7 +119,7 @@ Phase 0 complete (2026-04-24). All 20 P0 stories shipped.
 - `GARMIN_IPC_INBOUND_API_KEY` — `X-API-Key` for Garmin IPC Inbound
 - `GARMIN_IPC_INBOUND_BASE_URL` — per-tenant (e.g. `https://ipcinbound.inreachapp.com/api`)
 - `IMEI_ALLOWLIST` — comma-sep accepted IMEIs (defense-in-depth)
-- `OPENAI_API_KEY`
+- `LLM_API_KEY` — OpenRouter API key (provider-neutral; supersedes `OPENAI_API_KEY` per #31)
 - `TODOIST_API_TOKEN`
 - `RESEND_API_KEY` — outbound email transactional
 - `GITHUB_JOURNAL_TOKEN` — fine-grained PAT with `contents:write` on journal repo
@@ -129,14 +129,18 @@ Phase 0 complete (2026-04-24). All 20 P0 stories shipped.
 **Vars (non-secret):**
 - `TRAILSCRIBE_ENV` — dev/staging/production
 - `GOOGLE_MAPS_BASE`, `MAPSHARE_BASE` — link prefixes
-- `OPENAI_MODEL` — `gpt-5-mini`
-- `OPENAI_INPUT_COST_PER_1K` / `OPENAI_OUTPUT_COST_PER_1K` — ledger pricing; set from OpenAI pricing page
+- `LLM_BASE_URL` — `https://openrouter.ai/api/v1` (override for direct-provider routing)
+- `LLM_MODEL` — `openai/gpt-5-mini` (OpenRouter format `<provider>/<model>`)
+- `LLM_INPUT_COST_PER_1K` / `LLM_OUTPUT_COST_PER_1K` — ledger pricing; set from the chosen model provider's pricing page
+- `LLM_PROVIDER_HEADERS_JSON` — optional JSON blob for OpenRouter `HTTP-Referer` + `X-Title` analytics headers
 - `APPEND_COST_SUFFIX` — bool (α default: false)
 - `DAILY_TOKEN_BUDGET` — `50000`
 - `IPC_SCHEMA_VERSION` — `"2"`
+- `IPC_INBOUND_SENDER` — `Sender` field for outbound IPC Inbound messages (the on-device "From" string); defaults to `RESEND_FROM_EMAIL` but decoupled
 - `RESEND_FROM_EMAIL` — e.g. `trailscribe@resend.dev`
 - `RESEND_FROM_NAME` — e.g. `TrailScribe`
 - `JOURNAL_POST_PATH_TEMPLATE` — e.g. `content/posts/{yyyy}-{mm}-{dd}-{slug}.md`
+- `JOURNAL_URL_TEMPLATE` — public URL pattern for committed posts; pinned by P1-20
 
 ## Garmin IPC quick-ref (authoritative sources in `materials/`)
 

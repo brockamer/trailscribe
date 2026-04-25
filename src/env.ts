@@ -16,22 +16,26 @@ export interface Env {
   TRAILSCRIBE_ENV: string;
   GOOGLE_MAPS_BASE: string;
   MAPSHARE_BASE: string;
-  OPENAI_MODEL: string;
-  OPENAI_INPUT_COST_PER_1K: string;
-  OPENAI_OUTPUT_COST_PER_1K: string;
+  LLM_BASE_URL: string;
+  LLM_MODEL: string;
+  LLM_INPUT_COST_PER_1K: string;
+  LLM_OUTPUT_COST_PER_1K: string;
+  LLM_PROVIDER_HEADERS_JSON: string;
   APPEND_COST_SUFFIX: string;
   DAILY_TOKEN_BUDGET: string;
   IPC_SCHEMA_VERSION: string;
+  IPC_INBOUND_SENDER: string;
   RESEND_FROM_EMAIL: string;
   RESEND_FROM_NAME: string;
   JOURNAL_POST_PATH_TEMPLATE: string;
+  JOURNAL_URL_TEMPLATE: string;
 
   // Secrets (Wrangler Secrets)
   GARMIN_INBOUND_TOKEN: string;
   GARMIN_IPC_INBOUND_API_KEY: string;
   GARMIN_IPC_INBOUND_BASE_URL: string;
   IMEI_ALLOWLIST: string;
-  OPENAI_API_KEY: string;
+  LLM_API_KEY: string;
   TODOIST_API_TOKEN: string;
   RESEND_API_KEY: string;
   GITHUB_JOURNAL_TOKEN: string;
@@ -63,21 +67,26 @@ export const EnvSchema = z.object({
   TRAILSCRIBE_ENV: z.string().min(1),
   GOOGLE_MAPS_BASE: z.string().url(),
   MAPSHARE_BASE: z.string(),
-  OPENAI_MODEL: z.string().min(1),
-  OPENAI_INPUT_COST_PER_1K: z.string(),
-  OPENAI_OUTPUT_COST_PER_1K: z.string(),
+  LLM_BASE_URL: z.string().url(),
+  LLM_MODEL: z.string().min(1),
+  LLM_INPUT_COST_PER_1K: z.string(),
+  LLM_OUTPUT_COST_PER_1K: z.string(),
+  // Empty string = no headers (consumers must check before JSON.parse).
+  LLM_PROVIDER_HEADERS_JSON: z.string(),
   APPEND_COST_SUFFIX: z.string(),
   DAILY_TOKEN_BUDGET: z.string(),
   IPC_SCHEMA_VERSION: z.enum(["2", "3", "4"]),
+  IPC_INBOUND_SENDER: z.string().min(1),
   RESEND_FROM_EMAIL: z.string().email(),
   RESEND_FROM_NAME: z.string().min(1),
   JOURNAL_POST_PATH_TEMPLATE: z.string().min(1),
+  JOURNAL_URL_TEMPLATE: z.string().min(1),
 
   GARMIN_INBOUND_TOKEN: z.string().min(16),
   GARMIN_IPC_INBOUND_API_KEY: z.string().min(8),
   GARMIN_IPC_INBOUND_BASE_URL: z.string().url(),
   IMEI_ALLOWLIST: z.string().regex(/^\d{15}(,\d{15})*$/, "comma-separated 15-digit IMEIs"),
-  OPENAI_API_KEY: z.string().min(8),
+  LLM_API_KEY: z.string().min(8),
   TODOIST_API_TOKEN: z.string().min(8),
   RESEND_API_KEY: z.string().min(8),
   GITHUB_JOURNAL_TOKEN: z.string().min(8),

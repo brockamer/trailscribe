@@ -75,7 +75,7 @@ pnpm wrangler secret put GARMIN_INBOUND_TOKEN --env staging
 pnpm wrangler secret put GARMIN_IPC_INBOUND_API_KEY --env staging
 pnpm wrangler secret put GARMIN_IPC_INBOUND_BASE_URL --env staging
 pnpm wrangler secret put IMEI_ALLOWLIST --env staging
-pnpm wrangler secret put OPENAI_API_KEY --env staging
+pnpm wrangler secret put LLM_API_KEY --env staging
 pnpm wrangler secret put TODOIST_API_TOKEN --env staging
 pnpm wrangler secret put RESEND_API_KEY --env staging
 pnpm wrangler secret put GITHUB_JOURNAL_TOKEN --env staging
@@ -162,8 +162,8 @@ Garmin Portal Connect to point at the production URL.
   and Garmin Portal Connect atomically (brief 200-OK-but-log-warn window is OK).
 - `GARMIN_IPC_INBOUND_API_KEY`: yearly. Generate new key in Garmin UI (up to
   3 concurrent keys supported), `wrangler secret put`, then revoke the old.
-- Other API keys (OpenAI, Todoist, Resend, GitHub PAT): rotate per your
-  normal cadence or on suspected compromise.
+- Other API keys (OpenRouter `LLM_API_KEY`, Todoist, Resend, GitHub PAT):
+  rotate per your normal cadence or on suspected compromise.
 
 ## Required GitHub Actions secrets
 

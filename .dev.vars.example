@@ -20,8 +20,11 @@ GARMIN_IPC_INBOUND_BASE_URL=
 # α-MVP has exactly one device (your inReach).
 IMEI_ALLOWLIST=
 
-# ---- OpenAI ----
-OPENAI_API_KEY=
+# ---- LLM provider (OpenRouter by default) ----
+# OpenRouter exposes one HTTPS API and one API key while letting us pick any
+# model from many providers. Get a key at https://openrouter.ai/keys.
+# Swap providers by overriding LLM_BASE_URL + LLM_MODEL in wrangler.toml.
+LLM_API_KEY=
 
 # ---- Todoist ----
 # Get from Todoist → Settings → Integrations → Developer → API token.

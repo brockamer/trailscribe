@@ -65,7 +65,7 @@ export function makeTestEnv(overrides: Partial<Env> = {}): Env {
     GOOGLE_MAPS_BASE: "https://www.google.com/maps/search/?api=1&query=",
     MAPSHARE_BASE: "",
     LLM_BASE_URL: "https://openrouter.ai/api/v1",
-    LLM_MODEL: "openai/gpt-5-mini",
+    LLM_MODEL: "anthropic/claude-sonnet-4-6",
     LLM_INPUT_COST_PER_1K: "0.00",
     LLM_OUTPUT_COST_PER_1K: "0.00",
     LLM_PROVIDER_HEADERS_JSON: "",

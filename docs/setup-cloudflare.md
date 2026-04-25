@@ -102,7 +102,155 @@ Use the same value in:
 1. Cloudflare Secret (above)
 2. Garmin Portal Connect → IPC Outbound → Static Token field
 
-## 3. First deploy (staging)
+## 3. Journal repo bootstrap (one-time, before first `!post`)
+
+`!post` commits markdown to a separate GitHub Pages repo (PRD §6 D5). Set
+this up once before any `!post` is invoked; otherwise the publisher adapter
+will fail and the device reply will return an error.
+
+### Create the repo
+
+```bash
+gh repo create <owner>/trailscribe-journal --public \
+  --description "TrailScribe field journal"
+```
+
+The repo name is arbitrary — store whatever you pick as the
+`GITHUB_JOURNAL_REPO` secret (e.g. `brockamer/trailscribe-journal`).
+
+### Pick and commit a Jekyll theme
+
+GitHub Pages auto-builds Jekyll sites with no Action required. Two reasonable
+choices:
+
+- **Recommended:** `mmistakes/minimal-mistakes` — polished, themed for
+  personal sites. Wired in via `remote_theme` in `_config.yml`.
+- **Zero-config alternative:** `jekyll/minima` (the GitHub Pages default).
+  No `remote_theme` line needed; GitHub builds it automatically.
+
+Minimum `_config.yml` for `minimal-mistakes`:
+
+```yaml
+title: TrailScribe Journal
+description: Field notes from off-grid trips, posted via Garmin inReach.
+remote_theme: "mmistakes/minimal-mistakes@4.28.0"
+minimal_mistakes_skin: "dirt"
+permalink: /:year/:month/:day/:title.html   # MUST match JOURNAL_URL_TEMPLATE
+plugins:
+  - jekyll-feed
+  - jekyll-include-cache
+  - jekyll-remote-theme
+defaults:
+  - scope: { path: "", type: posts }
+    values:
+      layout: single
+      author_profile: false
+      read_time: false
+      share: false
+      related: false
+      show_date: true
+```
+
+The `permalink:` line is critical — the URL it generates **must** match the
+`JOURNAL_URL_TEMPLATE` env var in `wrangler.toml`, or `!post` reply links
+will 404. The default Jekyll permalink (`/:year/:month/:day/:title.html`)
+lines up with the canonical template
+`https://<owner>.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html`.
+If you change one, change the other.
+
+Commit `_config.yml` plus a minimal `Gemfile`, `index.html`, and the
+`_includes/` directory (empty is fine for v1 — `minimal-mistakes` ships sane
+defaults).
+
+### Enable GitHub Pages
+
+```bash
+gh api -X POST repos/<owner>/trailscribe-journal/pages \
+  -f 'source[branch]=main' -f 'source[path]=/'
+```
+
+Or via UI: Settings → Pages → Source = `main` branch, `/` (root). Wait
+30–60s for the first build. Verify:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" \
+  https://<owner>.github.io/trailscribe-journal/
+# Expect: 200
+```
+
+### Commit a placeholder post matching `publishPost`'s frontmatter shape
+
+The placeholder is a live integration fixture: it proves what the Worker
+will write at runtime renders correctly under the chosen theme. Match
+`renderMarkdown` in `src/adapters/publish/github-pages.ts`:
+
+```yaml
+---
+title: "Hello"
+date: 2026-04-25T12:00:00.000Z
+location: { lat: 37.1682, lon: -118.5891, place: "Lake Sabrina, California" }
+weather: "46°F, 8mph, clear"
+tags: [trailscribe]
+---
+silver lake at dusk
+mountains hold the falling sun
+trail finds its own way
+
+First post — a placeholder.
+```
+
+Save as `_posts/YYYY-MM-DD-hello.md` (Jekyll requires a date prefix on every
+post filename). After a 30–60s Pages rebuild, verify:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" \
+  "https://<owner>.github.io/trailscribe-journal/<yyyy>/<mm>/<dd>/hello.html"
+# Expect: 200
+```
+
+A 200 here is the empirical proof that `!post` will produce reachable URLs.
+
+### Generate a fine-grained PAT scoped to the journal repo
+
+The Worker writes to the journal repo via the GitHub Contents API. Use a
+fine-grained PAT, **not** a classic token, scoped to **exactly** this one
+repo with the minimum permission `Contents: Read and write`.
+
+1. https://github.com/settings/personal-access-tokens/new
+2. Token name: `trailscribe-journal-write`
+3. Resource owner: your account
+4. Repository access: **Only select repositories** → `trailscribe-journal`
+5. Repository permissions:
+   - `Contents`: Read and write
+   - (everything else default)
+6. Generate. Copy the `github_pat_*` value once.
+7. Store as Wrangler secret in both envs:
+   ```bash
+   pnpm wrangler secret put GITHUB_JOURNAL_TOKEN --env staging
+   pnpm wrangler secret put GITHUB_JOURNAL_TOKEN --env production
+   ```
+
+Also set the companion secrets (already in §2 above):
+
+- `GITHUB_JOURNAL_REPO` — e.g. `brockamer/trailscribe-journal`
+- `GITHUB_JOURNAL_BRANCH` — e.g. `main`
+
+Rotation: yearly, or on suspected compromise. PATs expire — set a calendar
+reminder for the chosen expiration date.
+
+### Pin `JOURNAL_URL_TEMPLATE`
+
+In `wrangler.toml`, the URL template must produce real, reachable URLs:
+
+```toml
+JOURNAL_URL_TEMPLATE = "https://<owner>.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html"
+```
+
+This template is read at runtime by `publishPost` to construct the reply
+link the device sees. The placeholder post's URL is the verification step —
+if that 200s, the template is right.
+
+## 4. First deploy (staging)
 
 ```bash
 pnpm test             # should be 24/24 green
@@ -125,7 +273,7 @@ curl -s "$STAGING_URL/health" | jq .
 
 # Post the canonical V2 fixture:
 curl -s -X POST "$STAGING_URL/garmin/ipc" \
-  -H "Authorization: Bearer $GARMIN_INBOUND_TOKEN" \
+  -H "X-Outbound-Auth-Token: $GARMIN_INBOUND_TOKEN" \
   -H "Content-Type: application/json" \
   --data @tests/fixtures/garmin-outbound-v2-freetext.json
 # Expect: ok
@@ -140,7 +288,7 @@ pnpm wrangler tail --env staging
 You should see JSON log lines for `event_received`, and on a second POST with
 the same payload, `idempotent_replay`.
 
-## 4. Point Garmin Portal Connect at staging
+## 5. Point Garmin Portal Connect at staging
 
 See [`garmin-setup.md`](garmin-setup.md) for the full Portal Connect
 configuration. Summary:
@@ -149,10 +297,10 @@ configuration. Summary:
 - Schema: V2
 - Auth: Static Token = value of `GARMIN_INBOUND_TOKEN`
 
-## 5. Promote to production
+## 6. Promote to production
 
 Once staging has held up for a week (or sooner if you're impatient), repeat
-§1–§3 with `--env production`, then push `main` to trigger
+§1–§4 with `--env production`, then push `main` to trigger
 [`deploy-cloudflare.yml`](../.github/workflows/deploy-cloudflare.yml). Update
 Garmin Portal Connect to point at the production URL.
 

@@ -25,6 +25,7 @@ export interface Env {
   DAILY_TOKEN_BUDGET: string;
   IPC_SCHEMA_VERSION: string;
   IPC_INBOUND_SENDER: string;
+  IPC_INBOUND_DRY_RUN: string;
   RESEND_FROM_EMAIL: string;
   RESEND_FROM_NAME: string;
   JOURNAL_POST_PATH_TEMPLATE: string;
@@ -77,6 +78,7 @@ export const EnvSchema = z.object({
   DAILY_TOKEN_BUDGET: z.string(),
   IPC_SCHEMA_VERSION: z.enum(["2", "3", "4"]),
   IPC_INBOUND_SENDER: z.string().min(1),
+  IPC_INBOUND_DRY_RUN: z.string(),
   RESEND_FROM_EMAIL: z.string().email(),
   RESEND_FROM_NAME: z.string().min(1),
   JOURNAL_POST_PATH_TEMPLATE: z.string().min(1),
@@ -106,7 +108,15 @@ export function parseEnv(env: unknown): Env {
       .join("\n");
     throw new Error(`Invalid Worker Env bindings:\n${issues}`);
   }
-  return result.data as Env;
+  const parsed = result.data as Env;
+  // Prod must never silently mute device sends. Dry-run is a staging/dev-only
+  // safety rail; in prod it would hide real delivery failures.
+  if (parsed.TRAILSCRIBE_ENV === "production" && ipcInboundDryRun(parsed)) {
+    throw new Error(
+      "Invalid Worker Env: IPC_INBOUND_DRY_RUN must not be 'true' when TRAILSCRIBE_ENV=production",
+    );
+  }
+  return parsed;
 }
 
 /** Parse the comma-separated IMEI allowlist into a Set for O(1) lookup. */
@@ -117,6 +127,16 @@ export function imeiAllowSet(env: Env): Set<string> {
 /** Parse the boolean-ish APPEND_COST_SUFFIX var. */
 export function appendCostSuffix(env: Env): boolean {
   return env.APPEND_COST_SUFFIX.toLowerCase() === "true";
+}
+
+/**
+ * Parse IPC_INBOUND_DRY_RUN. When true, `sendReply` short-circuits without
+ * calling Garmin IPC Inbound. Used to exercise the full pipeline (parse →
+ * orchestrate → narrative → publish → ledger) in staging without delivering
+ * real SMS to the operator's device. Forbidden in production (see parseEnv).
+ */
+export function ipcInboundDryRun(env: Env): boolean {
+  return env.IPC_INBOUND_DRY_RUN.toLowerCase() === "true";
 }
 
 /** Parse DAILY_TOKEN_BUDGET (0 = unlimited). */

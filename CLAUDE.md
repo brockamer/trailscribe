@@ -79,14 +79,10 @@ plans/                          # per-milestone sprint plans (phase-0-scaffoldin
 
 ## Status
 
-Phase 0 complete (2026-04-24). All 20 P0 stories shipped.
-
-- Staging Worker live at `https://trailscribe-staging.trailscribe.workers.dev` — bearer auth + IMEI allowlist + KV idempotency verified against the canonical V2 fixture.
-- 16 KV namespaces provisioned across dev/staging/prod.
-- CI green on PR: typecheck + Vitest (24 tests) + ESLint.
-- `deploy-production` workflow temporarily gated to manual dispatch until first prod deploy lands.
-
-**Phase 1 next.** Draft `plans/phase-1-alpha-mvp.md` for sign-off before implementation starts (see epic #30). Note issue #31 — AI/LLM layer routes through OpenRouter, not OpenAI directly, which supersedes the `claude-sonnet-4-6` / `OPENAI_*` decisions below.
+- **Phase 0 — Workers scaffold:** complete 2026-04-24. All 20 P0 stories shipped. Staging Worker live at `https://trailscribe-staging.trailscribe.workers.dev`; bearer auth + IMEI allowlist + KV idempotency verified against the canonical V2 fixture; 16 KV namespaces provisioned across dev/staging/prod; CI green on PR (typecheck + Vitest + ESLint).
+- **Phase 1 — α-MVP:** code substantively shipped 2026-04-25 → 2026-04-26 (P1-17, P1-18, P1-20, P1-21, P1-22, P1-23). All 6 commands (`!post`, `!mail`, `!todo`, `!ping`, `!help`, `!cost`) return real responses on staging; replay verification + cost measurement complete; OpenRouter LLM layer live (`anthropic/claude-sonnet-4-6`). Closing the milestone is gated on **#31** (PRD/setup-cloudflare doc reconciliation — In Progress) and then **#30** (epic). Plan: `plans/phase-1-alpha-mvp.md`.
+- **Production-readiness — current live phase** (milestone due 2026-05-31): 5 open items including custom domain (#26), re-enable auto-deploy on push to main (#33; currently `workflow_dispatch`-only after first prod deploy landed under #32), Garmin Pro tenant downgrade (#14) → device user swap (#15), and one stale doc path (#74).
+- **Future arc on the board:** Phase 2 — extended commands (#98, the 8 deferred α commands) and Phase 3 — Durable Objects + D1 migration (#99) filed 2026-04-26 as Low-priority Backlog umbrellas. Promote when their predecessors close.
 
 ## Conventions
 

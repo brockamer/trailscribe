@@ -77,5 +77,5 @@ export async function handleTodo(cmd: TodoCommand, ctx: HandleTodoContext): Prom
     });
   }
 
-  return { body: `Task added · ${url}`, lat, lon };
+  return { body: `Task added · ${url}` };
 }

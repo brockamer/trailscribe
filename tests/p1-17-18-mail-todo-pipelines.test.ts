@@ -122,7 +122,9 @@ describe("P1-17 !mail — happy path with GPS", () => {
     const [, messages] = sendReplyMock.mock.calls[0];
     const joined = messages.join(" ");
     expect(joined).toContain("Sent to friend@example.com");
-    expect(joined).toContain("https://www.google.com/maps");
+    // Device reply must not carry map links — location stays in the email footer.
+    expect(joined).not.toContain("google.com/maps");
+    expect(joined).not.toContain("share.garmin.com");
 
     // Verify Resend got the enriched body with location footer.
     const resendCall = fetchSpy.mock.calls.find(
@@ -238,7 +240,9 @@ describe("P1-18 !todo — happy path", () => {
     const [, messages] = sendReplyMock.mock.calls[0];
     const joined = messages.join(" ");
     expect(joined).toContain("Task added · https://todoist.com/showTask?id=task-123");
-    expect(joined).toContain("https://www.google.com/maps");
+    // Device reply must not carry map links — location stays in the Todoist description.
+    expect(joined).not.toContain("google.com/maps");
+    expect(joined).not.toContain("share.garmin.com");
 
     // Verify the task description carried lat/lon.
     const todoistCall = fetchSpy.mock.calls[0];

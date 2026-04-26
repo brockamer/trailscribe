@@ -85,17 +85,14 @@ describe("P1-19 — !ping", () => {
     expect(messages).toEqual(["pong"]);
   });
 
-  test("with GPS fix → reply includes Google Maps + MapShare links on the same page", async () => {
+  test("with GPS fix → reply is just 'pong' (no map links on device)", async () => {
     const res = await postIpc(
       envelope("!ping", { gps: { lat: 37.1682, lon: -118.5891 } }),
     );
     expect(res.status).toBe(200);
 
     const [, messages] = sendReplyMock.mock.calls[0];
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toContain("pong");
-    expect(messages[0]).toContain("https://www.google.com/maps");
-    expect(messages[0]).toContain("https://share.garmin.com/MyMap");
+    expect(messages).toEqual(["pong"]);
   });
 
   test("records a 0-cost transaction in the ledger", async () => {

@@ -226,3 +226,56 @@ describe("sendReply — retry semantics (5xx/429)", () => {
     expect(sleptMs).toEqual([1000, 4000, 16000]);
   });
 });
+
+describe("sendReply — dry-run flag", () => {
+  test("IPC_INBOUND_DRY_RUN=true: no fetch, returns count=pages, emits ipc_inbound_dry_run log", async () => {
+    env = makeTestEnv({ IPC_INBOUND_DRY_RUN: "true" });
+
+    const result = await sendReply(
+      "123456789012345",
+      ["page one (1/2)", "page two (2/2)"],
+      env,
+      { delay: noDelay },
+    );
+
+    expect(result).toEqual({ count: 2 });
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    const dryRunEvent = loggedEvents().find((e) => e.event === "ipc_inbound_dry_run");
+    expect(dryRunEvent).toBeDefined();
+    expect(dryRunEvent?.imei).toBe("123456789012345");
+    expect(dryRunEvent?.message_pages).toBe(2);
+    expect(dryRunEvent?.total_chars).toBe("page one (1/2)".length + "page two (2/2)".length);
+    expect(dryRunEvent?.sender).toBe(env.IPC_INBOUND_SENDER);
+  });
+
+  test("IPC_INBOUND_DRY_RUN=true still validates length cap (catches caller bugs in dry-run too)", async () => {
+    env = makeTestEnv({ IPC_INBOUND_DRY_RUN: "true" });
+    const tooLong = "x".repeat(161);
+
+    await expect(sendReply("123456789012345", [tooLong], env, { delay: noDelay })).rejects.toThrow(
+      /exceeds 160-char/,
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test("IPC_INBOUND_DRY_RUN=false (default): hits fetch as normal", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, { count: 1 }));
+
+    await sendReply("123456789012345", ["pong"], env, { delay: noDelay });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const dryRunEvent = loggedEvents().find((e) => e.event === "ipc_inbound_dry_run");
+    expect(dryRunEvent).toBeUndefined();
+  });
+
+  test("case-insensitive: 'TRUE' and 'True' also short-circuit", async () => {
+    for (const flag of ["TRUE", "True", "tRuE"]) {
+      fetchSpy.mockClear();
+      env = makeTestEnv({ IPC_INBOUND_DRY_RUN: flag });
+      const result = await sendReply("123456789012345", ["pong"], env, { delay: noDelay });
+      expect(result).toEqual({ count: 1 });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    }
+  });
+});

@@ -304,6 +304,34 @@ Once staging has held up for a week (or sooner if you're impatient), repeat
 [`deploy-cloudflare.yml`](../.github/workflows/deploy-cloudflare.yml). Update
 Garmin Portal Connect to point at the production URL.
 
+## Synthetic load runs against staging (`IPC_INBOUND_DRY_RUN`)
+
+When you need to exercise the full pipeline (parse → orchestrate → narrative
+LLM → publish → ledger) without delivering real SMS to your inReach device —
+e.g. P1-23-style cost measurement campaigns or load tests — flip the staging
+dry-run flag.
+
+Two ways to enable it:
+
+1. **Inline edit + redeploy (recommended for one-offs).** Edit
+   `wrangler.toml` `[env.staging.vars]` to set `IPC_INBOUND_DRY_RUN = "true"`,
+   run `pnpm deploy:staging`, run your campaign, then revert and redeploy.
+   The flag is checked into git in the OFF position — leaving it ON in a
+   committed file is the loud, visible failure mode (CI / code review will
+   catch it).
+
+2. **CLI override (faster).** `pnpm exec wrangler deploy --env staging
+   --var IPC_INBOUND_DRY_RUN:true` — applies just for that deploy. Re-run the
+   normal `pnpm deploy:staging` to revert.
+
+When ON, `sendReply` short-circuits the Garmin POST and emits a structured
+`ipc_inbound_dry_run` log line (visible in `wrangler tail --env staging`)
+showing IMEI, sender, page count, total chars, and a per-page preview.
+
+**Production is locked.** `parseEnv` throws at Worker startup if
+`TRAILSCRIBE_ENV=production` AND `IPC_INBOUND_DRY_RUN=true` — production must
+always deliver real replies.
+
 ## Rotation
 
 - `GARMIN_INBOUND_TOKEN`: yearly. Generate new, update both Wrangler Secret

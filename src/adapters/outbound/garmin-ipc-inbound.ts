@@ -1,4 +1,5 @@
 import type { Env } from "../../env.js";
+import { ipcInboundDryRun } from "../../env.js";
 import { log } from "../logging/worker-logs.js";
 
 const MAX_MESSAGE_CHARS = 160;
@@ -85,6 +86,23 @@ export async function sendReply(
         message: `Message length ${m.length} exceeds 160-char Iridium cap (caller bug — page-split before calling sendReply)`,
       });
     }
+  }
+
+  // Dry-run short-circuit: log what would have been sent, return success
+  // without contacting Garmin. Validation above still runs so dry-run callers
+  // catch length-cap regressions. Production sets are blocked by parseEnv.
+  if (ipcInboundDryRun(env)) {
+    const totalChars = messages.reduce((n, m) => n + m.length, 0);
+    log({
+      event: "ipc_inbound_dry_run",
+      level: "info",
+      imei,
+      sender: env.IPC_INBOUND_SENDER,
+      message_pages: messages.length,
+      total_chars: totalChars,
+      preview: messages.map((m) => m.slice(0, 80)),
+    });
+    return { count: messages.length };
   }
 
   const delay = opts.delay ?? defaultDelay;

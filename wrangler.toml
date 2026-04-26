@@ -24,6 +24,7 @@ APPEND_COST_SUFFIX = "false"
 DAILY_TOKEN_BUDGET = "50000"
 IPC_SCHEMA_VERSION = "2"
 IPC_INBOUND_SENDER = "trailscribe@tx.trailscribe.net"
+IPC_INBOUND_DRY_RUN = "false"
 RESEND_FROM_EMAIL = "trailscribe@tx.trailscribe.net"
 RESEND_FROM_NAME = "TrailScribe"
 JOURNAL_POST_PATH_TEMPLATE = "_posts/{yyyy}-{mm}-{dd}-{slug}.md"
@@ -85,6 +86,11 @@ APPEND_COST_SUFFIX = "false"
 DAILY_TOKEN_BUDGET = "50000"
 IPC_SCHEMA_VERSION = "2"
 IPC_INBOUND_SENDER = "trailscribe@tx.trailscribe.net"
+# Default off; flip to "true" + redeploy when running synthetic !post / !mail
+# / !todo campaigns against staging that exercise the full pipeline without
+# delivering real SMS to the operator's device. Production deploys are
+# blocked from setting this — see src/env.ts parseEnv guard.
+IPC_INBOUND_DRY_RUN = "false"
 RESEND_FROM_EMAIL = "trailscribe@tx.trailscribe.net"
 RESEND_FROM_NAME = "TrailScribe (staging)"
 JOURNAL_POST_PATH_TEMPLATE = "_posts/{yyyy}-{mm}-{dd}-{slug}.md"
@@ -127,6 +133,8 @@ APPEND_COST_SUFFIX = "false"
 DAILY_TOKEN_BUDGET = "50000"
 IPC_SCHEMA_VERSION = "2"
 IPC_INBOUND_SENDER = "trailscribe@tx.trailscribe.net"
+# Production must always deliver. parseEnv throws if this is "true" + env=production.
+IPC_INBOUND_DRY_RUN = "false"
 RESEND_FROM_EMAIL = "trailscribe@tx.trailscribe.net"
 RESEND_FROM_NAME = "TrailScribe"
 JOURNAL_POST_PATH_TEMPLATE = "_posts/{yyyy}-{mm}-{dd}-{slug}.md"

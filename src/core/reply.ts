@@ -1,6 +1,5 @@
 import type { Env } from "../env.js";
 import { appendCostSuffix } from "../env.js";
-import { buildGoogleMapsLink, buildMapShareLink } from "./links.js";
 
 /**
  * Iridium SBD hard limit per message — Garmin IPC Inbound returns 422
@@ -13,8 +12,6 @@ const MARKER_LEN = 5;
 
 export interface BuildReplyArgs {
   body: string;
-  lat?: number;
-  lon?: number;
   costUsdMtd?: number;
   env: Env;
 }
@@ -23,31 +20,24 @@ export interface BuildReplyArgs {
  * Build a 1- or 2-string reply respecting the 320-char total budget and the
  * 160-char per-SMS hard cap (PRD §3 + plan P1-15).
  *
- * - Map links are appended to the page that has room when `lat`/`lon` are
- *   defined. When undefined (no GPS fix), no link is emitted — including no
- *   `?q=0,0` placeholder.
- * - The cost suffix `· $X.XX` is appended to the *last* page when
- *   `APPEND_COST_SUFFIX=true` and `costUsdMtd` is provided.
- * - On overflow (body + extras + markers > 320), `body` is truncated; the
- *   extras and markers are preserved (caller's choice to enable cost suffix /
- *   GPS-rich reply takes precedence over body completeness).
+ * The cost suffix `· $X.XX` is appended to the *last* page when
+ * `APPEND_COST_SUFFIX=true` and `costUsdMtd` is provided. On overflow
+ * (body + suffix + markers > 320), `body` is truncated; the suffix and
+ * markers are preserved (caller's choice to enable cost suffix takes
+ * precedence over body completeness).
+ *
+ * The on-device reply does not include map links — the user is offline in
+ * the field and a URL is unusable. Location stays in the journal post's
+ * YAML frontmatter (see `src/adapters/publish/github-pages.ts`).
  *
  * Throws if any output page exceeds {@link SMS_MAX} — that's a caller bug
  * (logic mistake here, not a runtime input error).
  */
-export function buildReply({ body, lat, lon, costUsdMtd, env }: BuildReplyArgs): string[] {
-  const hasGps = lat !== undefined && lon !== undefined;
-  const mapsLink = hasGps ? buildGoogleMapsLink(lat, lon, env) : "";
-  const mapShareLink = hasGps ? buildMapShareLink(lat, lon, env) : "";
-  const costSuffix =
+export function buildReply({ body, costUsdMtd, env }: BuildReplyArgs): string[] {
+  const tail =
     appendCostSuffix(env) && typeof costUsdMtd === "number"
       ? ` · $${costUsdMtd.toFixed(2)}`
       : "";
-
-  // Tail composition: leading-space-separated tokens. Empty pieces drop out.
-  const tailPieces = [mapsLink, mapShareLink].filter((s) => s.length > 0);
-  const linksTail = tailPieces.length > 0 ? " " + tailPieces.join(" ") : "";
-  const tail = linksTail + costSuffix;
 
   // Single-page case: body + tail fits within 160 with no marker overhead.
   if (body.length + tail.length <= SMS_MAX) {
@@ -70,21 +60,15 @@ export function buildReply({ body, lat, lon, costUsdMtd, env }: BuildReplyArgs):
     remainder = remainder.slice(0, Math.max(0, page2BodyBudget));
   }
 
-  // If page2BodyBudget is negative (tail alone > 155), the tail is too big
-  // to fit even with markers — that's a configuration bug (e.g. enormous
-  // MAPSHARE_BASE URL). Fail loudly so we catch it in tests, not in the
-  // field where Garmin would 422 the send.
   if (page2BodyBudget < 0) {
     throw new Error(
-      `buildReply: extras tail (${tail.length} chars) leaves no room for body on page 2 ` +
-        `(SMS_MAX=${SMS_MAX}, marker=${MARKER_LEN}). Shorten MAPSHARE_BASE or disable links.`,
+      `buildReply: cost suffix (${tail.length} chars) leaves no room for body on page 2 ` +
+        `(SMS_MAX=${SMS_MAX}, marker=${MARKER_LEN}).`,
     );
   }
 
   const page1 = head + "(1/2)";
 
-  // If remainder is empty and tail starts with a space, strip it — avoids
-  // "  https://..." with a leading double-space when body fully fits page 1.
   const page2Body = remainder.length > 0 ? remainder + tail : tail.trimStart();
   const page2 = page2Body + "(2/2)";
 

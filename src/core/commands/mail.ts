@@ -100,7 +100,7 @@ export async function handleMail(cmd: MailCommand, ctx: HandleMailContext): Prom
     });
   }
 
-  return { body: `Sent to ${cmd.to}`, lat, lon };
+  return { body: `Sent to ${cmd.to}` };
 }
 
 function composeBody(

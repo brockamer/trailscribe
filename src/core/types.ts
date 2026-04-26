@@ -56,6 +56,4 @@ export interface GarminEnvelope {
  */
 export interface CommandResult {
   body: string;
-  lat?: number;
-  lon?: number;
 }

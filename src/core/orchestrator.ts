@@ -37,9 +37,7 @@ export async function orchestrate(
         usage: { prompt_tokens: 0, completion_tokens: 0 },
         env: ctx.env,
       });
-      // Propagate GPS into the reply so the device confirms its fix on
-      // first commission test. Map links land on whichever page has room.
-      return { body: "pong", lat: ctx.lat, lon: ctx.lon };
+      return { body: "pong" };
     case "help":
       return { body: helpText() };
     case "cost": {

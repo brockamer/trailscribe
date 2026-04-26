@@ -174,8 +174,24 @@ describe("P1-16 !post — happy path with GPS", () => {
     expect(joined).toContain("Posted: Alpenglow at Lake Sabrina");
     expect(joined).toContain("https://brockamer.github.io/trailscribe-journal/");
     expect(joined).toContain("alpenglow-at-lake-sabrina.html");
-    expect(joined).toContain("https://www.google.com/maps");
-    expect(joined).toContain("https://share.garmin.com/MyMap");
+    // Device reply must not carry map links (offline use, eats reply budget).
+    expect(joined).not.toContain("google.com/maps");
+    expect(joined).not.toContain("share.garmin.com");
+
+    // Location still flows into the journal markdown frontmatter via the
+    // publish adapter (separate path from the reply).
+    const publishPut = fetchSpy.mock.calls.find(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        c[0].includes("api.github.com") &&
+        (c[1] as RequestInit | undefined)?.method === "PUT",
+    );
+    expect(publishPut).toBeDefined();
+    const putBody = JSON.parse((publishPut![1] as RequestInit).body as string) as {
+      content: string;
+    };
+    const markdown = Buffer.from(putBody.content, "base64").toString("utf-8");
+    expect(markdown).toContain(`location: { lat: ${NATALIE_LAT}, lon: ${NATALIE_LON}`);
 
     const snap = await monthlyTotals(env);
     expect(snap.requests).toBe(1);

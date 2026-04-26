@@ -156,7 +156,7 @@ export async function handlePost(cmd: PostCommand, ctx: HandlePostContext): Prom
   }
 
   const body = `Posted: ${narrative.title} · ${publishResult.url}`;
-  return { body, lat, lon };
+  return { body };
 }
 
 async function failPipeline(

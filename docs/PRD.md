@@ -132,7 +132,7 @@ Endorsed by the deep research report and consistent with the original engineerin
 ┌─────────────────────────────────────────────────────────────────┐
 │  Layer 5 — Outbound Reply                                       │
 │  Garmin IPC Inbound /Messaging.svc (X-API-Key auth)             │
-│  Fallback: email via Resend if IPC Inbound fails (D9 deferred)  │
+│  α: on failure, log degraded_reply (no email-fallback per D9)   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -229,11 +229,11 @@ Even with a valid token, we verify incoming `imei` is in `IMEI_ALLOWLIST` env va
 - **Timestamp:** `/Date(ms)/` format, must be now-ish (not future, not before 2011).
 - **Response:** `{ "count": N }` on 200 OK. Error responses carry `{ Code, Message, Description, URL, IMEI }`.
 
-**Fallback: email-to-device.** If IPC Inbound returns 5xx/429 after 3 retries with exponential backoff, we send the same reply via Resend to the inReach device's email address (configured per-user). Logged as `degraded_reply`. This is a safety net, not a primary path. (Note: per D9, email-fallback is skipped for α — this paragraph describes the path for when D9 is revisited in Phase 2.)
+**Reply-delivery failure (α).** Per D9 (§8), email-fallback to the device is **skipped for α**. If IPC Inbound returns 5xx/429 after 3 retries with exponential backoff, we write a ledger entry `reply_delivery: failed` and return 200 OK to Garmin. Side effects (blog post, email, task) still persist — only the reply confirmation failed. Surfaced via `!cost` and log inspection. Phase 2 will revisit if reliability data warrants adding a real email-fallback path.
 
 ### Retry / failure handling
 - **Inbound-from-Garmin:** we never NACK for app errors (would cascade retries). We 200 OK and surface errors to the user via IPC Inbound reply (e.g., `"Error: Todoist auth failed"`).
-- **Outbound-to-Garmin (IPC Inbound):** 3 retries with backoff 1s/4s/16s. After failure, fall through to email-to-device. Log the failure to ledger for visibility.
+- **Outbound-to-Garmin (IPC Inbound):** 3 retries with backoff 1s/4s/16s. After failure, log `reply_delivery: failed` to the ledger and return 200 OK upstream (no email-fallback in α — per D9). Side effects already persisted; only the reply confirmation is lost.
 
 ### Garmin Professional tier requirement
 **⚠️ PREREQUISITE.** IPC Outbound + Inbound are Professional/Enterprise features only. Consumer inReach plans do not expose these APIs. This gates the entire architecture. If user does not have a Professional account, we must fall back to **Cloudflare Email Workers** as the inbound path (Garmin can forward device messages to an email, which CF Email Workers can ingest). This is a strict decision point — see §8.
@@ -291,10 +291,10 @@ If the same webhook replays after partial completion:
 
 ### Per-command cost breakdown (estimated)
 
-| Command | LLM | Email | Todoist | Nominatim | Open-Meteo | CF Infra | **Total** |
+| Command | LLM | Publish/Email | Todoist | Nominatim | Open-Meteo | CF Infra | **Total** |
 |---|---|---|---|---|---|---|---|
-| `!post` | $0.020–0.030 | $0 (free tier) | — | $0 (free) | $0 (free) | $0.001 | **$0.021–0.031** |
-| `!mail` | — | $0 (free tier) | — | $0 (cached) | $0 (cached) | $0.0005 | **~$0.001** |
+| `!post` | $0.020–0.030 | $0 (GitHub Pages) | — | $0 (free) | $0 (free) | $0.001 | **$0.021–0.031** |
+| `!mail` | — | $0 (Resend free tier) | — | $0 (cached) | $0 (cached) | $0.0005 | **~$0.001** |
 | `!todo` | — | — | $0 (free) | — | — | $0.0002 | **~$0.0002** |
 | `!ping` | — | — | — | — | — | $0.0002 | **~$0.0002** |
 | `!help` | — | — | — | — | — | $0.0002 | **~$0.0002** |

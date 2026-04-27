@@ -44,8 +44,8 @@ TrailScribe is an AI-native serverless agent that transforms satellite messages 
 
 | Command | Purpose | External calls | Owner in decks |
 |---|---|---|---|
-| `!post <note>` | Journaling. Enriches position → narrative `{title, haiku, body}` → publishes to Posthaven blog. | OpenAI, Nominatim (cached), Open-Meteo (cached), Gmail (Posthaven email target) | Natalie, Marcus, Yuki |
-| `!mail to:_ subj:_ body:_` | Enriched email. Appends coordinates, place name, elevation, weather, map links. | Nominatim (cached), Open-Meteo (cached), Gmail | Natalie, Marcus |
+| `!post <note>` | Journaling. Enriches position → narrative `{title, haiku, body}` → publishes to GitHub Pages journal. | LLM (OpenRouter), Nominatim (cached), Open-Meteo (cached), GitHub Pages (markdown commits) | Natalie, Marcus, Yuki |
+| `!mail to:_ subj:_ body:_` | Enriched email. Appends coordinates, place name, elevation, weather, map links. | Nominatim (cached), Open-Meteo (cached), Resend | Natalie, Marcus |
 | `!todo <task>` | Creates a task in Todoist with GPS + timestamp in note. | Todoist | Natalie |
 | `!ping` | Health check → `pong`. | — | operational |
 | `!help` | Command summary. | — | operational |
@@ -89,7 +89,7 @@ Endorsed by the deep research report and consistent with the original engineerin
 - **Serverless idempotency** via KV bindings (no stateful server to manage).
 - **Secrets management** via `wrangler secret put` (vs. `.env` leakage risk).
 - **Global edge** — cold-start insensitive, suitable for Garmin's near-real-time webhook latency tolerance.
-- **Cost model** at MVP scale is effectively $0 infrastructure (Free tier covers expected volume; OpenAI + Gmail dominate).
+- **Cost model** at MVP scale is effectively $0 infrastructure (Free tier covers expected volume; LLM + email API dominate).
 
 ### Layered architecture
 
@@ -115,15 +115,15 @@ Endorsed by the deep research report and consistent with the original engineerin
 │  Dispatch by command type → pipeline                            │
 │  • Partial-failure checkpoints (KV state per sub-op)            │
 │  • Budget check against ledger before expensive ops             │
-│  • Accurate token accounting via OpenAI usage field             │
+│  • Accurate token accounting via LLM usage field                │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │  Layer 4 — Tool Adapters                                        │
-│  • narrative.ts      (OpenAI, JSON-mode → title/haiku/body)     │
-│  • gmail.ts          (Gmail API w/ refresh token)               │
+│  • narrative.ts      (LLM via OpenRouter, JSON → t/h/b)         │
+│  • mail/resend.ts    (Resend API)                               │
 │  • todoist.ts        (Todoist REST API)                         │
-│  • posthaven.ts      (Gmail to POSTHAVEN_TO)                    │
+│  • publish/github-pages.ts  (GitHub Contents API)               │
 │  • geocode.ts        (Nominatim, cached 24h)                    │
 │  • weather.ts        (Open-Meteo, cached 1h)                    │
 │  • ipc-inbound.ts    (Garmin POST /Messaging.svc)               │
@@ -132,7 +132,7 @@ Endorsed by the deep research report and consistent with the original engineerin
 ┌─────────────────────────────────────────────────────────────────┐
 │  Layer 5 — Outbound Reply                                       │
 │  Garmin IPC Inbound /Messaging.svc (X-API-Key auth)             │
-│  Fallback: email to GMAIL_SENDER if IPC Inbound fails           │
+│  Fallback: email via Resend if IPC Inbound fails (D9 deferred)  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -229,7 +229,7 @@ Even with a valid token, we verify incoming `imei` is in `IMEI_ALLOWLIST` env va
 - **Timestamp:** `/Date(ms)/` format, must be now-ish (not future, not before 2011).
 - **Response:** `{ "count": N }` on 200 OK. Error responses carry `{ Code, Message, Description, URL, IMEI }`.
 
-**Fallback: email-to-device.** If IPC Inbound returns 5xx/429 after 3 retries with exponential backoff, we send the same reply via Gmail to the inReach device's email address (configured per-user). Logged as `degraded_reply`. This is a safety net, not a primary path.
+**Fallback: email-to-device.** If IPC Inbound returns 5xx/429 after 3 retries with exponential backoff, we send the same reply via Resend to the inReach device's email address (configured per-user). Logged as `degraded_reply`. This is a safety net, not a primary path. (Note: per D9, email-fallback is skipped for α — this paragraph describes the path for when D9 is revisited in Phase 2.)
 
 ### Retry / failure handling
 - **Inbound-from-Garmin:** we never NACK for app errors (would cascade retries). We 200 OK and surface errors to the user via IPC Inbound reply (e.g., `"Error: Todoist auth failed"`).
@@ -243,7 +243,7 @@ Even with a valid token, we verify incoming `imei` is in `IMEI_ALLOWLIST` env va
 ## 5. Idempotency Spec
 
 ### Why this matters
-Garmin's retry schedule is 2/4/8/16/32/64/128 seconds on non-200 response, then 12-hour pauses × 5 days. Users manually retry on slow replies. LLM/Gmail/Todoist are all side-effect-bearing — a duplicate blog post or duplicate email is a real UX failure and real dollar cost (duplicate OpenAI call ≈ $0.03).
+Garmin's retry schedule is 2/4/8/16/32/64/128 seconds on non-200 response, then 12-hour pauses × 5 days. Users manually retry on slow replies. LLM/Resend/Todoist/GitHub Pages are all side-effect-bearing — a duplicate blog post or duplicate email is a real UX failure and real dollar cost (duplicate LLM call ≈ $0.03).
 
 ### Idempotency key derivation
 ```
@@ -273,15 +273,15 @@ received → processing → (per-op) checkpoints → completed | failed
 If the same webhook replays after partial completion:
 - Read `idem:<key>`. If `status="completed"` → 200 OK, noop, send no new reply.
 - If `status="processing"` or `"failed"` → consult completed sub-ops. Skip already-done ops, retry remainder.
-- Example: `!post` completed `narrative_generated` + `blog_published` but failed on `reply_sent`. On replay, skip narrative + blog, only retry reply. Prevents duplicate blog posts / duplicate OpenAI calls.
+- Example: `!post` completed `narrative_generated` + `blog_published` but failed on `reply_sent`. On replay, skip narrative + blog, only retry reply. Prevents duplicate blog posts / duplicate LLM calls.
 
 ### Guarantees
 - **At-least-once for outbound side-effects** (reply delivery) because we accept best-effort and log degraded replies.
-- **At-most-once for expensive side-effects** (OpenAI calls, blog publishes, email sends, task creation) via op-level checkpoints.
+- **At-most-once for expensive side-effects** (LLM calls, blog publishes, email sends, task creation) via op-level checkpoints.
 - **Exactly-once** is a Phase 2 target (Durable Objects give strong consistency). KV's eventual consistency is acceptable at MVP volume (<1 msg/second).
 
 ### Cost of idempotency
-~$0.00001 per message in KV ops. Trivial vs. the $0.03 cost of a single duplicate OpenAI call. Pays for itself on the first prevented duplicate.
+~$0.00001 per message in KV ops. Trivial vs. the $0.03 cost of a single duplicate LLM call. Pays for itself on the first prevented duplicate.
 
 ---
 
@@ -291,7 +291,7 @@ If the same webhook replays after partial completion:
 
 ### Per-command cost breakdown (estimated)
 
-| Command | OpenAI | Gmail | Todoist | Nominatim | Open-Meteo | CF Infra | **Total** |
+| Command | LLM | Email | Todoist | Nominatim | Open-Meteo | CF Infra | **Total** |
 |---|---|---|---|---|---|---|---|
 | `!post` | $0.020–0.030 | $0 (free tier) | — | $0 (free) | $0 (free) | $0.001 | **$0.021–0.031** |
 | `!mail` | — | $0 (free tier) | — | $0 (cached) | $0 (cached) | $0.0005 | **~$0.001** |
@@ -317,7 +317,7 @@ If the same webhook replays after partial completion:
 
 ### Daily budget enforcement
 - `DAILY_TOKEN_BUDGET` env var (integer, 0 = unlimited).
-- Before `!post` dispatches to OpenAI, orchestrator checks today's token total. If `tokens_today + estimated_prompt > budget`, the command returns `"Daily AI budget reached. Retry tomorrow or raise DAILY_TOKEN_BUDGET."` and does NOT call OpenAI.
+- Before `!post` dispatches to the LLM, orchestrator checks today's token total. If `tokens_today + estimated_prompt > budget`, the command returns `"Daily AI budget reached. Retry tomorrow or raise DAILY_TOKEN_BUDGET."` and does NOT call the LLM.
 - Non-AI commands (`!mail`, `!todo`, etc.) are not budget-gated — they have trivial cost.
 - **My recommended default:** `DAILY_TOKEN_BUDGET=50000` (≈ 150 posts/day at full prompt+response). You'll want to set this with real numbers after one week of usage data.
 
@@ -349,12 +349,12 @@ If the same webhook replays after partial completion:
 - **Idempotency hit rate** — should be <5% of inbound volume in steady state (higher = Garmin/Iridium retries = investigate)
 - **Uptime** — Workers baseline is ~99.99%; target 99.5% for our code (excludes external API failures)
 - **p50/p95 latency** — inbound-received to reply-sent. Target p95 <10s (AI calls dominate)
-- **OpenAI token efficiency** — avg tokens per `!post`. Target ≤300 input+output; alert on drift.
+- **LLM token efficiency** — avg tokens per `!post`. Target ≤300 input+output; alert on drift.
 
 ### Non-launch-blocking but tracked
 - Monthly active commands
-- Blog post publish success rate (Posthaven accepts the email)
-- Email delivery success rate (Gmail doesn't bounce)
+- Blog post publish success rate (GitHub Contents API accepts the commit)
+- Email delivery success rate (Resend doesn't bounce)
 - Todoist task creation success rate
 
 ---

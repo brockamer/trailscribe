@@ -19,7 +19,7 @@ Living context file for Claude Code. Keep concise; update as decisions are made.
 
 - **Personas (canonical, from product decks):** Natalie (field botanist, Eastern Sierra), Marcus (expedition guide, PNW/Alaska/Patagonia), Yuki (solo bikepacker/storyteller, Iceland/Mongolia/Patagonia). See PRD §1.
 - **Hard constraints:** Garmin IPC Inbound messages are 160 chars max. Reply budget 320 chars (two SMS). Idempotency matters — Garmin retries 2/4/8/16/32/64/128s then pauses 12h × 5d.
-- **Cost target:** <$0.05 per transaction, $0.03 typical. Dominated by OpenAI on `!post`; non-AI commands are effectively free.
+- **Cost target:** <$0.05 per transaction, $0.03 typical. Dominated by the LLM on `!post`; non-AI commands are effectively free.
 - **Not a safety system.** SOS must go through Garmin native.
 
 ## Command grammar
@@ -51,9 +51,9 @@ src/
     grammar.ts                  # !command parser (salvaged, subset for MVP)
     types.ts                    # ParsedCommand, GarminEvent, TrailContext, LedgerEntry
     orchestrator.ts             # dispatch + checkpointed sub-ops + budget gate
-    narrative.ts                # OpenAI JSON-mode → { title, haiku, body }
+    narrative.ts                # LLM JSON-mode → { title, haiku, body }
     context.ts                  # rolling window of recent positions/messages per IMEI
-    ledger.ts                   # KV-backed ledger; real OpenAI token usage
+    ledger.ts                   # KV-backed ledger; real LLM token usage
     links.ts                    # Google Maps + MapShare link builders (salvaged)
   adapters/
     inbound/hono-worker.ts      # POST /garmin/ipc; bearer auth; IMEI allowlist; idempotency
@@ -63,7 +63,7 @@ src/
     publish/github-pages.ts     # commit markdown to journal repo via GitHub Contents API (was publish/posthaven.ts)
     location/geocode.ts         # Nominatim, cached
     location/weather.ts         # Open-Meteo, cached
-    ai/openai.ts                # OpenAI wrapper; real usage
+    ai/openrouter.ts            # OpenRouter wrapper; real usage
     storage/kv.ts               # typed KV helpers
     logging/worker-logs.ts      # structured JSON logfmt
 tests/                          # Vitest + Miniflare; fixtures/ for Garmin events

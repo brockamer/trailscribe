@@ -1,3 +1,7 @@
+---
+**Shipped in #34, #34 on 2026-04-25. Final decisions captured in issue body.**
+---
+
 # Phase 1 — α-MVP
 
 **Goal:** From a Garmin inReach Mini 3 Plus, send any of the six α-MVP commands (`!post`, `!mail`, `!todo`, `!ping`, `!help`, `!cost`) and receive a valid reply on the device — end-to-end through real third-party APIs, with the per-transaction cost ≤ \$0.05 and idempotent against Garmin's retry storms.

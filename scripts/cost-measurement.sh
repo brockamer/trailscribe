@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# scripts/cost-measurement.sh — P1-23 cost-measurement driver.
+#
+# Fires 20 `!post` fixtures at the staging Worker with unique freeText AND
+# fresh timeStamps (both required to avoid same-hash idempotent dedup).
+# Reads the monthly ledger before + after, prints a delta + per-tx mean.
+#
+# Prereqs:
+#   1. .env.replay populated with STAGING_URL and GARMIN_INBOUND_TOKEN.
+#   2. wrangler authenticated (run `pnpm exec wrangler login` once).
+#   3. Optionally: `wrangler tail --env staging` running in another terminal
+#      for live spot-check of orchestrate_ok / narrative_diag.
+#
+# Outputs: a summary block at the end suitable for pasting as the P1-23
+# story-completion note on issue #59.
+
+set -euo pipefail
+
+ENV_FILE="$(dirname "$0")/../.env.replay"
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Missing $ENV_FILE — see scripts/replay-test.sh for format." >&2
+  exit 1
+fi
+# shellcheck source=/dev/null
+. "$ENV_FILE"
+
+if [[ -z "${STAGING_URL:-}" || -z "${GARMIN_INBOUND_TOKEN:-}" ]]; then
+  echo ".env.replay must export STAGING_URL and GARMIN_INBOUND_TOKEN" >&2
+  exit 1
+fi
+
+FIXTURE="$(dirname "$0")/../tests/fixtures/garmin-replay/post-burn-in.json"
+if [[ ! -f "$FIXTURE" ]]; then
+  echo "Missing fixture: $FIXTURE" >&2
+  exit 1
+fi
+
+# Varied note text spanning the three personas + prompt-length variance, so
+# the per-call cost reflects realistic field traffic rather than 20× the
+# same prompt.
+NOTES=(
+  "alpenglow over Mount Whitney, granite glowing pink"
+  "found a lupine meadow at 11k ft, scree-covered north face"
+  "ridge gusts 40mph at Forester Pass, ice on the cables"
+  "marmot in camp eating my cous-cous, classic"
+  "summit Whitney 0612, 28F, no wind, perfect bluebird"
+  "snow line dropping fast, 2 inches overnight at base camp"
+  "stream crossing Kearsarge sketchy, water knee-deep and cold"
+  "creek frozen this morning at Charlotte Lake, no liquid water"
+  "JMT day 14, knees holding up, pack at 32 lbs"
+  "bear canister mandatory above 9500ft per regs"
+  "saw three ptarmigan above the col, snowy plumage"
+  "navigated talus by headlamp, finally at Bishop Pass"
+  "altitude headache 13k, pushing fluids and ibuprofen"
+  "weather window 6h before next system rolls in tomorrow"
+  "forest fire haze settling in valley, eyes burning"
+  "found rare alpine columbine, flagging for return trip"
+  "Forester Pass closed by NPS due to active rockfall"
+  "trout rising in tarn at sunset, fly fishing tomorrow"
+  "lightning offshore over Owens Valley, counting Mississippi"
+  "summit register at Whitney signed, descending now"
+)
+
+if [[ ${#NOTES[@]} -ne 20 ]]; then
+  echo "INTERNAL: NOTES array must have exactly 20 entries (got ${#NOTES[@]})" >&2
+  exit 1
+fi
+
+YYYYMM=$(date -u +"%Y-%m")
+
+echo "=== P1-23 cost measurement: 20× !post ==="
+echo "Staging URL: $STAGING_URL"
+echo "Period key:  ledger:$YYYYMM"
+echo
+
+echo "--- Pre-campaign ledger ---"
+PRE=$(pnpm exec wrangler kv key get --binding=TS_LEDGER --env=staging "ledger:$YYYYMM" 2>/dev/null || echo "{}")
+echo "$PRE" | jq '{requests, usd_cost, post: .by_command.post}'
+PRE_POST_REQ=$(echo "$PRE" | jq -r '.by_command.post.requests // 0')
+PRE_POST_USD=$(echo "$PRE" | jq -r '.by_command.post.usd_cost // 0')
+echo
+
+echo "--- Firing 20× !post (unique freeText + fresh timeStamp each) ---"
+printf "%-3s  %-6s  %s\n" "#" "STATUS" "NOTE"
+echo "---  ------  ----"
+
+for i in $(seq 1 20); do
+  TS=$(date +%s%3N)
+  NOTE="${NOTES[$((i-1))]}"
+  FT="!post run${i}: ${NOTE}"
+  PAYLOAD=$(jq --arg ts "$TS" --arg ft "$FT" \
+    '.Events[0].timeStamp = ($ts | tonumber) | .Events[0].freeText = $ft' \
+    "$FIXTURE")
+
+  STATUS=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+    --max-time 60 \
+    -X POST "$STAGING_URL" \
+    -H "X-Outbound-Auth-Token: $GARMIN_INBOUND_TOKEN" \
+    -H "Content-Type: application/json" \
+    --data "$PAYLOAD")
+
+  printf "%-3s  %-6s  %s\n" "$i" "$STATUS" "$(echo "$NOTE" | cut -c 1-60)"
+
+  if [[ "$STATUS" != "200" ]]; then
+    echo "ABORT: call $i returned $STATUS — Garmin would retry; investigate before continuing" >&2
+    exit 2
+  fi
+
+  # Pace the loop so async tail/journal-commit work settles between calls
+  # and we don't trip OpenRouter / GitHub rate limits.
+  sleep 6
+done
+
+echo
+echo "--- Settling pause (10s for ledger writes to flush) ---"
+sleep 10
+
+echo "--- Post-campaign ledger ---"
+POST=$(pnpm exec wrangler kv key get --binding=TS_LEDGER --env=staging "ledger:$YYYYMM" 2>/dev/null || echo "{}")
+echo "$POST" | jq '{requests, usd_cost, post: .by_command.post}'
+POST_POST_REQ=$(echo "$POST" | jq -r '.by_command.post.requests // 0')
+POST_POST_USD=$(echo "$POST" | jq -r '.by_command.post.usd_cost // 0')
+echo
+
+DELTA_REQ=$((POST_POST_REQ - PRE_POST_REQ))
+DELTA_USD=$(awk -v a="$POST_POST_USD" -v b="$PRE_POST_USD" 'BEGIN{printf "%.7f", a - b}')
+MEAN=$(awk -v u="$DELTA_USD" -v n="$DELTA_REQ" 'BEGIN{ if (n>0) printf "%.7f", u/n; else print "n/a" }')
+
+echo "=== Summary ==="
+echo "post.requests:  $PRE_POST_REQ → $POST_POST_REQ  (Δ $DELTA_REQ)"
+echo "post.usd_cost:  $PRE_POST_USD → $POST_POST_USD  (Δ \$$DELTA_USD)"
+echo "mean per !post: \$$MEAN"
+echo "PRD ceiling:    \$0.05/tx (hard \$0.08)"
+if [[ "$DELTA_REQ" != "20" ]]; then
+  echo "WARN: expected Δ=20, got Δ=$DELTA_REQ — possible dedup or ledger-write failure" >&2
+fi

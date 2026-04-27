@@ -275,7 +275,7 @@ curl -s "$STAGING_URL/health" | jq .
 curl -s -X POST "$STAGING_URL/garmin/ipc" \
   -H "X-Outbound-Auth-Token: $GARMIN_INBOUND_TOKEN" \
   -H "Content-Type: application/json" \
-  --data @tests/fixtures/garmin-outbound-v2-freetext.json
+  --data @tests/fixtures/garmin/free-text-ping.json
 # Expect: ok
 ```
 

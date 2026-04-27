@@ -8,13 +8,28 @@
 # Prereqs:
 #   1. .env.replay populated with STAGING_URL and GARMIN_INBOUND_TOKEN.
 #   2. wrangler authenticated (run `pnpm exec wrangler login` once).
-#   3. Optionally: `wrangler tail --env staging` running in another terminal
+#   3. Staging Worker deployed with IPC_INBOUND_DRY_RUN=true, OR pass
+#      --allow-real-sends to fire real Garmin replies. Default: aborts if
+#      dry-run is off, since 20× real device sends is rarely intended.
+#   4. Optionally: `wrangler tail --env staging` running in another terminal
 #      for live spot-check of orchestrate_ok / narrative_diag.
+#
+# Flags:
+#   --allow-real-sends   Skip the dry-run safety abort and proceed even if
+#                        IPC_INBOUND_DRY_RUN is false on staging.
 #
 # Outputs: a summary block at the end suitable for pasting as the P1-23
 # story-completion note on issue #59.
 
 set -euo pipefail
+
+ALLOW_REAL_SENDS=false
+for arg in "$@"; do
+  case "$arg" in
+    --allow-real-sends) ALLOW_REAL_SENDS=true ;;
+    *) echo "Unknown flag: $arg" >&2; exit 1 ;;
+  esac
+done
 
 ENV_FILE="$(dirname "$0")/../.env.replay"
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -48,6 +63,53 @@ if echo "$WHOAMI_OUT" | grep -qE "not authenticated|not logged in"; then
   exit 1
 fi
 echo "  ✓ wrangler authenticated"
+echo
+
+# Dry-run safety check — query the deployed staging Worker's /health endpoint
+# (which exposes IPC_INBOUND_DRY_RUN as `dry_run: bool`) and abort if it's off
+# unless --allow-real-sends was passed. Without this, forgetting to deploy
+# with --var IPC_INBOUND_DRY_RUN:true fires 20 real Garmin replies — the
+# specific foot-gun that caused issue #59's first attempt to over-spam the
+# operator's device.
+HEALTH_URL="${STAGING_URL%/garmin/ipc}/health"
+echo "--- Staging dry-run safety check ---"
+echo "  GET $HEALTH_URL"
+HEALTH=$(curl --silent --max-time 10 --fail "$HEALTH_URL" 2>&1) || {
+  echo "ERROR: failed to fetch $HEALTH_URL — staging worker unreachable?" >&2
+  echo "$HEALTH" >&2
+  exit 1
+}
+DRY_RUN=$(echo "$HEALTH" | jq -r '.dry_run // "missing"')
+case "$DRY_RUN" in
+  true)
+    echo "  ✓ staging is in dry-run mode (no real device sends)"
+    ;;
+  false)
+    if [[ "$ALLOW_REAL_SENDS" == "true" ]]; then
+      echo "  ⚠  staging is NOT in dry-run mode and --allow-real-sends was passed."
+      echo "     20× real Garmin device replies WILL fire on the operator's inReach."
+      echo "     Sleeping 5s — Ctrl-C now to abort."
+      sleep 5
+    else
+      echo "ERROR: staging worker has IPC_INBOUND_DRY_RUN=false." >&2
+      echo "       This script would fire 20 real Garmin device replies." >&2
+      echo "  Fix:  pnpm exec wrangler deploy --env staging --var IPC_INBOUND_DRY_RUN:true" >&2
+      echo "  Or:   re-run with --allow-real-sends if real-device sends are intended." >&2
+      exit 1
+    fi
+    ;;
+  missing)
+    echo "ERROR: /health response did not include dry_run field. Worker may be" >&2
+    echo "       running an older revision than src/app.ts. Redeploy staging." >&2
+    echo "  Response: $HEALTH" >&2
+    exit 1
+    ;;
+  *)
+    echo "ERROR: unexpected dry_run value: $DRY_RUN" >&2
+    echo "  Response: $HEALTH" >&2
+    exit 1
+    ;;
+esac
 echo
 
 # Varied note text spanning the three personas + prompt-length variance, so

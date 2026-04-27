@@ -35,6 +35,21 @@ if [[ ! -f "$FIXTURE" ]]; then
   exit 1
 fi
 
+# Wrangler auth precheck — required for the pre/post `kv key get` reads. Without
+# auth, the silent `|| echo "{}"` fallback below would mask access errors and
+# produce a misleading delta in the summary block. NB: `wrangler whoami` exits 0
+# even when unauthenticated; we must grep the output text.
+echo "--- Wrangler auth precheck ---"
+WHOAMI_OUT=$(pnpm exec wrangler whoami 2>&1 || true)
+if echo "$WHOAMI_OUT" | grep -qE "not authenticated|not logged in"; then
+  echo "ERROR: wrangler is not authenticated. Cost-measurement reads staging KV;" >&2
+  echo "       silent failure here would mask access errors and skew the summary." >&2
+  echo "  Fix: pnpm exec wrangler login" >&2
+  exit 1
+fi
+echo "  ✓ wrangler authenticated"
+echo
+
 # Varied note text spanning the three personas + prompt-length variance, so
 # the per-call cost reflects realistic field traffic rather than 20× the
 # same prompt.

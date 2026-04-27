@@ -130,12 +130,18 @@ describe("Worker sanity routes", () => {
     expect(await res.text()).toContain("TrailScribe");
   });
 
-  test("GET /health returns env + timestamp JSON", async () => {
+  test("GET /health returns env + timestamp + dry_run JSON", async () => {
     const res = await app.request("/health", {}, env);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; env: string; timestamp: string };
+    const body = (await res.json()) as {
+      ok: boolean;
+      env: string;
+      timestamp: string;
+      dry_run: boolean;
+    };
     expect(body.ok).toBe(true);
     expect(body.env).toBe("test");
     expect(typeof body.timestamp).toBe("string");
+    expect(body.dry_run).toBe(false);
   });
 });

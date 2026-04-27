@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "./env.js";
-import { appendCostSuffix, imeiAllowSet } from "./env.js";
+import { appendCostSuffix, imeiAllowSet, ipcInboundDryRun } from "./env.js";
 import type { CommandResult, GarminEnvelope, GarminEvent } from "./core/types.js";
 import {
   idempotencyKey,
@@ -31,6 +31,7 @@ export function makeApp() {
       ok: true,
       env: c.env.TRAILSCRIBE_ENV,
       timestamp: new Date().toISOString(),
+      dry_run: ipcInboundDryRun(c.env),
     }),
   );
 

@@ -4,6 +4,7 @@
 
 name = "trailscribe"
 main = "src/index.ts"
+account_id = "d445b6851a9736b713eca837cf6254fd"
 compatibility_date = "2026-04-01"
 compatibility_flags = ["nodejs_compat"]
 

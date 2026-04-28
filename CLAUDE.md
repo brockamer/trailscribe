@@ -71,18 +71,19 @@ docs/
   PRD.md                        # canonical product/engineering spec
   architecture.md               # updated for Workers
   garmin-setup.md               # updated for IPC Outbound bearer + IPC Inbound X-API-Key
-  commands.md                   # MVP + deferred cmds
+  field-commands.md             # MVP + deferred cmds (operator-facing reference)
   archive/                      # old Pipedream/n8n/Workers-minimal docs (deprecated but kept for ref)
 materials/                      # input PDFs + extracted txt; don't edit
-plans/                          # per-milestone sprint plans (phase-0-scaffolding.md, etc.)
+plans/                          # per-milestone sprint plans (active: phase-2-extended-commands.md; archived under archived/2026-MM/)
 ```
 
 ## Status
 
-- **Phase 0 — Workers scaffold:** complete 2026-04-24. All 20 P0 stories shipped. Staging Worker live at `https://trailscribe-staging.trailscribe.workers.dev`; bearer auth + IMEI allowlist + KV idempotency verified against the canonical V2 fixture; 16 KV namespaces provisioned across dev/staging/prod; CI green on PR (typecheck + Vitest + ESLint).
-- **Phase 1 — α-MVP:** code substantively shipped 2026-04-25 → 2026-04-26 (P1-17, P1-18, P1-20, P1-21, P1-22, P1-23). All 6 commands (`!post`, `!mail`, `!todo`, `!ping`, `!help`, `!cost`) return real responses on staging; replay verification + cost measurement complete; OpenRouter LLM layer live (`anthropic/claude-sonnet-4-6`); epic #30 + doc-reconciliation #31 closed 2026-04-26. Closing the milestone is now gated on **#111** — production traffic turn-on with the Mini 3 Plus against the production Worker. Plan: `plans/phase-1-alpha-mvp.md`.
-- **Production-readiness — current live phase** (milestone due 2026-05-31): 4 open items — custom domain (#26), re-enable auto-deploy on push to main (#33; currently `workflow_dispatch`-only after first prod deploy landed under #32), Garmin Pro tenant downgrade (#14, blocked on Garmin support reply) → device user swap (#15, queued behind #14).
-- **Future arc on the board:** Phase 2 — extended commands (#98, the 8 deferred α commands) and Phase 3 — Durable Objects + D1 migration (#99) filed 2026-04-26 as Low-priority Backlog umbrellas. Promote when their predecessors close.
+- **Phase 0 — Workers scaffold:** complete 2026-04-24. All 20 P0 stories shipped.
+- **Phase 1 — α-MVP:** complete 2026-04-27. Epic #30 closed 2026-04-26; close gate #111 (production traffic turn-on with the Mini 3 Plus against the production Worker) verified 2026-04-27. All 6 commands (`!post`, `!mail`, `!todo`, `!ping`, `!help`, `!cost`) return real responses on production; replay verification + cost measurement complete; OpenRouter LLM layer live (`anthropic/claude-sonnet-4-6`). Plan archived at `plans/archived/2026-04/phase-1-alpha-mvp.md`.
+- **Production-readiness:** complete 2026-04-28. All 8 milestone issues closed: shipped #32, #33 (auto-deploy on push to main re-enabled in #126), #121 (device-side recipient + Include-Location convention pinned in #127); closed-as-not-planned #14, #15, #26 (operator scope decision: personal-project housekeeping, no custom domain).
+- **Phase 2 — extended commands:** **active phase as of 2026-04-28.** Plan: `plans/phase-2-extended-commands.md`. Epic #98 (8 deferred α commands: `!where`, `!weather`, `!drop`, `!brief`, `!ai`, `!camp`, `!share`, `!blast`). Single-operator scope; KV-only state; no β-launch milestone. Sub-issues #112–#119 are sprint-ready when promoted from Backlog.
+- **Phase 3 — DO + D1 migration:** filed as epic #99 (Low-priority Backlog). Promote when Phase 2 closes.
 
 ## Conventions
 
@@ -147,7 +148,7 @@ plans/                          # per-milestone sprint plans (phase-0-scaffoldin
 ## Workflow
 
 - **jared** manages the board: https://github.com/users/brockamer/projects/3 (see `docs/project-board.md`).
-- Active plan: `plans/phase-0-scaffolding.md` (linked to epic #29).
+- Active plan: `plans/phase-2-extended-commands.md` (linked to epic #98).
 - Git: `origin` = `https://github.com/brockamer/trailscribe.git`, default branch `main`.
 - Commit sign-off: `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
 

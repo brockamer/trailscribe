@@ -30,6 +30,10 @@ RESEND_FROM_EMAIL = "trailscribe@tx.trailscribe.net"
 RESEND_FROM_NAME = "TrailScribe"
 JOURNAL_POST_PATH_TEMPLATE = "_posts/{yyyy}-{mm}-{dd}-{slug}.md"
 JOURNAL_URL_TEMPLATE = "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html"
+# Image-gen (P2-17) — Replicate Flux schnell for the first cut.
+IMAGE_PROVIDER = "replicate"
+IMAGE_MODEL = "black-forest-labs/flux-schnell"
+IMAGE_COST_PER_CALL_USD = "0.003"
 
 # KV namespaces — provisioned per env (dev main + dev preview + staging + production).
 # To recreate from scratch: `wrangler kv namespace create <BINDING> [--preview | --env <env>]`.
@@ -65,6 +69,7 @@ preview_id = "dd4bbcafe4974a65b3f554566c1e2a59"
 #   GITHUB_JOURNAL_TOKEN          — fine-grained PAT (contents:write on journal repo)
 #   GITHUB_JOURNAL_REPO           — e.g. brockamer/trailscribe-journal
 #   GITHUB_JOURNAL_BRANCH         — e.g. main
+#   IMAGE_API_KEY                 — image-gen provider key (Replicate token in α; P2-17 / !postimg)
 
 # -----------------------------------------------------------------------------
 # Staging environment (auto-deployed by .github/workflows/deploy-cloudflare.yml
@@ -96,6 +101,9 @@ RESEND_FROM_EMAIL = "trailscribe@tx.trailscribe.net"
 RESEND_FROM_NAME = "TrailScribe (staging)"
 JOURNAL_POST_PATH_TEMPLATE = "_posts/{yyyy}-{mm}-{dd}-{slug}.md"
 JOURNAL_URL_TEMPLATE = "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html"
+IMAGE_PROVIDER = "replicate"
+IMAGE_MODEL = "black-forest-labs/flux-schnell"
+IMAGE_COST_PER_CALL_USD = "0.003"
 
 [[env.staging.kv_namespaces]]
 binding = "TS_IDEMPOTENCY"
@@ -140,6 +148,9 @@ RESEND_FROM_EMAIL = "trailscribe@tx.trailscribe.net"
 RESEND_FROM_NAME = "TrailScribe"
 JOURNAL_POST_PATH_TEMPLATE = "_posts/{yyyy}-{mm}-{dd}-{slug}.md"
 JOURNAL_URL_TEMPLATE = "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html"
+IMAGE_PROVIDER = "replicate"
+IMAGE_MODEL = "black-forest-labs/flux-schnell"
+IMAGE_COST_PER_CALL_USD = "0.003"
 
 [[env.production.kv_namespaces]]
 binding = "TS_IDEMPOTENCY"

@@ -23,6 +23,21 @@ export interface LedgerSnapshot {
   usd_cost: number;
   by_command: Record<string, { requests: number; usd_cost: number }>;
   last_update_ms: number;
+  /**
+   * Image-gen aggregates (P2-17). Optional for backwards compat with
+   * snapshots written before P2-17 deployed — readers default to 0 via `?? 0`.
+   * `recordImageTransaction` updates only these fields; existing text
+   * accounting (`requests`, `usd_cost`, `by_command`) is untouched.
+   */
+  image_requests?: number;
+  image_usd_cost?: number;
+}
+
+/** Image-gen ledger entry — usdCost is provider-quoted, no token math. */
+export interface ImageLedgerEntry {
+  command: string;
+  usdCost: number;
+  env: Env;
 }
 
 /**
@@ -45,6 +60,37 @@ export async function recordTransaction(entry: LedgerEntry): Promise<{ usd_cost:
   await applyToRollup(entry.env, `ledger:${yyyymm}`, yyyymm, entry, usd_cost, now);
   try {
     await applyToRollup(entry.env, `ledger:${yyyymmdd}`, yyyymmdd, entry, usd_cost, now, {
+      expirationTtl: DAILY_TTL_SECONDS,
+    });
+  } catch (e) {
+    log({
+      event: "ledger_daily_write_failed",
+      level: "warn",
+      period: yyyymmdd,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+
+  return { usd_cost };
+}
+
+/**
+ * Record one image-gen transaction (P2-17). Writes to the same monthly +
+ * daily ledger keys but updates only the image aggregates, leaving text
+ * fields alone so existing `!cost` semantics are unaffected. P2-18's `!cost`
+ * formatter consumes both axes for the breakout reply.
+ */
+export async function recordImageTransaction(
+  entry: ImageLedgerEntry,
+): Promise<{ usd_cost: number }> {
+  const usd_cost = entry.usdCost;
+  const now = Date.now();
+  const yyyymm = formatMonth(now);
+  const yyyymmdd = formatDay(now);
+
+  await applyImageToRollup(entry.env, `ledger:${yyyymm}`, yyyymm, usd_cost, now);
+  try {
+    await applyImageToRollup(entry.env, `ledger:${yyyymmdd}`, yyyymmdd, usd_cost, now, {
       expirationTtl: DAILY_TTL_SECONDS,
     });
   } catch (e) {
@@ -83,6 +129,25 @@ async function applyToRollup(
   await putJSON(env.TS_LEDGER, key, updated, opts);
 }
 
+async function applyImageToRollup(
+  env: Env,
+  key: string,
+  period: string,
+  usd_cost: number,
+  now: number,
+  opts?: { expirationTtl?: number },
+): Promise<void> {
+  const existing = await getJSON<LedgerSnapshot>(env.TS_LEDGER, key);
+  const base = existing ?? emptySnapshot(period);
+  const updated: LedgerSnapshot = {
+    ...base,
+    image_requests: (base.image_requests ?? 0) + 1,
+    image_usd_cost: (base.image_usd_cost ?? 0) + usd_cost,
+    last_update_ms: now,
+  };
+  await putJSON(env.TS_LEDGER, key, updated, opts);
+}
+
 async function readRollup(env: Env, key: string, period: string): Promise<LedgerSnapshot> {
   const existing = await getJSON<LedgerSnapshot>(env.TS_LEDGER, key);
   return existing ?? emptySnapshot(period);
@@ -108,6 +173,9 @@ function mergeEntry(
     usd_cost: snap.usd_cost + usd_cost,
     by_command: byCmd,
     last_update_ms: now,
+    // Preserve image aggregates across text writes (P2-17 backwards compat).
+    image_requests: snap.image_requests,
+    image_usd_cost: snap.image_usd_cost,
   };
 }
 

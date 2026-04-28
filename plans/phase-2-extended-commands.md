@@ -399,9 +399,10 @@ Stories are sized **S** (≤2 h), **M** (≤half-day), **L** (≤day). Dependenc
 **Context.** Phase 1's analogue is #111: the milestone closes when the operator's Mini 3 Plus has sent each new command against the production Worker and received a valid reply. Filed as its own gate (not bundled into P2-15) because staging-fixture-green and device-validated are different signals. File a sibling tracking issue under the Phase 2 milestone analogous to #111's role under Phase 1.
 
 **Acceptance criteria:**
-- [ ] Tracking issue filed (analogous to #111) titled "Phase 2 production turn-on: send 8 deferred commands from Mini 3 Plus → production Worker."
-- [ ] Each of the eight new commands sent at least once from the device; reply received on-device for each.
-- [ ] Production ledger inspected: each command shows ≥ 1 transaction with reasonable cost (LLM-bearing commands match Phase 1 cost shape — ≤ \$0.05).
+- [ ] Tracking issue filed (analogous to #111) titled "Phase 2 production turn-on: send 9 commands from Mini 3 Plus → production Worker" (the eight α-deferred commands plus `!postimg`).
+- [ ] Each of the nine new commands sent at least once from the device; reply received on-device for each.
+- [ ] `!postimg`: the journal post URL in the device reply renders an image at the top when opened on the operator's phone after returning to cell coverage.
+- [ ] Production ledger inspected: each command shows ≥ 1 transaction with reasonable cost (LLM-bearing commands match Phase 1 cost shape — ≤ \$0.05; `!postimg` records both text and image ledger lines).
 - [ ] No regressions on the six Phase 1 commands during the same session.
 
 **Size:** S.

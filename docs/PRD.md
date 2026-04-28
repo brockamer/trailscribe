@@ -148,9 +148,9 @@ Endorsed by the deep research report and consistent with the original engineerin
 | `TS_CACHE` | Geocode + weather cache | `geo:<lat:4,lon:4>` / `wx:<lat:2,lon:2>` | geo 24h / wx 1h |
 
 ### Phased evolution (for alignment beyond α)
-- **Phase 2 — Extended commands.** Ship the eight α-deferred commands (see §2 deferrals table; plan: `plans/phase-2-extended-commands.md`; epic #98). Single-operator scope. Storage stays on KV; FieldLog is per-IMEI bounded list (P2-01). Address book is env-var JSON. No new transport. Active phase as of 2026-04-28.
+- **Phase 2 — Extended commands + `!postimg`.** Ship the eight α-deferred commands (see §2 deferrals table) **and `!postimg`** (image-augmented journal post; folded in 2026-04-28 from #125). Plan: `plans/phase-2-extended-commands.md`; epic #98. Single-operator scope. Storage stays on KV; FieldLog is per-IMEI bounded list (P2-01). Address book is env-var JSON. One new external dependency: an image-gen provider (Replicate Flux schnell locked for the first cut; provider-upgrade decision filed as P2-18b conditional on field-quality assessment). Active phase as of 2026-04-28.
 - **Phase 3 — Storage migration (DO + D1).** Migrate `TS_CONTEXT` and FieldLog → Durable Objects (strong consistency for rapid message sequences); migrate `TS_LEDGER` → D1 (SQL analytics, retention beyond a month, budget alerts). Add Cloudflare Queues for async retries. Epic #99.
-- **Phase 4+ — Media.** R2 + Image Resizing for photos (schema V4 media events). Filed conceptually as #125 (`!postimg`) for image generation; raw photo upload is post-v1.0.
+- **Phase 4+ — Media.** R2 + Image Resizing for *operator-uploaded* photos (schema V4 media events). Image *generation* (`!postimg`, #125) was folded forward into Phase 2 — it commits binary images directly into the journal repo and does not need R2.
 
 ### Tech stack (α)
 - **Runtime:** Cloudflare Workers

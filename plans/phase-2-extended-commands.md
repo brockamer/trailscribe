@@ -1,12 +1,12 @@
 # Phase 2 — Extended Commands
 
-**Goal:** From the same Garmin inReach Mini 3 Plus, send any of the eight commands deferred from α-MVP (`!where`, `!weather`, `!drop`, `!brief`, `!ai`, `!camp`, `!share`, `!blast`) and receive a valid reply on the device — end-to-end through real third-party APIs, idempotent, sharing the Phase 1 orchestrator + ledger + reply-formatter pipeline. No new storage tier (still KV); no new auth model (still bearer + IMEI allowlist); no new transport (still IPC Outbound webhook + IPC Inbound reply).
+**Goal:** From the same Garmin inReach Mini 3 Plus, send any of the eight commands deferred from α-MVP (`!where`, `!weather`, `!drop`, `!brief`, `!ai`, `!camp`, `!share`, `!blast`) **plus `!postimg`** and receive a valid reply on the device — end-to-end through real third-party APIs, idempotent, sharing the Phase 1 orchestrator + ledger + reply-formatter pipeline. No new storage tier (still KV); no new auth model (still bearer + IMEI allowlist); no new transport (still IPC Outbound webhook + IPC Inbound reply). One new external dependency: an image-gen provider (Replicate Flux schnell, locked for the first cut).
 
 **Source of truth:** `docs/PRD.md` §2 (deferrals table) + this plan. Where the PRD's §2 table splits the deferred eight across Phase 2 / 3 / 4, this plan unifies them into Phase 2 — the splits in the original deferral table reflected complexity, not transport boundaries, and the user has elected to ship them as one phase. PRD §2 will be reconciled to match (story P2-13).
 
-**Epic:** [#98 — Phase 2 — extended commands (8 deferred α-MVP commands)](https://github.com/brockamer/trailscribe/issues/98).
+**Epic:** [#98 — Phase 2 — extended commands](https://github.com/brockamer/trailscribe/issues/98).
 **Milestone:** [Phase 2 — extended commands](https://github.com/brockamer/trailscribe/milestone/4).
-**Per-command issues (already filed):** #112 `!where`, #113 `!weather`, #114 `!drop`, #115 `!brief`, #116 `!ai`, #117 `!camp`, #118 `!blast`, #119 `!share`. These are placeholders today; this plan fleshes them out and they will be edited in story P2-14 to match.
+**Per-command issues:** #112 `!where`, #113 `!weather`, #114 `!drop`, #115 `!brief`, #116 `!ai`, #117 `!camp`, #118 `!blast`, #119 `!share`, **#125 `!postimg`** (folded into Phase 2 on operator decision 2026-04-28; was filed earlier as a Backlog/Low candidate). #112–#119 bodies were refreshed in P2-14 to match this plan; #125's body is already engineering-ready and gets a milestone + priority move rather than a body refresh.
 
 **Supersedes nothing.** Builds on top of the Phase 1 stack as shipped (epic #30 / milestone #2).
 
@@ -16,7 +16,7 @@ These shape the scope and are worth stating up front so a future session does no
 
 - **Single-operator forever.** TrailScribe is a personal project, not a startup. There is exactly one Garmin IMEI in the allowlist for the lifetime of the project. No β-launch milestone, no per-IMEI cost attribution, no second-IMEI onboarding flow, no email-fallback reply path (D9 stays skipped). The original "β before Phase 2?" question on epic #98 is closed: skip β.
 - **KV is sufficient.** The Durable Objects + D1 migration (Phase 3, epic #99) is *not* a prerequisite. FieldLog and the address book live on KV with bounded retention; eventual consistency is fine for journaling and a single-recipient address book. Migration is Phase 3's problem.
-- **No new external services.** The Phase 1 stack (OpenRouter, Resend, Todoist, GitHub Pages, Nominatim, Open-Meteo) is the universe. Phase 2 reuses every adapter as-is. The one possible exception is a web-search provider for `!camp` — see open question below.
+- **One new external dependency: image-gen provider for `!postimg`.** Locked to Replicate Flux schnell for the first cut. Apart from this, the Phase 1 stack (OpenRouter, Resend, Todoist, GitHub Pages, Nominatim, Open-Meteo) is the universe. The web-search angle for `!camp` was resolved as P2-08b deferral (LLM-only first cut).
 - **Reply budget is sacred.** Every reply still ≤ 320 chars (two SMS). Where a Phase 2 command produces content longer than that, the device gets a 1-SMS pointer ("see email" / "see journal") and the full payload goes via Resend or GitHub Pages. Same pattern Phase 1 already uses for `!post`.
 - **No new env vars without justification.** Per CLAUDE.md ground rule. The address book and any web-search provider are the only candidates, and both are evaluated below.
 
@@ -36,19 +36,20 @@ The two non-obvious orchestrator-boundary guards from Phase 1 (P1-01) still appl
 1. **Non-Free-Text events.** `messageCode !== 3` (especially `=0` Position Report breadcrumbs and `=4` SOS) must not invoke the orchestrator. New Phase 2 commands inherit this gate automatically since they all hang off the existing dispatcher in `src/core/orchestrator.ts`.
 2. **No-GPS-fix events.** `gpsFix === 0 || (lat === 0 && lon === 0)` means location enrichment is skipped. Phase 2 commands that depend on location (`!where`, `!weather`, `!drop`, `!brief` when summarizing location, `!camp`) must accept `undefined` lat/lon and degrade gracefully — typically by replying `Need GPS fix — try again outdoors.` rather than guessing.
 
-## Open questions (resolve before pulling first Phase 2 story)
+## Decisions (resolved 2026-04-28)
 
-These are operator decisions that affect more than one story; capturing them up front rather than discovering them at sprint time.
+The four open questions were resolved by the operator as the recommended option in each case. Recording them here in resolved form so the per-story acceptance criteria are unambiguous.
 
-1. **`!camp` web-search provider.** OpenRouter has tool-use support and several models can call a web-search tool, but provider quality and cost varies. Alternatives: Brave Search API (free tier, 2k/mo), Tavily (research-grade summarization, paid), or skip web search and have `!camp <query>` just LLM-prompt against general knowledge with a "may be outdated" disclaimer. **Recommendation:** start with the LLM-only no-search path for the first cut, mark the search integration as P2-08b (a follow-up story) so we can ship `!camp` without adding a dependency. Resolve before P2-08 lands.
-2. **`!ai` overflow handling.** A `!ai` reply often exceeds 320 chars. Options: (a) two-SMS paging (already implemented for `!post`); (b) 1-SMS pointer + email the full answer via Resend (operator polls email next time online); (c) hard-truncate at 320 chars with a `…` suffix. **Recommendation:** (b) for replies > 320 chars, (a) only when the answer fits in one or two SMS naturally. Decision affects P2-07's acceptance.
-3. **Address-book storage.** Env-var JSON (simplest), KV with no admin UI (yagni), or KV with a CLI admin script (`scripts/addressbook.sh`). **Recommendation:** env var for first cut. If we ever cross five entries it can move; a single operator with a known set of recipients does not need an admin UI. Decision affects P2-09.
-4. **`!brief` time window.** "Last 24 hours" is the deck spec, but FieldLog + ledger queries are cheaper than re-LLM-summarizing every time. Default to 24h; expose `!brief 7d` if the operator wants a different window. Decision affects P2-06.
+1. **`!camp` web-search provider — RESOLVED: LLM-only first cut.** Ship `!camp` as a general-knowledge LLM call with a `(may be outdated)` prefix. No web-search dependency in Phase 2. Real web search filed as **P2-08b follow-up**, not blocking Phase 2 close. Promote P2-08b only if field experience shows LLM-only answers are insufficient.
+2. **`!ai` overflow handling — RESOLVED: 1-SMS pointer + email full answer.** Replies > 320 chars send `Long answer sent by email.` on device and route the full LLM output to the operator email via Resend, mirroring `!post`'s overflow pattern. Two-SMS paging applies only when the answer fits naturally in two SMS without truncation. Reflected in P2-07 acceptance.
+3. **Address-book storage — RESOLVED: env-var JSON.** `ADDRESS_BOOK_JSON` Wrangler secret holds the alias map. No KV admin endpoint, no CLI admin script. Migration to KV is YAGNI for a single operator. Reflected in P2-09 acceptance.
+4. **`!brief` time window — RESOLVED: 24h default, configurable.** `!brief` defaults to the last 24 hours. Operator can override with `!brief 7d` (the grammar's `windowDays` slot). Reflected in P2-02 grammar and P2-06 handler.
 
 ## Milestone exit criteria
 
-- [ ] All 8 commands work end-to-end on staging with real third-party APIs.
-- [ ] All 8 commands work end-to-end against the production Worker on real Garmin traffic from the operator's Mini 3 Plus.
+- [ ] All 8 deferred α commands work end-to-end on staging with real third-party APIs.
+- [ ] All 8 deferred α commands work end-to-end against the production Worker on real Garmin traffic from the operator's Mini 3 Plus.
+- [ ] `!postimg` (#125) works end-to-end on staging and production: image renders at the top of the GitHub Pages post; image-gen failure falls back to text-only `!post` without losing the caption; idempotency replay does not double-bill image-gen.
 - [ ] Reply budget: every reply ≤ 320 chars. Overflow path (where it applies — `!ai`, `!camp`, `!brief`) goes via email or journal post, not by truncating silently.
 - [ ] Idempotency: each new command is replay-safe. 5 manual webhook replays per command produce 0 duplicate side-effects (no duplicate FieldLog entries, no duplicate emails, no duplicate LLM calls beyond the cached first).
 - [ ] FieldLog: bounded at 100 entries per IMEI; writes succeed under concurrent retries; reads return entries in chronological order.
@@ -71,6 +72,7 @@ Stories are sized **S** (≤2 h), **M** (≤half-day), **L** (≤day). Dependenc
 | C — FieldLog | P2-05, P2-06 | `!drop`, `!brief`. Depend on FieldLog adapter (Theme A). |
 | D — AI / research | P2-07, P2-08 | `!ai`, `!camp`. Both LLM-heavy; both need overflow handling. |
 | E — Distribution | P2-09, P2-10, P2-11 | Address-book config + `!share`, `!blast`. |
+| G — Image-augmented journal | P2-17, P2-18 | `!postimg`. Image-gen adapter + grounded prompt builder; pipeline that mirrors `!post` plus a binary-image commit alongside the markdown. Closes #125. |
 | F — Reconcile + verify | P2-12, P2-13, P2-14, P2-15, P2-16 | Doc refresh, PRD reconcile, sub-issue body refresh, staging burn-in, production turn-on. |
 
 ---
@@ -286,6 +288,57 @@ Stories are sized **S** (≤2 h), **M** (≤half-day), **L** (≤day). Dependenc
 
 ---
 
+### Theme G — Image-augmented journal
+
+#### P2-17 — Image-gen adapter + grounded prompt builder [M]
+
+**Context.** Closes the adapter half of #125. The image generator is the new external dependency; the prompt builder is a small new module that grounds the image in device telemetry (lat/lon, altitude, time-of-day, weather, place name) plus the operator's caption. **Provider locked to Replicate Flux schnell or SDXL** for the first cut — its $0.003–$0.01 per-image cost keeps `!postimg` under the existing PRD §7 $0.05 ceiling without needing a premium-class exception. Upgrade to gpt-image-1 / DALL-E 3 is filed as P2-18b conditional on operator field-quality assessment.
+
+**Engineering shape:**
+- New module `src/adapters/ai/replicate.ts` (or whichever provider is locked at impl time; same wrapper shape as `openrouter.ts`). Supports `generateImage({ prompt, aspectRatio, env })` returning `{ bytes: ArrayBuffer, mimeType: string, model: string, costUsd: number }`.
+- New module `src/core/imageprompt.ts`: `buildImagePrompt({ caption, place, lat, lon, altitudeM, localTime, weather })` returns a paragraph-style prompt with the constraints from #125's body baked in (realistic / plausible / no text overlays / lighting matches local time / do not invent named landmarks).
+- New env vars (validated in `src/env.ts`): `IMAGE_PROVIDER` (`replicate`), `IMAGE_MODEL` (e.g. `black-forest-labs/flux-schnell`), `IMAGE_COST_PER_CALL_USD` (used for ledger; default `0.01`), and a Wrangler secret `IMAGE_API_KEY`.
+- `src/core/ledger.ts` extended to record image-gen as a separate `kind: 'image'` line so `!cost` can break out image vs. text spend (see P2-18 acceptance for the `!cost` reply tweak).
+
+**Acceptance criteria:**
+- [ ] `generateImage` happy-path returns binary bytes + cost; failure-path throws a typed `ImageGenError` with provider response.
+- [ ] `buildImagePrompt` returns a deterministic prompt for the same inputs (snapshot test) and includes every grounding axis when present, omits gracefully when absent (e.g. no GPS fix → no lat/lon line).
+- [ ] Ledger entries for image-gen tag `kind: 'image'`; existing text-spend ledger entries are unchanged.
+- [ ] Wrangler `.dev.vars.example` updated; CLAUDE.md secrets list updated.
+- [ ] Vitest: `generateImage` happy-path + failure-path with mocked HTTP; `buildImagePrompt` snapshot tests for three telemetry profiles (coastal bluff, alpine, desert flank).
+
+**Size:** M.
+**Depends on:** nothing (foundation work, lands alongside Theme A).
+
+#### P2-18 — `!postimg` command pipeline + binary journal commit [L]
+
+**Context.** Closes the pipeline half of #125. Mirrors the existing `!post` handler in `src/core/commands/post.ts` with an image-gen step inserted before the GitHub Pages commit, and the GitHub Pages adapter extended to commit the binary image alongside the markdown post.
+
+**Engineering shape:**
+- New module `src/core/commands/postimg.ts` mirroring `post.ts`: enrich → narrative → **image-gen** → commit (markdown + image) → reply.
+- Image-gen step wrapped in `withCheckpoint` from `src/core/idempotency.ts` so a Garmin retry replay does not re-bill image gen. Uses a new `OpName: 'image'`.
+- `adapters/publish/github-pages.ts` extended to take an optional `image: { bytes, path, mimeType }` param. When present, commits the binary at `_images/<post-slug>.<ext>` *in the same atomic operation* as the markdown post (single GraphQL `createCommitOnBranch` mutation with two file additions; the existing commit path uses single-file Contents API — this story upgrades it to GraphQL so two files commit atomically and an interrupted run does not leave a markdown post pointing to a missing image).
+- Markdown front-matter or first line includes `![<caption>](/_images/<slug>.<ext>)` so GitHub Pages renders the image at the top of the post.
+- `!cost` reply (existing handler) updated to break out image vs. text spend when image entries are present; format: `MTD: <reqs> reqs · $<text> text + $<image> img · $<total>`.
+
+**Acceptance criteria:**
+- [ ] `!postimg <caption>` parses through `src/core/grammar.ts` (extension lands in P2-02 — confirm grammar table includes `postimg`).
+- [ ] Pipeline order: idempotency → enrich (geocode + weather) → narrative LLM → image-gen → atomic commit → reply.
+- [ ] Reply within the 320-char budget; format mirrors `!post`'s reply with the journal URL; the device reply does **not** include a raw image URL.
+- [ ] Image-gen failure path: log `event: 'image_gen_failed'` with provider error; fall back to a text-only `!post` (do not lose the operator's caption); reply notes `(image gen failed; text-only)`.
+- [ ] Idempotency replay test: send the same `!postimg` event twice; assert exactly one image-gen call to the mocked provider, exactly one commit, exactly one ledger image entry.
+- [ ] Atomic-commit assertion: the markdown post and the image file appear in the same commit on the journal repo (`gh api` peek confirms a single commit SHA referencing both paths).
+- [ ] Ledger `image` entries match the `IMAGE_COST_PER_CALL_USD` env var; `!cost` reply breaks them out.
+- [ ] Vitest: parse, full happy-path with mocked image-gen + mocked GitHub commit; image-fail-fallback path; idempotency replay; cost-suffix breakout.
+- [ ] Manual staging verification: 3 `!postimg` events from fixture, all three render image-at-top in the rendered GitHub Pages site.
+
+**Size:** L.
+**Depends on:** P2-02 (grammar), P2-17 (image-gen adapter + prompt builder).
+
+**Follow-up (filed separately, not blocking Phase 2 close):** P2-18b — upgrade image provider to gpt-image-1 / DALL-E 3 if Replicate Flux schnell quality proves insufficient in field testing. Cost-envelope decision (premium-class exception in PRD §7 vs. per-call cap) gets made then with real field data, not now.
+
+---
+
 ### Theme F — Reconcile + verify
 
 #### P2-12 — Refresh `docs/field-commands.md` to current truth [S]
@@ -361,10 +414,10 @@ Stories are sized **S** (≤2 h), **M** (≤half-day), **L** (≤day). Dependenc
 | Size | Count |
 |---|---|
 | S | 6 |
-| M | 8 |
-| L | 3 |
+| M | 9 |
+| L | 4 |
 
-**Rough total:** 4–6 focused days. Phase 2 is lighter than Phase 1 (no foundational scaffolding, no first-time API integrations) but the LLM-bearing handlers (`!brief`, `!ai`, `!camp`) consume the bulk of the time on prompt tuning and overflow-path testing.
+**Rough total:** 5–7 focused days. Phase 2 is lighter than Phase 1 (no foundational scaffolding, no first-time API integrations) but the LLM-bearing handlers (`!brief`, `!ai`, `!camp`) and the image-gen pipeline (`!postimg`) consume the bulk of the time on prompt tuning, overflow-path testing, and image-quality iteration.
 
 ## Execution order (recommended sequencing)
 
@@ -372,12 +425,13 @@ Stories are sized **S** (≤2 h), **M** (≤half-day), **L** (≤day). Dependenc
 
 **Suggested sprint shape (one focused week, ~one-third the days of Phase 1):**
 
-- Day 1: P2-01 + P2-02 + P2-09 (the three foundation stories — small but they unblock everything).
+- Day 1: P2-01 + P2-02 + P2-09 + P2-17 (foundation stories — grammar, FieldLog, address book, image-gen adapter — all small and independent; unblock everything downstream).
 - Day 2: P2-03 + P2-04 (quick wins; smoke-tests the parallelization model).
 - Day 3: P2-05 + P2-10 + P2-11 (FieldLog write + email distribution).
-- Day 4: P2-06 + P2-07 + P2-08 (the three LLM-bearing commands; expect prompt-tuning overhead).
-- Day 5: P2-12 + P2-13 + P2-14 + P2-15 (reconcile + staging burn-in).
-- Day 6 (operator): P2-16 — real-device turn-on against production. Closes the milestone.
+- Day 4: P2-06 + P2-07 + P2-08 (the three text LLM-bearing commands; expect prompt-tuning overhead).
+- Day 5: P2-18 (`!postimg` pipeline + atomic binary commit; expect image-prompt iteration overhead).
+- Day 6: P2-12 + P2-13 + P2-14 + P2-15 (reconcile + staging burn-in).
+- Day 7 (operator): P2-16 — real-device turn-on against production. Closes the milestone.
 
 If `!brief` or `!ai` overflow paths surface bugs in the Phase 1 reply formatter, treat that as a spike under P2-15 and patch the formatter before continuing.
 
@@ -392,6 +446,9 @@ If `!brief` or `!ai` overflow paths surface bugs in the Phase 1 reply formatter,
 | Resend per-recipient calls in `!blast` hit free-tier limits | L | Some recipients miss the message | Resend free tier is 3000/mo; even daily blasts to a 5-person group is well within. Track in ledger. |
 | Reply overflow path (email/journal) fires for replies that *almost* fit | L | Operator gets email when they expected on-device | P2-07 / P2-08 acceptance pins the threshold at 320 chars (post-paging); `!brief` at 320 chars (no paging — single SMS or email). |
 | Phase 2 commands regress Phase 1 behavior via shared orchestrator | L–M | `!post` etc. break | Phase 1 Vitest suite must stay green throughout; CI gate on every PR. |
+| `!postimg` Replicate quality is unacceptable for "plausibly realistic" bar | M | Operator stops using `!postimg`; effort wasted | P2-18 acceptance includes operator subjective check; if it fails, P2-18b upgrades the provider with real cost data and a PRD §7 premium-class exception decision. |
+| `!postimg` atomic-commit upgrade (Contents API → GraphQL `createCommitOnBranch`) breaks `!post`'s existing single-file commit path | L–M | Phase 1 `!post` regresses on first deploy | P2-18 acceptance asserts both paths work in the same deploy; CI runs the existing `!post` Vitest cases; staging burn-in (P2-15) sends a `!post` *and* a `!postimg` and confirms both commit. |
+| `!postimg` image-gen replay double-bills if `withCheckpoint` wrap is wrong | L | Cost overrun on every Garmin retry storm | P2-18 has an explicit replay-test acceptance bullet asserting exactly one image-gen call. |
 | OpenRouter model-availability change mid-phase | L | LLM-bearing commands fail | Phase 1 already mitigates via `LLM_MODEL` env var swap; Phase 2 inherits. |
 | Operator forgets the new commands' syntax | L | UX friction; commands fail with `parse_unknown` | `!help` reply is updated as part of P2-02 to list all 14 commands. |
 
@@ -403,7 +460,7 @@ If `!brief` or `!ai` overflow paths surface bugs in the Phase 1 reply formatter,
 - **β-launch milestone, second IMEI, per-IMEI cost attribution.** Closed by the single-operator assumption above.
 - **Email-fallback reply for the IPC Inbound path.** Locked decision D9 — skipped permanently.
 - **`!camp` real web search.** Filed as P2-08b follow-up; not blocking Phase 2 close.
-- **`!postimg` (image generation per `!post`).** Filed as #125; out of Phase 2.
+- **Image-provider upgrade beyond Replicate Flux.** P2-18b follow-up; conditional on operator field-quality assessment. Phase 2 ships with Replicate Flux schnell to keep `!postimg` under the existing PRD §7 $0.05 ceiling without a premium-class exception.
 - **Web dashboard / multi-user features.** Post-v1.0 per PRD §1 non-goals.
 - **Schema V4 / encrypted messages.** Not handled (configure plaintext schema in Portal Connect).
 - **Address-book admin UI / KV-stored address book.** YAGNI per open-question §3.

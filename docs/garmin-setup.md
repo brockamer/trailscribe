@@ -75,6 +75,28 @@ Per event in the envelope:
   Support to resume.
 - Messages older than 5 days in the queue are dropped.
 
+## 3a. Device-side conventions for the operator
+
+These two device settings were surfaced during the production turn-on and are
+worth pinning before the first real `!command` from the field.
+
+**Save TrailScribe as a contact.** Add a contact entry on the inReach (Garmin
+Explore app → Contacts → New) named `TrailScribe` with email
+`trailscribe@tx.trailscribe.net`. Pick that contact as the recipient for every
+outbound `!command`. Mechanically, Portal Connect IPC Outbound forwards
+*every* device message to TrailScribe's webhook regardless of the chosen
+recipient — but the address still matters because IPC Inbound replies show up
+on-device as a thread keyed off the original "To". Sending to the right
+address keeps replies visible in one thread.
+
+**Keep "Include Location" off for routine commands.** The per-message
+*Include Location* toggle on the Mini 3 Plus, when on, attaches a Google Maps
+URL to the displayed reply (cosmetic, device-side; the webhook payload is
+unchanged). The URL is unusable on the offline device and wastes display real
+estate. Commands that need a GPS fix (`!post`, `!mail`, `!todo`, future
+`!where` / `!weather`) read it from the Garmin Outbound `point` field on the
+webhook side — the device-side share is redundant.
+
 ## 4. IPC Inbound (TrailScribe → device)
 
 1. **Portal Connect → Admin Controls → Portal Connect → Inbound Settings →

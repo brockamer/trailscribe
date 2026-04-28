@@ -82,7 +82,7 @@ plans/                          # per-milestone sprint plans (active: phase-2-ex
 - **Phase 0 — Workers scaffold:** complete 2026-04-24. All 20 P0 stories shipped.
 - **Phase 1 — α-MVP:** complete 2026-04-27. Epic #30 closed 2026-04-26; close gate #111 (production traffic turn-on with the Mini 3 Plus against the production Worker) verified 2026-04-27. All 6 commands (`!post`, `!mail`, `!todo`, `!ping`, `!help`, `!cost`) return real responses on production; replay verification + cost measurement complete; OpenRouter LLM layer live (`anthropic/claude-sonnet-4-6`). Plan archived at `plans/archived/2026-04/phase-1-alpha-mvp.md`.
 - **Production-readiness:** complete 2026-04-28. All 8 milestone issues closed: shipped #32, #33 (auto-deploy on push to main re-enabled in #126), #121 (device-side recipient + Include-Location convention pinned in #127); closed-as-not-planned #14, #15, #26 (operator scope decision: personal-project housekeeping, no custom domain).
-- **Phase 2 — extended commands:** **active phase as of 2026-04-28.** Plan: `plans/phase-2-extended-commands.md`. Epic #98 (8 deferred α commands: `!where`, `!weather`, `!drop`, `!brief`, `!ai`, `!camp`, `!share`, `!blast`). Single-operator scope; KV-only state; no β-launch milestone. Sub-issues #112–#119 are sprint-ready when promoted from Backlog.
+- **Phase 2 — extended commands + `!postimg`:** **active phase as of 2026-04-28.** Plan: `plans/phase-2-extended-commands.md`. Epic #98 (8 deferred α commands: `!where`, `!weather`, `!drop`, `!brief`, `!ai`, `!camp`, `!share`, `!blast`) plus `!postimg` (#125, folded in on operator decision; image-gen via Replicate Flux schnell for the first cut, provider-upgrade follow-up filed as P2-18b). Single-operator scope; KV-only state; no β-launch milestone. Sub-issues #112–#119 + #125 are sprint-ready when promoted from Backlog.
 - **Phase 3 — DO + D1 migration:** filed as epic #99 (Low-priority Backlog). Promote when Phase 2 closes.
 
 ## Conventions
@@ -122,6 +122,8 @@ plans/                          # per-milestone sprint plans (active: phase-2-ex
 - `GITHUB_JOURNAL_TOKEN` — fine-grained PAT with `contents:write` on journal repo
 - `GITHUB_JOURNAL_REPO` — e.g. `brockamer/trailscribe-journal`
 - `GITHUB_JOURNAL_BRANCH` — `main`
+- `IMAGE_API_KEY` — image-gen provider API key (Replicate token in α; `!postimg` only)
+- `ADDRESS_BOOK_JSON` — alias map for `!share`/`!blast` (Phase 2; e.g. `{"aliases":{"home":"...","all":"a@x,b@y"}}`)
 
 **Vars (non-secret):**
 - `TRAILSCRIBE_ENV` — dev/staging/production
@@ -138,6 +140,10 @@ plans/                          # per-milestone sprint plans (active: phase-2-ex
 - `RESEND_FROM_NAME` — e.g. `TrailScribe`
 - `JOURNAL_POST_PATH_TEMPLATE` — e.g. `_posts/{yyyy}-{mm}-{dd}-{slug}.md`
 - `JOURNAL_URL_TEMPLATE` — public URL pattern for committed posts; pinned by P1-20
+- `IMAGE_PROVIDER` — `replicate` for α (P2-17; `!postimg`)
+- `IMAGE_MODEL` — e.g. `black-forest-labs/flux-schnell`
+- `IMAGE_COST_PER_CALL_USD` — ledger pricing for image-gen; default `0.01`
+- `JOURNAL_IMAGE_PATH_TEMPLATE` — e.g. `_images/{yyyy}-{mm}-{dd}-{slug}.{ext}` (commits the binary alongside the markdown post)
 
 ## Garmin IPC quick-ref (authoritative sources in `materials/`)
 

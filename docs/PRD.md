@@ -1,9 +1,9 @@
 # TrailScribe — Product Requirements Document
 
-**Status:** **Signed off 2026-04-22.** All decisions D1–D9 resolved. Proceed to Phase 0 (see `plans/phase-0-scaffolding.md`).
+**Status:** Signed off 2026-04-22. Phase 0 (scaffolding) shipped 2026-04-24. Phase 1 (α-MVP, six commands end-to-end on production) shipped 2026-04-26 with the prod-traffic close gate (#111) verified 2026-04-27. **Currently:** Phase 2 — extended commands. Plan: `plans/phase-2-extended-commands.md`.
 **Owner:** Brock Amer
-**Updated:** 2026-04-22
-**Scope:** α-MVP (Phase 1). Later phases referenced for alignment, not specified in full.
+**Updated:** 2026-04-28
+**Scope:** α-MVP (Phase 1) is the canonical scope of this document. Phase 2 (the eight deferred commands) is detailed in `plans/phase-2-extended-commands.md`; Phase 3+ referenced here for alignment, not specified in full.
 
 ---
 
@@ -32,7 +32,7 @@ TrailScribe is an AI-native serverless agent that transforms satellite messages 
 
 ### Non-goals (MVP)
 - No web dashboard, no photo upload, no multi-user/team features, no SOS integration, no voice, no offline-device logic.
-- No `!blast`, `!share`, `!camp`, `!brief`, `!drop`, `!where`, `!ai` commands. All deferred (see §8).
+- No `!where`, `!weather`, `!drop`, `!brief`, `!ai`, `!camp`, `!share`, `!blast` commands during α-MVP. All eight deferred to Phase 2 (see §2 deferrals table and `plans/phase-2-extended-commands.md`).
 - No Pipedream / n8n / generic deploy. Workers-only for α.
 - No non-inReach device support. Architecture is adapter-based; other devices deferred.
 
@@ -53,18 +53,20 @@ TrailScribe is an AI-native serverless agent that transforms satellite messages 
 
 ### Explicit deferrals (with reason)
 
-| Command / feature | Deferred to | Why deferred |
-|---|---|---|
-| `!where` | Phase 2 | Bandwidth-expensive pure-read; replaces MapShare (user already has). Low marginal value vs. map links in every reply. |
-| `!drop` (FieldLog) | Phase 2 | Requires persistent FieldLog store (D1 table or sheet). MVP punts structured journaling; unstructured `!post` covers the journaling narrative. |
-| `!brief` | Phase 2 | Depends on FieldLog + ledger + message history aggregation. Nothing to summarize until `!drop`/`!post` volume exists. |
-| `!camp` | Phase 3 | Real web search integration; heavy on tokens and latency. Fails satellite UX without tight constraints we haven't proven yet. |
-| `!ai <q>` | Phase 3 | Large AI replies chunked to SMS is a UX research problem (see radio-llm precedent). MVP embeds AI in `!post`'s narrative where structure is constrained. |
-| `!share` | Phase 4 | Variant of `!mail`; adds contact-book config. Marginal over `!mail` with a manual address. |
-| `!blast` | Phase 4 | Broadcast to groups needs address-book config + multi-recipient error handling. Not blocking MVP. |
-| Photos / media | Post-v1.0 | Schema V4 + R2 + image resizing. Big ask; MVP proves text workflow first. |
-| Web dashboard | Post-v1.0 | Trip visualization is a separate product surface. MVP is headless. |
-| `!weather` | Phase 2 | Referenced in Marcus's deck example; not in the "three commands" summary. Cheap to add post-α once `context` module is real. |
+The eight commands deferred from α-MVP all ship in **Phase 2** (epic #98) — see `plans/phase-2-extended-commands.md` for sequencing and per-command acceptance. The "why deferred" column captures why each was *not* in α-MVP; the "Phase 2 shape" column notes how Phase 2 absorbs the original concern. Earlier versions of this table split these across Phases 2/3/4 by complexity; that split has been collapsed into a single Phase 2 with internal sequencing because the transport boundary (Workers + KV + same orchestrator) is identical for all eight.
+
+| Command / feature | Deferred to | Why deferred from α | Phase 2 shape |
+|---|---|---|---|
+| `!where` | Phase 2 | Bandwidth-expensive pure-read; replaces MapShare (user already has). Low marginal value vs. map links in every reply. | Story P2-03; reuses `reverseGeocode`. |
+| `!weather` | Phase 2 | Referenced in Marcus's deck example; not in the "three commands" summary. Cheap to add post-α once `context` module is real. | Story P2-04; reuses `currentWeather`. |
+| `!drop` (FieldLog) | Phase 2 | Requires persistent FieldLog store. MVP punts structured journaling; unstructured `!post` covers the journaling narrative. | Story P2-05; FieldLog on KV with bounded retention (P2-01). D1 migration stays in Phase 3. |
+| `!brief` | Phase 2 | Depends on FieldLog + ledger + message history aggregation. Nothing to summarize until `!drop`/`!post` volume exists. | Story P2-06; LLM summarization with overflow-to-email path. |
+| `!ai <q>` | Phase 2 | Large AI replies chunked to SMS is a UX research problem (see radio-llm precedent). MVP embeds AI in `!post`'s narrative where structure is constrained. | Story P2-07; ≤320 char on device, longer answers route to email via Resend (mirrors `!post`'s overflow pattern). |
+| `!camp` | Phase 2 | Real web search integration is heavy on tokens and latency; fails satellite UX without tight constraints. | Story P2-08 ships LLM-only first cut with "may be outdated" disclaimer. Real web search is filed as P2-08b follow-up — not blocking Phase 2 close. |
+| `!share` | Phase 2 | Variant of `!mail`; adds contact-book config. Marginal over `!mail` with a manual address. | Story P2-10; alias resolution via env-var address book (P2-09). |
+| `!blast` | Phase 2 | Broadcast to groups needs address-book config + multi-recipient error handling. Not blocking MVP. | Story P2-11; per-recipient send with partial-failure tolerance. |
+| Photos / media | Post-v1.0 | Schema V4 + R2 + image resizing. Big ask; α proves text workflow first. | Out of scope for Phase 2. |
+| Web dashboard | Post-v1.0 | Trip visualization is a separate product surface. MVP is headless. | Out of scope for Phase 2. |
 
 ### Reply budget (hard contract)
 - **Max total reply: 320 characters** (2 SMS, Iridium 160-char frame × 2). Applies to EVERY command's reply, including `!post` confirmation, `!help`, `!cost`, etc.
@@ -145,10 +147,10 @@ Endorsed by the deep research report and consistent with the original engineerin
 | `TS_CONTEXT` | Per-IMEI rolling window (last 5 positions/messages) for narrative continuity | `ctx:<imei>` | 30d |
 | `TS_CACHE` | Geocode + weather cache | `geo:<lat:4,lon:4>` / `wx:<lat:2,lon:2>` | geo 24h / wx 1h |
 
-### Phased evolution (for alignment, not α)
-- **Phase 2:** Migrate `TS_CONTEXT` → Durable Objects (strong consistency for rapid message sequences). Add Cloudflare Queues for async retries.
-- **Phase 3:** Migrate `TS_LEDGER` → D1 (SQL analytics, per-user budgets, budget alerts). Add Analytics Engine.
-- **Phase 4+:** R2 + Image Resizing for photos (schema V4 media events).
+### Phased evolution (for alignment beyond α)
+- **Phase 2 — Extended commands.** Ship the eight α-deferred commands (see §2 deferrals table; plan: `plans/phase-2-extended-commands.md`; epic #98). Single-operator scope. Storage stays on KV; FieldLog is per-IMEI bounded list (P2-01). Address book is env-var JSON. No new transport. Active phase as of 2026-04-28.
+- **Phase 3 — Storage migration (DO + D1).** Migrate `TS_CONTEXT` and FieldLog → Durable Objects (strong consistency for rapid message sequences); migrate `TS_LEDGER` → D1 (SQL analytics, retention beyond a month, budget alerts). Add Cloudflare Queues for async retries. Epic #99.
+- **Phase 4+ — Media.** R2 + Image Resizing for photos (schema V4 media events). Filed conceptually as #125 (`!postimg`) for image generation; raw photo upload is post-v1.0.
 
 ### Tech stack (α)
 - **Runtime:** Cloudflare Workers

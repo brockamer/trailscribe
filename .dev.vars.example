@@ -40,3 +40,10 @@ RESEND_API_KEY=
 GITHUB_JOURNAL_TOKEN=
 GITHUB_JOURNAL_REPO=brockamer/trailscribe-journal
 GITHUB_JOURNAL_BRANCH=main
+
+# ---- Address book (Phase 2: !share / !blast) ----
+# JSON map of alias → email. Comma-separated values broadcast (used by !blast
+# via the conventional "all" alias). Empty string is valid (no aliases yet).
+# Single-line JSON; escape inner quotes when piping to `wrangler secret put`.
+# Example: {"aliases":{"home":"me@home.com","family":"a@x.com,b@y.com","all":"a@x.com,b@y.com,c@z.com"}}
+ADDRESS_BOOK_JSON=

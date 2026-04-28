@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseAddressBookJson } from "./core/addressbook.js";
 
 /**
  * Worker `Env` binding shape. Mirrors `wrangler.toml` KV namespaces, vars, and secrets.
@@ -42,6 +43,7 @@ export interface Env {
   GITHUB_JOURNAL_TOKEN: string;
   GITHUB_JOURNAL_REPO: string;
   GITHUB_JOURNAL_BRANCH: string;
+  ADDRESS_BOOK_JSON: string;
 }
 
 /**
@@ -94,6 +96,19 @@ export const EnvSchema = z.object({
   GITHUB_JOURNAL_TOKEN: z.string().min(8),
   GITHUB_JOURNAL_REPO: z.string().regex(/^[\w.-]+\/[\w.-]+$/, "owner/repo format"),
   GITHUB_JOURNAL_BRANCH: z.string().min(1),
+  // Empty string = no aliases configured (resolve() will throw on lookup).
+  // Non-empty must parse via parseAddressBookJson — single source of truth for
+  // shape + email-shape validation, shared with src/core/addressbook.ts.
+  ADDRESS_BOOK_JSON: z.string().superRefine((s, ctx) => {
+    try {
+      parseAddressBookJson(s);
+    } catch (e) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }),
 });
 
 /**

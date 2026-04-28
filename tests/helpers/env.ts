@@ -89,6 +89,7 @@ export function makeTestEnv(overrides: Partial<Env> = {}): Env {
     GITHUB_JOURNAL_TOKEN: "ghp_test_abcd",
     GITHUB_JOURNAL_REPO: "brockamer/trailscribe-journal",
     GITHUB_JOURNAL_BRANCH: "main",
+    ADDRESS_BOOK_JSON: "",
   };
   return { ...base, ...overrides };
 }

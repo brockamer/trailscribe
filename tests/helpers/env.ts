@@ -78,6 +78,9 @@ export function makeTestEnv(overrides: Partial<Env> = {}): Env {
     RESEND_FROM_NAME: "TrailScribe",
     JOURNAL_POST_PATH_TEMPLATE: "_posts/{yyyy}-{mm}-{dd}-{slug}.md",
     JOURNAL_URL_TEMPLATE: "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html",
+    IMAGE_PROVIDER: "replicate",
+    IMAGE_MODEL: "black-forest-labs/flux-schnell",
+    IMAGE_COST_PER_CALL_USD: "0.003",
 
     GARMIN_INBOUND_TOKEN: "test-bearer-token-abcdef0123456789",
     GARMIN_IPC_INBOUND_API_KEY: "test-api-key-abcd",
@@ -90,6 +93,7 @@ export function makeTestEnv(overrides: Partial<Env> = {}): Env {
     GITHUB_JOURNAL_REPO: "brockamer/trailscribe-journal",
     GITHUB_JOURNAL_BRANCH: "main",
     ADDRESS_BOOK_JSON: "",
+    IMAGE_API_KEY: "test-image-api-key",
   };
   return { ...base, ...overrides };
 }

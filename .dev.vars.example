@@ -47,3 +47,9 @@ GITHUB_JOURNAL_BRANCH=main
 # Single-line JSON; escape inner quotes when piping to `wrangler secret put`.
 # Example: {"aliases":{"home":"me@home.com","family":"a@x.com,b@y.com","all":"a@x.com,b@y.com,c@z.com"}}
 ADDRESS_BOOK_JSON=
+
+# ---- Image generation (Phase 2: !postimg via Replicate Flux schnell) ----
+# Replicate API token from https://replicate.com/account/api-tokens.
+# Same `echo -n "<token>" | wrangler secret put IMAGE_API_KEY --env <env>` rule
+# as other secrets — strip trailing newlines.
+IMAGE_API_KEY=

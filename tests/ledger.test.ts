@@ -1,10 +1,12 @@
 import { describe, test, expect, beforeEach, afterEach, vi, type MockInstance } from "vitest";
 import {
   recordTransaction,
+  recordImageTransaction,
   monthlyTotals,
   dailyTotals,
   type LedgerSnapshot,
 } from "../src/core/ledger.js";
+import { putJSON } from "../src/adapters/storage/kv.js";
 import { makeTestEnv } from "./helpers/env.js";
 import type { Env } from "../src/env.js";
 
@@ -173,6 +175,20 @@ describe("recordTransaction — KV semantics", () => {
     expect(totals.usd_cost).toBe(0);
   });
 
+  test("monthly snapshot returns image fields as 0 when never written (backwards compat)", async () => {
+    await recordTransaction({
+      command: "post",
+      usage: { prompt_tokens: 10, completion_tokens: 5 },
+      env,
+    });
+    const monthly = await monthlyTotals(env);
+    expect(monthly.image_requests).toBeUndefined();
+    expect(monthly.image_usd_cost).toBeUndefined();
+    // Reader pattern (used by !cost): coalesce undefined → 0
+    expect(monthly.image_requests ?? 0).toBe(0);
+    expect(monthly.image_usd_cost ?? 0).toBe(0);
+  });
+
   test("daily-write failure does not throw; monthly write still succeeds", async () => {
     let dailyAttempts = 0;
     const realPut = env.TS_LEDGER.put.bind(env.TS_LEDGER);
@@ -198,5 +214,80 @@ describe("recordTransaction — KV semantics", () => {
 
     const events = loggedEvents().map((e) => e.event);
     expect(events).toContain("ledger_daily_write_failed");
+  });
+});
+
+describe("recordImageTransaction — image-gen aggregates (P2-17)", () => {
+  test("first image write seeds image_requests=1 and image_usd_cost=cost", async () => {
+    await recordImageTransaction({ command: "postimg", usdCost: 0.003, env });
+    const monthly = await monthlyTotals(env);
+    expect(monthly.image_requests).toBe(1);
+    expect(monthly.image_usd_cost).toBeCloseTo(0.003, 6);
+  });
+
+  test("two image writes accumulate", async () => {
+    await recordImageTransaction({ command: "postimg", usdCost: 0.003, env });
+    await recordImageTransaction({ command: "postimg", usdCost: 0.005, env });
+    const monthly = await monthlyTotals(env);
+    expect(monthly.image_requests).toBe(2);
+    expect(monthly.image_usd_cost).toBeCloseTo(0.008, 6);
+  });
+
+  test("image writes do NOT touch text fields (requests, usd_cost, by_command)", async () => {
+    await recordImageTransaction({ command: "postimg", usdCost: 0.003, env });
+    const monthly = await monthlyTotals(env);
+    expect(monthly.requests).toBe(0);
+    expect(monthly.usd_cost).toBe(0);
+    expect(monthly.prompt_tokens).toBe(0);
+    expect(monthly.completion_tokens).toBe(0);
+    expect(monthly.by_command).toEqual({});
+  });
+
+  test("text writes preserve existing image aggregates (mergeEntry carry-over)", async () => {
+    await recordImageTransaction({ command: "postimg", usdCost: 0.003, env });
+    await recordTransaction({
+      command: "post",
+      usage: { prompt_tokens: 100, completion_tokens: 50 },
+      env,
+    });
+    const monthly = await monthlyTotals(env);
+    expect(monthly.image_requests).toBe(1);
+    expect(monthly.image_usd_cost).toBeCloseTo(0.003, 6);
+    expect(monthly.requests).toBe(1);
+    expect(monthly.by_command.post.requests).toBe(1);
+  });
+
+  test("daily snapshot also receives the image write", async () => {
+    await recordImageTransaction({ command: "postimg", usdCost: 0.003, env });
+    const daily = await dailyTotals(env);
+    expect(daily.image_requests).toBe(1);
+    expect(daily.image_usd_cost).toBeCloseTo(0.003, 6);
+  });
+
+  test("a pre-P2-17 snapshot (no image fields) gets image fields on first image write", async () => {
+    // Simulate an existing snapshot written by Phase 1 ledger code, which
+    // never set image_requests / image_usd_cost.
+    const yyyymm = new Date().toISOString().slice(0, 7);
+    const legacy: LedgerSnapshot = {
+      period: yyyymm,
+      requests: 5,
+      prompt_tokens: 200,
+      completion_tokens: 100,
+      usd_cost: 0.42,
+      by_command: { post: { requests: 5, usd_cost: 0.42 } },
+      last_update_ms: Date.now() - 1000,
+    };
+    await putJSON(env.TS_LEDGER, `ledger:${yyyymm}`, legacy);
+
+    await recordImageTransaction({ command: "postimg", usdCost: 0.003, env });
+
+    const monthly = await monthlyTotals(env);
+    // Image aggregates seeded
+    expect(monthly.image_requests).toBe(1);
+    expect(monthly.image_usd_cost).toBeCloseTo(0.003, 6);
+    // Legacy text aggregates untouched
+    expect(monthly.requests).toBe(5);
+    expect(monthly.usd_cost).toBeCloseTo(0.42, 4);
+    expect(monthly.by_command.post.requests).toBe(5);
   });
 });

@@ -31,6 +31,9 @@ export interface Env {
   RESEND_FROM_NAME: string;
   JOURNAL_POST_PATH_TEMPLATE: string;
   JOURNAL_URL_TEMPLATE: string;
+  IMAGE_PROVIDER: string;
+  IMAGE_MODEL: string;
+  IMAGE_COST_PER_CALL_USD: string;
 
   // Secrets (Wrangler Secrets)
   GARMIN_INBOUND_TOKEN: string;
@@ -44,6 +47,7 @@ export interface Env {
   GITHUB_JOURNAL_REPO: string;
   GITHUB_JOURNAL_BRANCH: string;
   ADDRESS_BOOK_JSON: string;
+  IMAGE_API_KEY: string;
 }
 
 /**
@@ -85,6 +89,9 @@ export const EnvSchema = z.object({
   RESEND_FROM_NAME: z.string().min(1),
   JOURNAL_POST_PATH_TEMPLATE: z.string().min(1),
   JOURNAL_URL_TEMPLATE: z.string().min(1),
+  IMAGE_PROVIDER: z.enum(["replicate"]),
+  IMAGE_MODEL: z.string().min(1),
+  IMAGE_COST_PER_CALL_USD: z.string(),
 
   GARMIN_INBOUND_TOKEN: z.string().min(16),
   GARMIN_IPC_INBOUND_API_KEY: z.string().min(8),
@@ -109,6 +116,7 @@ export const EnvSchema = z.object({
       });
     }
   }),
+  IMAGE_API_KEY: z.string().min(8),
 });
 
 /**

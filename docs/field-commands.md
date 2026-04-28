@@ -2,6 +2,12 @@
 
 TrailScribe is controlled entirely via short commands sent from your Garmin inReach device. Commands always begin with an exclamation mark (`!`) and should be terse enough to fit in a single SMS. Replies are kept to two SMS messages or less.
 
+## Recipient
+
+Send every `!command` to **`trailscribe@tx.trailscribe.net`** (matches `IPC_INBOUND_SENDER` in `wrangler.toml`). Save it once on the device as a contact named `TrailScribe` and pick that contact for every outbound message — Garmin's Portal Connect tenant relays *every* outbound message to TrailScribe's webhook regardless of recipient, but using the right address makes replies thread correctly on the device.
+
+Keep the device's per-message **Include Location** toggle **off** for routine `!command` traffic — the Worker reads GPS from the Garmin Outbound webhook payload, so the device-side share is redundant and pollutes the displayed reply with a Google Maps URL the Mini 3 Plus can't open offline.
+
 ## Command summary
 
 | Command | Syntax | Description |

@@ -138,15 +138,21 @@ environments) is documented in
 configuration (bearer token, X-API-Key, IMEI) is in
 [`docs/garmin-setup.md`](docs/garmin-setup.md).
 
+On the device, save **`trailscribe@tx.trailscribe.net`** once as a contact
+named `TrailScribe` and pick it as the recipient for every `!command`. Keep
+the per-message *Include Location* toggle off — the Worker reads GPS from the
+webhook payload, so the device-side share is redundant. Full rationale in
+[`docs/garmin-setup.md`](docs/garmin-setup.md) §3a.
+
 ```bash
 pnpm deploy:staging                      # wrangler deploy --env staging
 pnpm deploy:prod                         # wrangler deploy --env production
 ```
 
-Pushes to `staging/**` branches auto-deploy to staging via
+Pushes to `staging/**` branches auto-deploy to staging, and pushes to `main`
+auto-deploy to production, via
 [`.github/workflows/deploy-cloudflare.yml`](.github/workflows/deploy-cloudflare.yml).
-Production deploy is currently gated to manual `workflow_dispatch` until the
-first prod deploy lands; it'll flip back to auto-on-`main` after that.
+A manual `workflow_dispatch` is also available for either target.
 
 ## Documentation
 

@@ -4,16 +4,24 @@ import type { ParsedCommand } from "./types.js";
  * Parse an SMS-style `!command` into a structured ParsedCommand.
  * Returns undefined for unknown commands or malformed arguments.
  *
- * α-MVP command set (see PRD §2):
+ * α-MVP commands (Phase 1, see PRD §2):
  *   !ping                                      health check
  *   !help                                      command summary
  *   !cost                                      month-to-date usage
- *   !post <note>                               journal entry (narrative via OpenAI)
+ *   !post <note>                               journal entry (LLM narrative)
  *   !mail to:<addr> subj:<subj> body:<body>    enriched email
  *   !todo <task>                               Todoist task
  *
- * Deferred verbs (!where, !drop, !brief, !ai, !camp, !blast, !share, !weather)
- * return undefined — they'll be added in Phase 2+.
+ * Phase 2 commands (plans/phase-2-extended-commands.md P2-02 + P2-18):
+ *   !where                                     reverse-geocode current fix
+ *   !weather                                   current-location forecast
+ *   !drop <note>                               FieldLog journal entry
+ *   !brief [Nd]                                LLM summary; default 24h window
+ *   !ai <question>                             open-ended LLM Q&A
+ *   !camp <query>                              outdoors-knowledge LLM
+ *   !share to:<addr|alias> <note>              single-recipient enriched email
+ *   !blast <note>                              broadcast to address-book "all"
+ *   !postimg <caption>                         image-augmented journal post
  */
 export function parseCommand(message: string): ParsedCommand | undefined {
   const trimmed = message.trim();
@@ -45,6 +53,43 @@ export function parseCommand(message: string): ParsedCommand | undefined {
       if (!match) return undefined;
       const [, to, subj, body] = match;
       return { type: "mail", to, subj: subj.trim(), body: body.trim() };
+    }
+    case "where":
+      return { type: "where" };
+    case "weather":
+      return { type: "weather" };
+    case "drop": {
+      if (!rest) return undefined;
+      return { type: "drop", note: rest };
+    }
+    case "brief": {
+      if (!rest) return { type: "brief" };
+      const m = rest.match(/^(\d+)d$/i);
+      if (!m) return undefined;
+      return { type: "brief", windowDays: Number.parseInt(m[1], 10) };
+    }
+    case "ai": {
+      if (!rest) return undefined;
+      return { type: "ai", question: rest };
+    }
+    case "camp": {
+      if (!rest) return undefined;
+      return { type: "camp", query: rest };
+    }
+    case "share": {
+      // Format: !share to:<addr|alias> <note>
+      const m = rest.match(/^to:(\S+)\s+(.+)$/i);
+      if (!m) return undefined;
+      const [, to, note] = m;
+      return { type: "share", to, note: note.trim() };
+    }
+    case "blast": {
+      if (!rest) return undefined;
+      return { type: "blast", note: rest };
+    }
+    case "postimg": {
+      if (!rest) return undefined;
+      return { type: "postimg", caption: rest };
     }
     default:
       return undefined;

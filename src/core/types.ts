@@ -2,8 +2,8 @@
  * Core domain types for TrailScribe.
  *
  * α-MVP command set per PRD §2: `!post`, `!mail`, `!todo`, `!ping`, `!help`, `!cost`.
- * Deferred commands (!where, !drop, !brief, !ai, !camp, !blast, !share, !weather)
- * are Phase 2+ and not represented in this union.
+ * Phase 2 adds: `!where`, `!weather`, `!drop`, `!brief`, `!ai`, `!camp`, `!share`,
+ * `!blast`, `!postimg` (see plans/phase-2-extended-commands.md P2-02 + P2-18).
  */
 
 export type ParsedCommand =
@@ -12,10 +12,25 @@ export type ParsedCommand =
   | { type: "cost" }
   | { type: "post"; note: string }
   | { type: "mail"; to: string; subj: string; body: string }
-  | { type: "todo"; task: string };
+  | { type: "todo"; task: string }
+  | { type: "where" }
+  | { type: "weather" }
+  | { type: "drop"; note: string }
+  | { type: "brief"; windowDays?: number }
+  | { type: "ai"; question: string }
+  | { type: "camp"; query: string }
+  | { type: "share"; to: string; note: string }
+  | { type: "blast"; note: string }
+  | { type: "postimg"; caption: string };
 
 /** Commands whose reply-budget accounting draws from the AI ledger. */
-export const AI_COMMANDS: ReadonlySet<ParsedCommand["type"]> = new Set(["post"]);
+export const AI_COMMANDS: ReadonlySet<ParsedCommand["type"]> = new Set([
+  "post",
+  "brief",
+  "ai",
+  "camp",
+  "postimg",
+]);
 
 /**
  * Canonical Garmin IPC Outbound event (schema V2).

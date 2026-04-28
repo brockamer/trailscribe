@@ -50,6 +50,19 @@ export async function orchestrate(
       return handleMail(command, ctx);
     case "todo":
       return handleTodo(command, ctx);
+    case "where":
+    case "weather":
+    case "drop":
+    case "brief":
+    case "ai":
+    case "camp":
+    case "share":
+    case "blast":
+    case "postimg":
+      // Phase 2 commands parse cleanly (P2-02) but the per-command handlers
+      // land in P2-03..P2-11 + P2-18. Until then a real send surfaces a clear
+      // device-visible error via app.ts's orchestrate-error reply path.
+      throw new Error(`!${command.type} not yet implemented`);
   }
 }
 

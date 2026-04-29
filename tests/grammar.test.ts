@@ -48,6 +48,61 @@ describe("parseCommand — α-MVP commands", () => {
     });
   });
 
+  test("parses !mail with all short keys", () => {
+    expect(parseCommand("!mail t:x@y.com s:hello b:from the trail")).toEqual({
+      type: "mail",
+      to: "x@y.com",
+      subj: "hello",
+      body: "from the trail",
+    });
+  });
+
+  test("parses !mail with mixed long + short keys", () => {
+    expect(parseCommand("!mail t:x@y.com subj:Hello b:msg")).toEqual({
+      type: "mail",
+      to: "x@y.com",
+      subj: "Hello",
+      body: "msg",
+    });
+  });
+
+  test("parses !mail to-only (subj + body omitted)", () => {
+    expect(parseCommand("!mail to:x@y.com")).toEqual({
+      type: "mail",
+      to: "x@y.com",
+    });
+    expect(parseCommand("!mail t:x@y.com")).toEqual({
+      type: "mail",
+      to: "x@y.com",
+    });
+  });
+
+  test("parses !mail with subj only (body omitted)", () => {
+    expect(parseCommand("!mail to:x@y.com subj:hi there")).toEqual({
+      type: "mail",
+      to: "x@y.com",
+      subj: "hi there",
+    });
+    expect(parseCommand("!mail t:x@y.com s:hi")).toEqual({
+      type: "mail",
+      to: "x@y.com",
+      subj: "hi",
+    });
+  });
+
+  test("parses !mail with body only (subj omitted)", () => {
+    expect(parseCommand("!mail to:x@y.com body:from the trail")).toEqual({
+      type: "mail",
+      to: "x@y.com",
+      body: "from the trail",
+    });
+    expect(parseCommand("!mail t:x@y.com b:msg")).toEqual({
+      type: "mail",
+      to: "x@y.com",
+      body: "msg",
+    });
+  });
+
   test("case-insensitive verb", () => {
     expect(parseCommand("!PING")).toEqual({ type: "ping" });
     expect(parseCommand("!Todo wash dishes")).toEqual({ type: "todo", task: "wash dishes" });
@@ -154,8 +209,10 @@ describe("parseCommand — rejects unknown / malformed input", () => {
   });
 
   test("returns undefined for malformed !mail", () => {
-    expect(parseCommand("!mail to:a@b.com subj:Hi")).toBeUndefined(); // missing body:
     expect(parseCommand("!mail just some text")).toBeUndefined();
+    expect(parseCommand("!mail subj:no-to-key body:msg")).toBeUndefined(); // missing to:/t:
+    expect(parseCommand("!mail to:")).toBeUndefined(); // empty to value
+    expect(parseCommand("!mail tt:x@y.com")).toBeUndefined(); // unknown key
   });
 
   test("returns undefined for Phase 2 commands missing required args", () => {

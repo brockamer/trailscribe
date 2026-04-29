@@ -170,6 +170,54 @@ describe("P1-17 !mail — no GPS", () => {
   });
 });
 
+describe("#123 !mail — short keys + optional subj/body", () => {
+  test("t:/s:/b: short keys send identically to to:/subj:/body:", async () => {
+    fetchSpy = makeFetchRouter([
+      {
+        match: (u) => u.includes("api.resend.com"),
+        respond: () => jsonResponse({ id: "re_msg_short" }),
+      },
+    ]);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!mail t:friend@example.com s:hi b:hello"));
+
+    const resendCall = fetchSpy.mock.calls[0];
+    const resendBody = JSON.parse((resendCall[1] as RequestInit).body as string) as {
+      to: string;
+      subject: string;
+      text: string;
+    };
+    expect(resendBody.to).toBe("friend@example.com");
+    expect(resendBody.subject).toBe("hi");
+    expect(resendBody.text).toContain("hello");
+
+    const [, messages] = sendReplyMock.mock.calls[0];
+    expect(messages.join(" ")).toContain("Sent to friend@example.com");
+  });
+
+  test("missing subj defaults subject to '[TrailScribe]'; missing body sends footer-only email", async () => {
+    fetchSpy = makeFetchRouter([
+      {
+        match: (u) => u.includes("api.resend.com"),
+        respond: () => jsonResponse({ id: "re_msg_default" }),
+      },
+    ]);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!mail t:friend@example.com"));
+
+    const resendCall = fetchSpy.mock.calls[0];
+    const resendBody = JSON.parse((resendCall[1] as RequestInit).body as string) as {
+      subject: string;
+      text: string;
+    };
+    expect(resendBody.subject).toBe("[TrailScribe]");
+    expect(resendBody.text).toContain("From inReach — sent");
+    expect(resendBody.text.trim().startsWith("---")).toBe(true);
+  });
+});
+
 describe("P1-17 !mail — bad email address", () => {
   test("rejects syntactically invalid 'to' before any send", async () => {
     fetchSpy = vi.fn(async () => {

@@ -17,7 +17,7 @@ Keep the device's per-message **Include Location** toggle **off** for routine `!
 | `!cost` | `!cost` | Displays the number of requests, total tokens, and cumulative cost since the start of the current month. |
 | `!post` | `!post <note>` | Generates a journal post (title + haiku + body) via OpenRouter and commits it to the GitHub Pages journal repo. Reply links to the live URL. |
 | `!postimg` | `!postimg <caption>` | Same as `!post` plus an AI-generated header image. Image-gen via Replicate Flux schnell; markdown + image commit atomically to the journal repo. |
-| `!mail` | `!mail to:<address> subj:<subject> body:<body>` | Sends an email via Resend to `<address>` with the given subject and body. Location footer added automatically when GPS is available. |
+| `!mail` | `!mail (to\|t):<address> [(subj\|s):<subject>] [(body\|b):<body>]` | Sends an email via Resend to `<address>`. Long keys (`to:`/`subj:`/`body:`) and short aliases (`t:`/`s:`/`b:`) are interchangeable and may be mixed in one message. `subj` and `body` are optional — missing subject defaults to `[TrailScribe]`; missing body yields a footer-only email. Location footer added automatically when GPS is available. |
 | `!todo` | `!todo <task>` | Creates a Todoist task with `<task>` as the title. Reply includes the public Todoist URL. |
 | `!where` | `!where` | Reverse-geocodes the current GPS fix; reply names the place plus a Google Maps link (and a MapShare link if `MAPSHARE_BASE` is configured). |
 | `!weather` | `!weather` | Returns the current Open-Meteo conditions for the current GPS fix (e.g. `42°F, 8mph, clear`). |
@@ -31,7 +31,7 @@ Keep the device's per-message **Include Location** toggle **off** for routine `!
 ## Notes
 
 - **Case-insensitive.** `!Todo` and `!todo` behave the same; the leading exclamation mark is required.
-- **Argument order is fixed.** For `!mail`, the `to:`, `subj:`, and `body:` segments are mandatory and space-separated. For `!share`, `to:` is required.
+- **Argument order is fixed.** For `!mail`, only `to:` (or `t:`) is required; if present, `subj:`/`s:` must precede `body:`/`b:`. For `!share`, `to:` is required.
 - **Reply budget is sacred (≤320 chars total, two SMS).** Commands that produce longer content (`!post`, `!postimg`, `!brief`, `!ai`, `!camp`) page within the budget where the content fits and otherwise route to email or the journal post; a short device pointer ("see email" / "see journal") goes back to the Mini.
 - **Idempotency.** Garmin retries the same Outbound webhook on transient errors (2/4/8/16/32/64/128s, then 12h pauses for up to five days). The agent derives a per-event composite key (`sha256(imei + timeStamp + messageCode + content_hash)` per PRD §5) and short-circuits replays at both the app layer (`withCheckpoint`) and the per-command storage layers (FieldLog `id`, idempotency cache).
 - **Daily token budget.** LLM-bearing commands (`!post`, `!postimg`, `!brief`, `!ai`, `!camp`) honor `DAILY_TOKEN_BUDGET=50000`. When exceeded, the command short-circuits with a canned cap message rather than burning more spend.

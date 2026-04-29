@@ -200,12 +200,12 @@ describe("P2-18 !postimg — happy path", () => {
     expect(additions).toHaveLength(2);
     const paths = additions.map((a) => a.path);
     expect(paths.some((p) => p.startsWith("_posts/") && p.endsWith(".md"))).toBe(true);
-    expect(paths.some((p) => p.startsWith("_images/") && p.endsWith(".webp"))).toBe(true);
+    expect(paths.some((p) => p.startsWith("assets/images/") && p.endsWith(".webp"))).toBe(true);
     // Markdown and image share the same slug + date — atomic-commit guarantee.
     const mdPath = paths.find((p) => p.endsWith(".md"))!;
     const imgPath = paths.find((p) => p.endsWith(".webp"))!;
     const slugFromMd = mdPath.replace(/^_posts\//, "").replace(/\.md$/, "");
-    const slugFromImg = imgPath.replace(/^_images\//, "").replace(/\.webp$/, "");
+    const slugFromImg = imgPath.replace(/^assets\/images\//, "").replace(/\.webp$/, "");
     expect(slugFromMd).toBe(slugFromImg);
 
     // Ledger captured both axes.

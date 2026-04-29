@@ -349,6 +349,7 @@ export async function publishPostWithImage(
     placeName,
     weather,
     imagePath,
+    baseurl: env.JOURNAL_BASEURL,
   });
 
   const [owner, repo] = splitRepo(env.GITHUB_JOURNAL_REPO);
@@ -465,6 +466,10 @@ function splitRepo(nameWithOwner: string): [string, string] {
   return [owner, repo];
 }
 
+function stripTrailingSlash(s: string): string {
+  return s.endsWith("/") ? s.slice(0, -1) : s;
+}
+
 function extensionForMime(mimeType: string): string {
   const m = mimeType.toLowerCase();
   if (m.includes("png")) return "png";
@@ -476,13 +481,15 @@ function extensionForMime(mimeType: string): string {
 
 interface RenderArgsWithImage extends RenderArgs {
   imagePath: string;
+  baseurl: string;
 }
 
 function renderMarkdownWithImage(a: RenderArgsWithImage): string {
+  const imageUrl = `${stripTrailingSlash(a.baseurl)}/${a.imagePath}`;
   const lines: string[] = ["---"];
   lines.push(`title: ${quoteYaml(a.title)}`);
   lines.push(`date: ${a.date}`);
-  lines.push(`image: /${a.imagePath}`);
+  lines.push(`image: ${imageUrl}`);
   if (a.lat !== undefined && a.lon !== undefined) {
     const place = a.placeName !== undefined ? `, place: ${quoteYaml(a.placeName)}` : "";
     lines.push(`location: { lat: ${a.lat}, lon: ${a.lon}${place} }`);
@@ -492,7 +499,7 @@ function renderMarkdownWithImage(a: RenderArgsWithImage): string {
   }
   lines.push("tags: [trailscribe]");
   lines.push("---");
-  lines.push(`![${a.title}](/${a.imagePath})`);
+  lines.push(`![${a.title}](${imageUrl})`);
   lines.push("");
   lines.push(a.haiku);
   lines.push("");

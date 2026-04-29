@@ -8,6 +8,7 @@ import { handleWhere } from "./commands/where.js";
 import { handleWeather } from "./commands/weather.js";
 import { handleDrop } from "./commands/drop.js";
 import { handleBrief } from "./commands/brief.js";
+import { handleAi } from "./commands/ai.js";
 
 export interface OrchestratorContext {
   env: Env;
@@ -56,13 +57,14 @@ export async function orchestrate(
       return handleTodo(command, ctx);
     case "where":
       return handleWhere(command, ctx);
-    case "brief":
-      return handleBrief(command, ctx);
     case "weather":
       return handleWeather(command, ctx);
     case "drop":
       return handleDrop(command, ctx);
+    case "brief":
+      return handleBrief(command, ctx);
     case "ai":
+      return handleAi(command, ctx);
     case "camp":
     case "share":
     case "blast":

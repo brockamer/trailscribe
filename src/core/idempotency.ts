@@ -38,7 +38,14 @@ export async function sha256Hex(input: string): Promise<string> {
  * steps so a typo doesn't silently create a new bucket. Add to this union as
  * new ops appear (e.g. P3 `!camp`).
  */
-export type OpName = "narrative" | "publish" | "mail" | "todo" | "reply";
+export type OpName =
+  | "narrative"
+  | "publish"
+  | "mail"
+  | "todo"
+  | "reply"
+  | "brief"
+  | "brief_overflow_email";
 
 /**
  * Message-lifecycle record stored under `idem:<key>` (PRD §5).

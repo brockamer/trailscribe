@@ -81,7 +81,7 @@ export function makeTestEnv(overrides: Partial<Env> = {}): Env {
     IMAGE_PROVIDER: "replicate",
     IMAGE_MODEL: "black-forest-labs/flux-schnell",
     IMAGE_COST_PER_CALL_USD: "0.003",
-    JOURNAL_IMAGE_PATH_TEMPLATE: "_images/{yyyy}-{mm}-{dd}-{slug}.{ext}",
+    JOURNAL_IMAGE_PATH_TEMPLATE: "assets/images/{yyyy}-{mm}-{dd}-{slug}.{ext}",
 
     GARMIN_INBOUND_TOKEN: "test-bearer-token-abcdef0123456789",
     GARMIN_IPC_INBOUND_API_KEY: "test-api-key-abcd",

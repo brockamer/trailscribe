@@ -143,7 +143,7 @@ plans/                          # per-milestone sprint plans (active: phase-2-ex
 - `IMAGE_PROVIDER` — `replicate` for α (P2-17; `!postimg`)
 - `IMAGE_MODEL` — e.g. `black-forest-labs/flux-schnell`
 - `IMAGE_COST_PER_CALL_USD` — ledger pricing for image-gen; default `0.01`
-- `JOURNAL_IMAGE_PATH_TEMPLATE` — e.g. `_images/{yyyy}-{mm}-{dd}-{slug}.{ext}` (commits the binary alongside the markdown post)
+- `JOURNAL_IMAGE_PATH_TEMPLATE` — e.g. `assets/images/{yyyy}-{mm}-{dd}-{slug}.{ext}` (commits the binary alongside the markdown post; non-underscore so Jekyll serves it)
 
 ## Garmin IPC quick-ref (authoritative sources in `materials/`)
 

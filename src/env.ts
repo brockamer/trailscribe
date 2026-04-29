@@ -31,6 +31,7 @@ export interface Env {
   RESEND_FROM_NAME: string;
   JOURNAL_POST_PATH_TEMPLATE: string;
   JOURNAL_URL_TEMPLATE: string;
+  JOURNAL_BASEURL: string;
   IMAGE_PROVIDER: string;
   IMAGE_MODEL: string;
   IMAGE_COST_PER_CALL_USD: string;
@@ -90,6 +91,10 @@ export const EnvSchema = z.object({
   RESEND_FROM_NAME: z.string().min(1),
   JOURNAL_POST_PATH_TEMPLATE: z.string().min(1),
   JOURNAL_URL_TEMPLATE: z.string().min(1),
+  // Path prefix prepended to rendered image URLs in markdown so Jekyll project
+  // pages (served under `/<repo-name>/`) resolve correctly. Empty string for
+  // sites at the domain root.
+  JOURNAL_BASEURL: z.string(),
   IMAGE_PROVIDER: z.enum(["replicate"]),
   IMAGE_MODEL: z.string().min(1),
   IMAGE_COST_PER_CALL_USD: z.string(),

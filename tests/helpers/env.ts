@@ -78,6 +78,7 @@ export function makeTestEnv(overrides: Partial<Env> = {}): Env {
     RESEND_FROM_NAME: "TrailScribe",
     JOURNAL_POST_PATH_TEMPLATE: "_posts/{yyyy}-{mm}-{dd}-{slug}.md",
     JOURNAL_URL_TEMPLATE: "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html",
+    JOURNAL_BASEURL: "/trailscribe-journal",
     IMAGE_PROVIDER: "replicate",
     IMAGE_MODEL: "black-forest-labs/flux-schnell",
     IMAGE_COST_PER_CALL_USD: "0.003",

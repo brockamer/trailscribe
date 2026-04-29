@@ -1,6 +1,6 @@
 # Field Commands
 
-TrailScribe is controlled entirely via short commands sent from your Garmin inReach device. Commands always begin with an exclamation mark (`!`) and should be terse enough to fit in a single SMS. Replies are kept to two SMS messages or less.
+TrailScribe is controlled entirely via short commands sent from your Garmin inReach device. Commands always begin with an exclamation mark (`!`) and should be terse enough to fit in a single SMS. Replies are kept to two SMS messages or less (≤320 characters total, per PRD §2).
 
 ## Recipient
 
@@ -13,23 +13,27 @@ Keep the device's per-message **Include Location** toggle **off** for routine `!
 | Command | Syntax | Description |
 |---|---|---|
 | `!ping` | `!ping` | Health check. Replies `pong` to confirm the agent is running. |
-| `!where` | `!where` | Returns a short description of your current coordinates and a brief weather summary. Always includes both a Google Maps link and your MapShare link. |
-| `!ai` | `!ai <question>` | Sends `<question>` to OpenAI and returns a concise answer. Subject to your daily token budget and 60 s timebox. |
-| `!todo` | `!todo <task>` | Adds `<task>` as a new item in your Todoist account. |
-| `!mail` | `!mail to:<address> subj:<subject> body:<body>` | Sends an email via Gmail to `<address>` with the given subject and body. Coordinates are automatically removed from the body and replaced with map links. |
-| `!drop` | `!drop <note>` | Records `<note>` along with the current date/time and coordinates in a FieldLog (e.g. a spreadsheet or JSON file). Useful for journaling trail observations. |
-| `!camp` | `!camp <query>` | Performs a lightweight web search for trail or campsite information related to `<query>` and returns a short summary. |
-| `!post` | `!post "Title" body:<text>` | Creates a blog post on Posthaven with the given title and text. The post is also saved as `posts/Title.md` in the repo. |
-| `!blast` | `!blast <note>` | Broadcasts `<note>` to a predefined group of contacts (friends/family). |
-| `!share` | `!share to:<email> <note>` | Sends `<note>` and your current location to a one‑off recipient via email. |
-| `!brief` | `!brief` | Returns a five‑line summary of your activities over the last 24 hours (entries, tasks, messages). |
+| `!help` | `!help` | Shows the command summary on-device. |
 | `!cost` | `!cost` | Displays the number of requests, total tokens, and cumulative cost since the start of the current month. |
-| `!help` | `!help` | Shows this command summary. |
+| `!post` | `!post <note>` | Generates a journal post (title + haiku + body) via OpenRouter and commits it to the GitHub Pages journal repo. Reply links to the live URL. |
+| `!postimg` | `!postimg <caption>` | Same as `!post` plus an AI-generated header image. Image-gen via Replicate Flux schnell; markdown + image commit atomically to the journal repo. |
+| `!mail` | `!mail to:<address> subj:<subject> body:<body>` | Sends an email via Resend to `<address>` with the given subject and body. Location footer added automatically when GPS is available. |
+| `!todo` | `!todo <task>` | Creates a Todoist task with `<task>` as the title. Reply includes the public Todoist URL. |
+| `!where` | `!where` | Reverse-geocodes the current GPS fix; reply names the place plus a Google Maps link (and a MapShare link if `MAPSHARE_BASE` is configured). |
+| `!weather` | `!weather` | Returns the current Open-Meteo conditions for the current GPS fix (e.g. `42°F, 8mph, clear`). |
+| `!drop` | `!drop <note>` | Appends a structured FieldLog entry tagged with the current timestamp + GPS. Reply: `Logged: <preview>. (<N> entries)`. |
+| `!brief` | `!brief [Nd]` | LLM summary of the last 24 hours of FieldLog entries (or the last `Nd` days). Replies on-device if it fits 320 chars; longer summaries route to email. |
+| `!ai` | `!ai <question>` | Open-ended LLM Q&A via OpenRouter. Reply paged to two SMS if it fits; longer answers route to email. |
+| `!camp` | `!camp <query>` | LLM-only outdoors-knowledge lookup (camping, water sources, features) prefixed with `(may be outdated)` since there's no real-time web search. Overflow → email. |
+| `!share` | `!share to:<addr\|alias> <note>` | One-off enriched email via Resend to a single recipient. `<addr\|alias>` is either a literal email or an alias from the address book (`ADDRESS_BOOK_JSON`). |
+| `!blast` | `!blast <note>` | Broadcast enriched email to the address book's `all` group. Per-recipient errors tolerated; reply summarizes successes vs. failures. |
 
 ## Notes
 
-- Commands are **case‑insensitive** (`!Todo` and `!todo` behave the same).
-- Arguments must follow exactly the order shown above. For example, in `!mail` the `to:`, `subj:` and `body:` segments are mandatory and space‑separated.
-- When including a title in `!post`, wrap it in double quotes. The body follows after `body:` and may contain spaces.
-- Coordinates are automatically removed from outgoing emails. Instead, both Google Maps and MapShare links are appended to the message so recipients can view your position without exposing raw lat/lon numbers.
-- The agent enforces idempotency. If Garmin retries the same message (e.g. due to network errors), duplicates are ignored.
+- **Case-insensitive.** `!Todo` and `!todo` behave the same; the leading exclamation mark is required.
+- **Argument order is fixed.** For `!mail`, the `to:`, `subj:`, and `body:` segments are mandatory and space-separated. For `!share`, `to:` is required.
+- **Reply budget is sacred (≤320 chars total, two SMS).** Commands that produce longer content (`!post`, `!postimg`, `!brief`, `!ai`, `!camp`) page within the budget where the content fits and otherwise route to email or the journal post; a short device pointer ("see email" / "see journal") goes back to the Mini.
+- **Idempotency.** Garmin retries the same Outbound webhook on transient errors (2/4/8/16/32/64/128s, then 12h pauses for up to five days). The agent derives a per-event composite key (`sha256(imei + timeStamp + messageCode + content_hash)` per PRD §5) and short-circuits replays at both the app layer (`withCheckpoint`) and the per-command storage layers (FieldLog `id`, idempotency cache).
+- **Daily token budget.** LLM-bearing commands (`!post`, `!postimg`, `!brief`, `!ai`, `!camp`) honor `DAILY_TOKEN_BUDGET=50000`. When exceeded, the command short-circuits with a canned cap message rather than burning more spend.
+- **No-GPS-fix path.** Location-dependent commands (`!where`, `!weather`, location enrichment for `!post`/`!mail`/`!share`/`!blast`/`!drop`) accept `undefined` lat/lon and degrade gracefully — typically replying `Need GPS fix — try again outdoors.` rather than guessing.
+- **SOS goes through Garmin native, not TrailScribe.** Emergency declarations bypass the Worker entirely and route to IERCC/GEOS.

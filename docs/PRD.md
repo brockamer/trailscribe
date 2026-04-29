@@ -231,7 +231,7 @@ Even with a valid token, we verify incoming `imei` is in `IMEI_ALLOWLIST` env va
 - **Timestamp:** `/Date(ms)/` format, must be now-ish (not future, not before 2011).
 - **Response:** `{ "count": N }` on 200 OK. Error responses carry `{ Code, Message, Description, URL, IMEI }`.
 
-**Reply-delivery failure (α).** Per D9 (§8), email-fallback to the device is **skipped for α**. If IPC Inbound returns 5xx/429 after 3 retries with exponential backoff, we write a ledger entry `reply_delivery: failed` and return 200 OK to Garmin. Side effects (blog post, email, task) still persist — only the reply confirmation failed. Surfaced via `!cost` and log inspection. Phase 2 will revisit if reliability data warrants adding a real email-fallback path.
+**Reply-delivery failure.** Per D9 (§8), email-fallback to the device is **permanently skipped** under the single-operator assumption (`plans/phase-2-extended-commands.md`). If IPC Inbound returns 5xx/429 after 3 retries with exponential backoff, we write a ledger entry `reply_delivery: failed` and return 200 OK to Garmin. Side effects (blog post, email, task) still persist — only the reply confirmation failed. Surfaced via `!cost` and log inspection.
 
 ### Retry / failure handling
 - **Inbound-from-Garmin:** we never NACK for app errors (would cascade retries). We 200 OK and surface errors to the user via IPC Inbound reply (e.g., `"Error: Todoist auth failed"`).
@@ -280,7 +280,7 @@ If the same webhook replays after partial completion:
 ### Guarantees
 - **At-least-once for outbound side-effects** (reply delivery) because we accept best-effort and log degraded replies.
 - **At-most-once for expensive side-effects** (LLM calls, blog publishes, email sends, task creation) via op-level checkpoints.
-- **Exactly-once** is a Phase 2 target (Durable Objects give strong consistency). KV's eventual consistency is acceptable at MVP volume (<1 msg/second).
+- **Exactly-once** is a Phase 3 target (Durable Objects give strong consistency; epic #99). KV's eventual consistency is acceptable through Phase 2 at single-operator volume (<1 msg/second).
 
 ### Cost of idempotency
 ~$0.00001 per message in KV ops. Trivial vs. the $0.03 cost of a single duplicate LLM call. Pays for itself on the first prevented duplicate.
@@ -386,7 +386,7 @@ If the same webhook replays after partial completion:
 
 - **D5. Blog platform:** **GitHub Pages + markdown commits via GitHub Contents API.** Journal lives in a dedicated repo (e.g., `brockamer/trailscribe-journal`); Worker commits `_posts/YYYY-MM-DD-<slug>.md` with frontmatter. Theme TBD at Phase 0 (default: Jekyll `minima` for zero-config, swap to Hugo later if desired).
 - **D8. Outbound email:** **Resend.** `RESEND_API_KEY` secret; `RESEND_FROM_EMAIL=trailscribe@resend.dev` for α, move to own-domain later. Replaces all Gmail OAuth bindings in §3.
-- **D9. Email-fallback reply:** **skipped for α.** If IPC Inbound returns 5xx after 3 retries (1s/4s/16s backoff), write ledger entry `reply_delivery: failed` and return 200 OK to Garmin. Side effects (blog post, email, task) still persist. Revisit in Phase 2 if reliability data warrants.
+- **D9. Email-fallback reply:** **permanently skipped** under the single-operator assumption. If IPC Inbound returns 5xx after 3 retries (1s/4s/16s backoff), write ledger entry `reply_delivery: failed` and return 200 OK to Garmin. Side effects (blog post, email, task) still persist. (Reconciled 2026-04-29 per `plans/phase-2-extended-commands.md` — was previously noted as "revisit in Phase 2.")
 
 ### Original decision text (for reference)
 
@@ -447,13 +447,14 @@ With D2=yes, IPC Inbound is the reliable path. Email fallback is belt-and-suspen
 
 ## 9. Phase 2+ (preview, not specified here)
 
-For alignment only — each phase gets its own PRD/plan when we reach it.
+For alignment only — each phase gets its own PRD/plan when we reach it. This preview is the canonical short summary; §3 carries the engineering shape and `plans/` carries the per-phase sequencing.
 
-- **Phase 2 — β-MVP (~2 weeks):** `!where`, `!weather`, `!drop` (FieldLog in KV for now), `!brief`. Migrate `TS_CONTEXT` to Durable Objects. Add Cloudflare Queues.
-- **Phase 3 — v1.0 (~2 weeks):** `!ai`, `!camp`. Migrate `TS_LEDGER` to D1. Add budget alerts, usage dashboard. Multi-message chunking (per radio-llm pattern).
-- **Phase 4 — v1.1 (~1 week):** `!blast`, `!share`. Contact book config.
-- **Phase 5 — hardening (~1–2 weeks):** Rate limits, retry polish, observability dashboard, multi-month ledger.
-- **Post-v1.0:** Photos (schema V4, R2 + Image Resizing), web dashboard, multi-user.
+- **Phase 2 — Extended commands + `!postimg`** (active as of 2026-04-28). All eight α-deferred commands (`!where`, `!weather`, `!drop`, `!brief`, `!ai`, `!camp`, `!share`, `!blast`) plus `!postimg`. Single-operator scope; KV-only state; FieldLog as a per-IMEI bounded list; address book as env-var JSON. One new external dependency: image-gen (Replicate Flux schnell). No β-launch milestone. Plan: `plans/phase-2-extended-commands.md`; epic #98.
+- **Phase 3 — Storage migration (DO + D1).** Migrate `TS_CONTEXT` and FieldLog → Durable Objects (strong consistency for replay storms); migrate `TS_LEDGER` → D1 (SQL analytics, retention, budget alerts). Add Cloudflare Queues for async retries and multi-message chunking refinement. Epic #99.
+- **Phase 4+ — Media & polish.** Operator-uploaded photos (schema V4, R2, Image Resizing). Web dashboard for trip visualization. Operator-quality follow-ups filed during Phase 2 (P2-08b real web search, P2-18b image-provider upgrade) get scheduled here if still relevant.
+- **Post-v1.0 (out of scope until reached):** Multi-user, paid tier, mobile companion app.
+
+The original 2026-04-22 preview split the eight α-deferred commands across Phases 2/3/4 by complexity. That split has been collapsed into a single Phase 2 because the transport boundary (Workers + KV + same orchestrator) is identical for all eight; see §2 deferrals table for the per-command Phase 2 shape.
 
 ---
 

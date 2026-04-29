@@ -82,8 +82,8 @@ plans/                          # per-milestone sprint plans (active: phase-2-ex
 - **Phase 0 — Workers scaffold:** complete 2026-04-24. All 20 P0 stories shipped.
 - **Phase 1 — α-MVP:** complete 2026-04-27. Epic #30 closed 2026-04-26; close gate #111 (production traffic turn-on with the Mini 3 Plus against the production Worker) verified 2026-04-27. All 6 commands (`!post`, `!mail`, `!todo`, `!ping`, `!help`, `!cost`) return real responses on production; replay verification + cost measurement complete; OpenRouter LLM layer live (`anthropic/claude-sonnet-4-6`). Plan archived at `plans/archived/2026-04/phase-1-alpha-mvp.md`.
 - **Production-readiness:** complete 2026-04-28. All 8 milestone issues closed: shipped #32, #33 (auto-deploy on push to main re-enabled in #126), #121 (device-side recipient + Include-Location convention pinned in #127); closed-as-not-planned #14, #15, #26 (operator scope decision: personal-project housekeeping, no custom domain).
-- **Phase 2 — extended commands + `!postimg`:** **active phase as of 2026-04-28.** Plan: `plans/phase-2-extended-commands.md`. Epic #98 (8 deferred α commands: `!where`, `!weather`, `!drop`, `!brief`, `!ai`, `!camp`, `!share`, `!blast`) plus `!postimg` (#125, folded in on operator decision; image-gen via Replicate Flux schnell for the first cut, provider-upgrade follow-up filed as P2-18b). Single-operator scope; KV-only state; no β-launch milestone. Sub-issues #112–#119 + #125 are sprint-ready when promoted from Backlog.
-- **Phase 3 — DO + D1 migration:** filed as epic #99 (Low-priority Backlog). Promote when Phase 2 closes.
+- **Phase 2 — extended commands + `!postimg`:** complete 2026-04-29. All 9 commands shipped end-to-end on production (`!where`, `!weather`, `!drop`, `!brief`, `!ai`, `!camp`, `!share`, `!blast`, `!postimg`); P2-15 staging burn-in PASSED (84 ledger entries, idempotency confirmed). Epic #98 closed; sub-issues #112–#119 + #125 closed via PR-merge auto-close. Plan archived at `plans/archived/2026-04/phase-2-extended-commands.md`. Real-device verification (P2-16) pending operator + Mini.
+- **Phase 3 — DO + D1 migration:** filed as epic #99 (Low-priority Backlog). Active phase candidate now that Phase 2 has closed.
 
 ## Conventions
 
@@ -154,7 +154,7 @@ plans/                          # per-milestone sprint plans (active: phase-2-ex
 ## Workflow
 
 - **jared** manages the board: https://github.com/users/brockamer/projects/3 (see `docs/project-board.md`).
-- Active plan: `plans/phase-2-extended-commands.md` (linked to epic #98).
+- No active plan (Phase 2 closed 2026-04-29; archived at `plans/archived/2026-04/phase-2-extended-commands.md`). Phase 3 (DO + D1, epic #99) is the next promotion candidate.
 - Git: `origin` = `https://github.com/brockamer/trailscribe.git`, default branch `main`.
 - Commit sign-off: `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
 

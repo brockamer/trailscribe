@@ -11,6 +11,7 @@ import { handleBrief } from "./commands/brief.js";
 import { handleAi } from "./commands/ai.js";
 import { handleCamp } from "./commands/camp.js";
 import { handleShare } from "./commands/share.js";
+import { handleBlast } from "./commands/blast.js";
 
 export interface OrchestratorContext {
   env: Env;
@@ -72,6 +73,7 @@ export async function orchestrate(
     case "share":
       return handleShare(command, ctx);
     case "blast":
+      return handleBlast(command, ctx);
     case "postimg":
       // Phase 2 commands parse cleanly (P2-02) but the per-command handlers
       // land in P2-03..P2-11 + P2-18. Until then a real send surfaces a clear

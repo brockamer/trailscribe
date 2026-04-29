@@ -4,6 +4,7 @@ import { monthlyTotals, recordTransaction, type LedgerSnapshot } from "./ledger.
 import { handlePost } from "./commands/post.js";
 import { handleMail } from "./commands/mail.js";
 import { handleTodo } from "./commands/todo.js";
+import { handleWhere } from "./commands/where.js";
 
 export interface OrchestratorContext {
   env: Env;
@@ -51,6 +52,7 @@ export async function orchestrate(
     case "todo":
       return handleTodo(command, ctx);
     case "where":
+      return handleWhere(command, ctx);
     case "weather":
     case "drop":
     case "brief":

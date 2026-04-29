@@ -248,6 +248,107 @@ describe("P1-16 !post — no GPS fix", () => {
   });
 });
 
+describe("#124 bare !post — narrative built from metadata, no caption", () => {
+  test("bare !post with GPS → geocode + weather called; no-note prompt; journal post produced", async () => {
+    fetchSpy = makeFetchRouter([
+      {
+        match: (u) => u.includes("nominatim.openstreetmap.org"),
+        respond: () => jsonResponse({ display_name: "Lake Sabrina, Inyo County, California" }),
+      },
+      {
+        match: (u) => u.includes("api.open-meteo.com"),
+        respond: () =>
+          jsonResponse({
+            current: { temperature_2m: 46, wind_speed_10m: 8, weather_code: 0 },
+          }),
+      },
+      {
+        match: (u) => u.includes("openrouter.ai"),
+        respond: () => jsonResponse(NARRATIVE_RESPONSE),
+      },
+      {
+        match: (u, i) => u.includes("api.github.com") && i?.method === "GET",
+        respond: () => new Response(null, { status: 404 }),
+      },
+      {
+        match: (u, i) => u.includes("api.github.com") && i?.method === "PUT",
+        respond: () => jsonResponse(PUBLISH_RESPONSE),
+      },
+    ]);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    const res = await postIpc(envelope("!post", { gps: { lat: NATALIE_LAT, lon: NATALIE_LON } }));
+    expect(res.status).toBe(200);
+
+    // Bare !post should still produce a journal post (the operator's intent
+    // was "TrailScribe figures it out" — a parse error wastes a satellite send).
+    const [, messages] = sendReplyMock.mock.calls[0];
+    const joined = messages.join(" ");
+    expect(joined).toContain("Posted: Alpenglow at Lake Sabrina");
+    expect(joined).toContain("https://brockamer.github.io/trailscribe-journal/");
+
+    // Narrative prompt: no-note variant + omitted "Note:" line.
+    const orCall = fetchSpy.mock.calls.find(
+      (c: unknown[]) => typeof c[0] === "string" && c[0].includes("openrouter.ai"),
+    );
+    const orBody = JSON.parse((orCall![1] as RequestInit).body as string) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    const sysMsg = orBody.messages.find((m) => m.role === "system")?.content ?? "";
+    const userMsg = orBody.messages.find((m) => m.role === "user")?.content ?? "";
+    expect(sysMsg).toContain("did not provide a caption");
+    expect(userMsg).not.toContain("Note:");
+    expect(userMsg).toMatch(/^Location: /m);
+    expect(userMsg).toMatch(/^Weather: /m);
+  });
+
+  test("bare !post with no GPS fix → no-note prompt; minimal user prompt; journal post still produced", async () => {
+    fetchSpy = makeFetchRouter([
+      {
+        match: (u) => u.includes("openrouter.ai"),
+        respond: () => jsonResponse(NARRATIVE_RESPONSE),
+      },
+      {
+        match: (u, i) => u.includes("api.github.com") && i?.method === "GET",
+        respond: () => new Response(null, { status: 404 }),
+      },
+      {
+        match: (u, i) => u.includes("api.github.com") && i?.method === "PUT",
+        respond: () => jsonResponse(PUBLISH_RESPONSE),
+      },
+    ]);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!post"));
+
+    // No geocode / weather without GPS, even on bare path.
+    const calls = fetchSpy.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(calls.some((u: string) => u.includes("nominatim"))).toBe(false);
+    expect(calls.some((u: string) => u.includes("open-meteo"))).toBe(false);
+
+    // Reply should still carry the journal URL — bare + no-GPS is a real edge
+    // case (operator triggers !post indoors / before fix locks) and must
+    // degrade gracefully, not error.
+    const [, messages] = sendReplyMock.mock.calls[0];
+    const joined = messages.join(" ");
+    expect(joined).toContain("Posted: Alpenglow at Lake Sabrina");
+
+    const orCall = fetchSpy.mock.calls.find(
+      (c: unknown[]) => typeof c[0] === "string" && c[0].includes("openrouter.ai"),
+    );
+    const orBody = JSON.parse((orCall![1] as RequestInit).body as string) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    const userMsg = orBody.messages.find((m) => m.role === "user")?.content ?? "";
+    // No Note, no Location, no Weather — degenerate but valid input. The
+    // no-note system prompt tells the LLM to keep the body short rather than
+    // pad in this case.
+    expect(userMsg).not.toContain("Note:");
+    expect(userMsg).not.toContain("Location:");
+    expect(userMsg).not.toContain("Weather:");
+  });
+});
+
 describe("P1-16 !post — replay safety (acceptance #5)", () => {
   test("first run completes narrative + publish; reply send fails; replay re-runs reply only", async () => {
     let openRouterCalls = 0;

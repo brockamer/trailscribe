@@ -200,8 +200,9 @@ describe("parseCommand — rejects unknown / malformed input", () => {
     expect(parseCommand("!foo bar")).toBeUndefined();
   });
 
-  test("returns undefined for !post without a note", () => {
-    expect(parseCommand("!post")).toBeUndefined();
+  test("parses bare !post (#124) — narrative built from metadata", () => {
+    expect(parseCommand("!post")).toEqual({ type: "post" });
+    expect(parseCommand("!post  ")).toEqual({ type: "post" });
   });
 
   test("returns undefined for !todo without a task", () => {

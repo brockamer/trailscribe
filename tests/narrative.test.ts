@@ -155,6 +155,69 @@ describe("generateNarrative — prompt composition", () => {
     expect(userMsg).not.toContain("(unknown)");
   });
 
+  test("bare !post (no note, #124) → user prompt OMITS 'Note:' line; system prompt forbids invention", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
+    );
+
+    await generateNarrative({
+      lat: 37.1682,
+      lon: -118.5891,
+      placeName: "Lake Sabrina, Inyo County, CA",
+      weather: "Clear · 8°C · wind 12 km/h W",
+      env,
+    });
+
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    const userMsg = body.messages.find((m) => m.role === "user")?.content ?? "";
+    const sysMsg = body.messages.find((m) => m.role === "system")?.content ?? "";
+
+    expect(userMsg).not.toContain("Note:");
+    expect(userMsg).toContain("Location: Lake Sabrina");
+    expect(userMsg).toContain("Weather: Clear");
+
+    expect(sysMsg).toContain("did not provide a caption");
+    expect(sysMsg.toLowerCase()).toContain("do not invent");
+  });
+
+  test("whitespace-only note → treated as bare (no-note prompt path)", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
+    );
+
+    await generateNarrative({ note: "   ", placeName: "X", lat: 1, lon: 2, env });
+
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    const sysMsg = body.messages.find((m) => m.role === "system")?.content ?? "";
+    const userMsg = body.messages.find((m) => m.role === "user")?.content ?? "";
+
+    expect(sysMsg).toContain("did not provide a caption");
+    expect(userMsg).not.toContain("Note:");
+  });
+
+  test("with-note path → system prompt is the original first-person variant", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
+    );
+
+    await generateNarrative({ note: "feeling great", env });
+
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    const sysMsg = body.messages.find((m) => m.role === "system")?.content ?? "";
+
+    expect(sysMsg).not.toContain("did not provide a caption");
+    expect(sysMsg).toContain("brief notes");
+  });
+
   test("placeName missing but lat/lon present → still omits Location (need all three)", async () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),

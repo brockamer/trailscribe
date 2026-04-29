@@ -99,6 +99,22 @@ export async function handlePost(cmd: PostCommand, ctx: HandlePostContext): Prom
     return failPipeline(env, idemKey, "narrative", err);
   }
 
+  // Bare-!post fallback (#124): if the LLM produced nothing usable from the
+  // metadata-only prompt (e.g. no GPS fix and no place/weather to ground it),
+  // synthesize a minimal narrative so the pipeline still produces a journal
+  // post. Schema validation already rejects empty title/haiku/body, so this
+  // branch is defensive — it triggers only on the title-only edge case where
+  // the model returned bare metadata echo.
+  if (cmd.note === undefined && narrative.title.trim().length === 0) {
+    const fallbackTitle = placeName ? `Posted from ${placeName}` : "Posted from the field";
+    narrative = {
+      ...narrative,
+      title: fallbackTitle,
+      haiku: narrative.haiku || fallbackTitle,
+      body: narrative.body || fallbackTitle,
+    };
+  }
+
   let publishResult: Awaited<ReturnType<typeof publishPost>>;
   try {
     publishResult = await withCheckpoint(env, idemKey, "publish", () =>
@@ -142,7 +158,7 @@ export async function handlePost(cmd: PostCommand, ctx: HandlePostContext): Prom
         lat,
         lon,
         command_type: "post",
-        free_text: cmd.note,
+        free_text: cmd.note ?? "",
       },
       env,
     );

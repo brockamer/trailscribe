@@ -39,8 +39,7 @@ export function parseCommand(message: string): ParsedCommand | undefined {
     case "cost":
       return { type: "cost" };
     case "post": {
-      if (!rest) return undefined;
-      return { type: "post", note: rest };
+      return rest ? { type: "post", note: rest } : { type: "post" };
     }
     case "todo": {
       if (!rest) return undefined;

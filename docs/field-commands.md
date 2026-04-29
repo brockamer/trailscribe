@@ -15,7 +15,7 @@ Keep the device's per-message **Include Location** toggle **off** for routine `!
 | `!ping` | `!ping` | Health check. Replies `pong` to confirm the agent is running. |
 | `!help` | `!help` | Shows the command summary on-device. |
 | `!cost` | `!cost` | Displays the number of requests, total tokens, and cumulative cost since the start of the current month. |
-| `!post` | `!post <note>` | Generates a journal post (title + haiku + body) via OpenRouter and commits it to the GitHub Pages journal repo. Reply links to the live URL. |
+| `!post` | `!post [note]` | Generates a journal post (title + haiku + body) via OpenRouter and commits it to the GitHub Pages journal repo. Reply links to the live URL. **Bare `!post`** (no caption) builds the narrative purely from device metadata — place name, weather, time — in observational voice, without inventing activities or feelings. |
 | `!postimg` | `!postimg <caption>` | Same as `!post` plus an AI-generated header image. Image-gen via Replicate Flux schnell; markdown + image commit atomically to the journal repo. |
 | `!mail` | `!mail (to\|t):<address> [(subj\|s):<subject>] [(body\|b):<body>]` | Sends an email via Resend to `<address>`. Long keys (`to:`/`subj:`/`body:`) and short aliases (`t:`/`s:`/`b:`) are interchangeable and may be mixed in one message. `subj` and `body` are optional — missing subject defaults to `[TrailScribe]`; missing body yields a footer-only email. Location footer added automatically when GPS is available. |
 | `!todo` | `!todo <task>` | Creates a Todoist task with `<task>` as the title. Reply includes the public Todoist URL. |

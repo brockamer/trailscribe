@@ -86,7 +86,7 @@ export async function orchestrate(
 function helpText(): string {
   return [
     "!ping — status",
-    "!post <note> — blog",
+    "!post [note] — blog",
     "!mail t:_ [s:_] [b:_]",
     "!todo <task>",
     "!cost — usage",

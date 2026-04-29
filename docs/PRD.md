@@ -388,6 +388,10 @@ If the same webhook replays after partial completion:
 - **D8. Outbound email:** **Resend.** `RESEND_API_KEY` secret; `RESEND_FROM_EMAIL=trailscribe@resend.dev` for α, move to own-domain later. Replaces all Gmail OAuth bindings in §3.
 - **D9. Email-fallback reply:** **permanently skipped** under the single-operator assumption. If IPC Inbound returns 5xx after 3 retries (1s/4s/16s backoff), write ledger entry `reply_delivery: failed` and return 200 OK to Garmin. Side effects (blog post, email, task) still persist. (Reconciled 2026-04-29 per `plans/phase-2-extended-commands.md` — was previously noted as "revisit in Phase 2.")
 
+### Resolved 2026-04-29
+
+- **D10. Intercept policy.** The Worker silent-drops messages whose `freeText` does not start with `!` (after trim) — no IPC Inbound reply, structured `intercept_skipped` log only, idempotency key recorded so Garmin retries short-circuit. `!`-prefixed messages with unknown verbs still receive `"Try !help"` so command typos remain recoverable. Decided 2026-04-29 (#122) after operator surfaced clutter from "Try !help" replies to casual messages during the #111 production turn-on. Recipient-gating (option 3 in #122 — only reply when device's `addresses[]` includes the TrailScribe contact) was deferred — revisit only if field experience surfaces a case where an `!`-prefixed message accidentally addressed to a non-TrailScribe contact produces unwanted replies.
+
 ### Original decision text (for reference)
 
 **D5. Blog platform (Posthaven cancelled).**

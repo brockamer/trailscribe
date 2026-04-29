@@ -138,7 +138,25 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
   const lat = hasFix ? point.latitude : undefined;
   const lon = hasFix ? point.longitude : undefined;
 
-  const command = parseCommand(event.freeText ?? "");
+  // Intercept policy (PRD §8 D10): silent-drop messages that don't begin with
+  // `!` so casual operator traffic to friends/family is invisible to TrailScribe.
+  // `!`-prefixed unknowns still receive "Try !help" so command typos remain
+  // recoverable. See #122.
+  const trimmed = (event.freeText ?? "").trim();
+  if (!trimmed.startsWith("!")) {
+    log({
+      event: "intercept_skipped",
+      level: "info",
+      imei: event.imei,
+      reason: "non-command",
+      freeTextPreview: trimmed.slice(0, 80),
+      key,
+    });
+    await markCompleted(env, key);
+    return;
+  }
+
+  const command = parseCommand(trimmed);
   if (!command) {
     log({
       event: "parse_unknown",

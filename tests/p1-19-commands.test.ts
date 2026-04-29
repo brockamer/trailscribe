@@ -197,13 +197,22 @@ describe("P1-19 — APPEND_COST_SUFFIX integration", () => {
 });
 
 describe("P1-19 — unknown command path", () => {
-  test("unparseable text → 'Unknown command. Try !help' delivered, no ledger entry", async () => {
-    const res = await postIpc(envelope("not a command"));
+  test("!-prefixed unknown verb → 'Unknown command. Try !help' delivered, no ledger entry", async () => {
+    const res = await postIpc(envelope("!nope hi"));
     expect(res.status).toBe(200);
 
     const [, messages] = sendReplyMock.mock.calls[0];
     expect(messages).toEqual(["Unknown command. Try !help"]);
 
+    const snap = await monthlyTotals(env);
+    expect(snap.requests).toBe(0);
+  });
+
+  test("non-!-prefixed text is silent-dropped under D10 intercept policy (#122)", async () => {
+    const res = await postIpc(envelope("not a command"));
+    expect(res.status).toBe(200);
+
+    expect(sendReplyMock).not.toHaveBeenCalled();
     const snap = await monthlyTotals(env);
     expect(snap.requests).toBe(0);
   });

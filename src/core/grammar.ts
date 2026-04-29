@@ -9,7 +9,7 @@ import type { ParsedCommand } from "./types.js";
  *   !help                                      command summary
  *   !cost                                      month-to-date usage
  *   !post <note>                               journal entry (LLM narrative)
- *   !mail to:<addr> subj:<subj> body:<body>    enriched email
+ *   !mail (to|t):<addr> [(subj|s):<subj>] [(body|b):<body>]   enriched email
  *   !todo <task>                               Todoist task
  *
  * Phase 2 commands (plans/phase-2-extended-commands.md P2-02 + P2-18):
@@ -47,12 +47,22 @@ export function parseCommand(message: string): ParsedCommand | undefined {
       return { type: "todo", task: rest };
     }
     case "mail": {
-      // Format: !mail to:<addr> subj:<subj with spaces OK> body:<body>
-      // The subj field must allow spaces — fixed from previous `[^\s]+` bug.
-      const match = rest.match(/^to:(\S+)\s+subj:(.+?)\s+body:(.+)$/i);
+      // Format: !mail (to|t):<addr> [(subj|s):<subj>] [(body|b):<body>]
+      // - `to:` / `t:` are interchangeable; same for `subj:` / `s:` and `body:` / `b:`.
+      // - Keys may be mixed within one message (e.g. `t:x@y.com subj:hi b:msg`).
+      // - Order is fixed (to → subj → body); subj and body are independently optional.
+      // - Default subject is supplied downstream by handleMail (see commands/mail.ts).
+      const match = rest.match(
+        /^(?:to|t):(\S+)(?:\s+(?:subj|s):(.+?))?(?:\s+(?:body|b):(.+))?$/i,
+      );
       if (!match) return undefined;
       const [, to, subj, body] = match;
-      return { type: "mail", to, subj: subj.trim(), body: body.trim() };
+      return {
+        type: "mail",
+        to,
+        ...(subj !== undefined ? { subj: subj.trim() } : {}),
+        ...(body !== undefined ? { body: body.trim() } : {}),
+      };
     }
     case "where":
       return { type: "where" };

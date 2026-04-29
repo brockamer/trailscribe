@@ -15,13 +15,18 @@ interface HandleMailContext extends OrchestratorContext {
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DEFAULT_SUBJECT = "[TrailScribe]";
 
 /**
- * `!mail to:_ subj:_ body:_` pipeline (plan P1-17).
+ * `!mail (to|t):_ [(subj|s):_] [(body|b):_]` pipeline (plan P1-17, extended #123).
  *
  * Composes optional geocode/weather → enriched email body → Resend send
  * (checkpointed) → ledger + context. Reply is `"Sent to <to>"` with map links
  * appended via buildReply when GPS is present.
+ *
+ * `subj` and `body` are independently optional in the grammar; missing `subj`
+ * falls back to `[TrailScribe]` (Resend rejects empty subjects), missing `body`
+ * yields a footer-only email.
  */
 export async function handleMail(cmd: MailCommand, ctx: HandleMailContext): Promise<CommandResult> {
   const { env, imei, lat, lon, idemKey } = ctx;
@@ -42,13 +47,14 @@ export async function handleMail(cmd: MailCommand, ctx: HandleMailContext): Prom
     if (wxR.status === "fulfilled") weather = wxR.value;
   }
 
-  const enrichedBody = composeBody(cmd.body, hasGps, placeName, weather, lat, lon);
+  const subject = cmd.subj && cmd.subj.length > 0 ? cmd.subj : DEFAULT_SUBJECT;
+  const enrichedBody = composeBody(cmd.body ?? "", hasGps, placeName, weather, lat, lon);
 
   try {
     await withCheckpoint(env, idemKey, "mail", async () => {
       const result = await sendEmail({
         to: cmd.to,
-        subject: cmd.subj,
+        subject,
         body: enrichedBody,
         env,
       });
@@ -87,7 +93,7 @@ export async function handleMail(cmd: MailCommand, ctx: HandleMailContext): Prom
         lat,
         lon,
         command_type: "mail",
-        free_text: `${cmd.to}|${cmd.subj}`,
+        free_text: `${cmd.to}|${subject}`,
       },
       env,
     );

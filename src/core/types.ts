@@ -11,7 +11,7 @@ export type ParsedCommand =
   | { type: "help" }
   | { type: "cost" }
   | { type: "post"; note: string }
-  | { type: "mail"; to: string; subj: string; body: string }
+  | { type: "mail"; to: string; subj?: string; body?: string }
   | { type: "todo"; task: string }
   | { type: "where" }
   | { type: "weather" }

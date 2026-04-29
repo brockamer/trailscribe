@@ -87,7 +87,7 @@ function helpText(): string {
   return [
     "!ping — status",
     "!post <note> — blog",
-    "!mail to:_ subj:_ body:_",
+    "!mail t:_ [s:_] [b:_]",
     "!todo <task>",
     "!cost — usage",
     "!help",

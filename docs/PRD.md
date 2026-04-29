@@ -45,7 +45,7 @@ TrailScribe is an AI-native serverless agent that transforms satellite messages 
 | Command | Purpose | External calls | Owner in decks |
 |---|---|---|---|
 | `!post <note>` | Journaling. Enriches position → narrative `{title, haiku, body}` → publishes to GitHub Pages journal. | LLM (OpenRouter), Nominatim (cached), Open-Meteo (cached), GitHub Pages (markdown commits) | Natalie, Marcus, Yuki |
-| `!mail to:_ subj:_ body:_` | Enriched email. Appends coordinates, place name, elevation, weather, map links. | Nominatim (cached), Open-Meteo (cached), Resend | Natalie, Marcus |
+| `!mail (to\|t):_ [(subj\|s):_] [(body\|b):_]` | Enriched email. Long keys (`to:`/`subj:`/`body:`) and short aliases (`t:`/`s:`/`b:`) interchangeable; `subj` and `body` independently optional. Appends coordinates, place name, elevation, weather, map links. | Nominatim (cached), Open-Meteo (cached), Resend | Natalie, Marcus |
 | `!todo <task>` | Creates a task in Todoist with GPS + timestamp in note. | Todoist | Natalie |
 | `!ping` | Health check → `pong`. | — | operational |
 | `!help` | Command summary. | — | operational |

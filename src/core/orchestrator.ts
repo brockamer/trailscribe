@@ -12,6 +12,7 @@ import { handleAi } from "./commands/ai.js";
 import { handleCamp } from "./commands/camp.js";
 import { handleShare } from "./commands/share.js";
 import { handleBlast } from "./commands/blast.js";
+import { handlePostImg } from "./commands/postimg.js";
 
 export interface OrchestratorContext {
   env: Env;
@@ -75,10 +76,7 @@ export async function orchestrate(
     case "blast":
       return handleBlast(command, ctx);
     case "postimg":
-      // Phase 2 commands parse cleanly (P2-02) but the per-command handlers
-      // land in P2-03..P2-11 + P2-18. Until then a real send surfaces a clear
-      // device-visible error via app.ts's orchestrate-error reply path.
-      throw new Error(`!${command.type} not yet implemented`);
+      return handlePostImg(command, ctx);
   }
 }
 
@@ -105,7 +103,11 @@ function helpText(): string {
 function formatCostBody(snap: LedgerSnapshot): string {
   const totalTokens = snap.prompt_tokens + snap.completion_tokens;
   const tokensK = (totalTokens / 1000).toFixed(1);
-  const cost = snap.usd_cost.toFixed(2);
+  const textCost = snap.usd_cost.toFixed(2);
   const sinceDate = `${snap.period}-01`;
-  return `${snap.requests} req · ${tokensK}k tok · $${cost} (since ${sinceDate})`;
+  const imageCost = snap.image_usd_cost ?? 0;
+  if (imageCost > 0) {
+    return `${snap.requests} req · ${tokensK}k tok · $${textCost} + $${imageCost.toFixed(2)} img (since ${sinceDate})`;
+  }
+  return `${snap.requests} req · ${tokensK}k tok · $${textCost} (since ${sinceDate})`;
 }

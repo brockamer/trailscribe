@@ -34,6 +34,7 @@ JOURNAL_URL_TEMPLATE = "https://brockamer.github.io/trailscribe-journal/{yyyy}/{
 IMAGE_PROVIDER = "replicate"
 IMAGE_MODEL = "black-forest-labs/flux-schnell"
 IMAGE_COST_PER_CALL_USD = "0.003"
+JOURNAL_IMAGE_PATH_TEMPLATE = "_images/{yyyy}-{mm}-{dd}-{slug}.{ext}"
 
 # KV namespaces — provisioned per env (dev main + dev preview + staging + production).
 # To recreate from scratch: `wrangler kv namespace create <BINDING> [--preview | --env <env>]`.
@@ -104,6 +105,7 @@ JOURNAL_URL_TEMPLATE = "https://brockamer.github.io/trailscribe-journal/{yyyy}/{
 IMAGE_PROVIDER = "replicate"
 IMAGE_MODEL = "black-forest-labs/flux-schnell"
 IMAGE_COST_PER_CALL_USD = "0.003"
+JOURNAL_IMAGE_PATH_TEMPLATE = "_images/{yyyy}-{mm}-{dd}-{slug}.{ext}"
 
 [[env.staging.kv_namespaces]]
 binding = "TS_IDEMPOTENCY"
@@ -151,6 +153,7 @@ JOURNAL_URL_TEMPLATE = "https://brockamer.github.io/trailscribe-journal/{yyyy}/{
 IMAGE_PROVIDER = "replicate"
 IMAGE_MODEL = "black-forest-labs/flux-schnell"
 IMAGE_COST_PER_CALL_USD = "0.003"
+JOURNAL_IMAGE_PATH_TEMPLATE = "_images/{yyyy}-{mm}-{dd}-{slug}.{ext}"
 
 [[env.production.kv_namespaces]]
 binding = "TS_IDEMPOTENCY"

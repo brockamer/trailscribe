@@ -263,6 +263,243 @@ function base64Utf8(s: string): string {
   return btoa(bin);
 }
 
+/** ArrayBuffer → base64 (binary path; same Latin-1 trick as base64Utf8). */
+function base64Bytes(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+export interface PublishPostWithImageArgs extends PublishPostArgs {
+  image: {
+    bytes: ArrayBuffer;
+    mimeType: string;
+    /** Path template applied with the same slug as the post. */
+    pathTemplate: string;
+  };
+}
+
+export interface PublishPostWithImageResult extends PublishPostResult {
+  imagePath: string;
+  commitOid: string;
+}
+
+interface GraphqlCommitData {
+  data?: {
+    createCommitOnBranch?: {
+      commit?: { oid: string; url: string };
+    };
+  };
+  errors?: Array<{ message: string }>;
+}
+
+interface GraphqlBranchOidData {
+  data?: {
+    repository?: {
+      ref?: { target?: { oid: string } };
+    };
+  };
+  errors?: Array<{ message: string }>;
+}
+
+/**
+ * Atomic markdown + image commit via GitHub's GraphQL `createCommitOnBranch`
+ * mutation (P2-18). The two `additions` land in a single commit, so an
+ * interrupted run cannot leave a markdown post pointing at a missing image.
+ *
+ * Public URL derivation, slug collision handling, and frontmatter shape are
+ * inherited from `publishPost` — this function calls into the same helpers
+ * and adds an `image:` frontmatter key plus a leading `![title](/path)`
+ * markdown line so the rendered Pages site shows the image at the top.
+ */
+export async function publishPostWithImage(
+  args: PublishPostWithImageArgs,
+): Promise<PublishPostWithImageResult> {
+  const { title, haiku, body, lat, lon, placeName, weather, env, image } = args;
+  const now = (args.now ?? (() => new Date()))();
+
+  const yyyy = String(now.getUTCFullYear());
+  const mm = pad2(now.getUTCMonth() + 1);
+  const dd = pad2(now.getUTCDate());
+
+  const baseSlug = slugify(title, now);
+  const { path, slug: finalSlug } = await findFreePath(env, env.JOURNAL_POST_PATH_TEMPLATE, {
+    yyyy,
+    mm,
+    dd,
+    baseSlug,
+  });
+
+  const ext = extensionForMime(image.mimeType);
+  const imagePath = image.pathTemplate
+    .replaceAll("{yyyy}", yyyy)
+    .replaceAll("{mm}", mm)
+    .replaceAll("{dd}", dd)
+    .replaceAll("{slug}", finalSlug)
+    .replaceAll("{ext}", ext);
+
+  const markdown = renderMarkdownWithImage({
+    title,
+    haiku,
+    body,
+    date: now.toISOString(),
+    lat,
+    lon,
+    placeName,
+    weather,
+    imagePath,
+  });
+
+  const [owner, repo] = splitRepo(env.GITHUB_JOURNAL_REPO);
+  const branch = env.GITHUB_JOURNAL_BRANCH;
+
+  const expectedHeadOid = await fetchBranchOid(env, owner, repo, branch);
+
+  const mutationVars = {
+    input: {
+      branch: { repositoryNameWithOwner: env.GITHUB_JOURNAL_REPO, branchName: branch },
+      message: { headline: `trailscribe: ${title}` },
+      expectedHeadOid,
+      fileChanges: {
+        additions: [
+          { path, contents: base64Utf8(markdown) },
+          { path: imagePath, contents: base64Bytes(image.bytes) },
+        ],
+      },
+    },
+  };
+
+  const mutation = `mutation ($input: CreateCommitOnBranchInput!) {
+  createCommitOnBranch(input: $input) {
+    commit { oid url }
+  }
+}`;
+
+  const res = await fetch("https://api.github.com/graphql", {
+    method: "POST",
+    headers: githubHeaders(env),
+    body: JSON.stringify({ query: mutation, variables: mutationVars }),
+  });
+
+  if (!res.ok) {
+    const message = await readErrorMessage(res);
+    throw new PublishError({
+      status: res.status,
+      message: `GraphQL createCommitOnBranch HTTP ${res.status}: ${message}`,
+    });
+  }
+
+  const json = (await res.json()) as GraphqlCommitData;
+  if (json.errors && json.errors.length > 0) {
+    throw new PublishError({
+      status: 0,
+      message: `GraphQL createCommitOnBranch errors: ${json.errors.map((e) => e.message).join("; ")}`,
+    });
+  }
+  const commit = json.data?.createCommitOnBranch?.commit;
+  if (!commit) {
+    throw new PublishError({
+      status: 0,
+      message: "GraphQL createCommitOnBranch returned no commit",
+    });
+  }
+
+  const url = renderUrl(env.JOURNAL_URL_TEMPLATE, { yyyy, mm, dd, slug: finalSlug });
+  return {
+    url,
+    path,
+    sha: commit.oid,
+    imagePath,
+    commitOid: commit.oid,
+  };
+}
+
+async function fetchBranchOid(
+  env: Env,
+  owner: string,
+  repo: string,
+  branch: string,
+): Promise<string> {
+  const query = `query ($owner: String!, $repo: String!, $branch: String!) {
+  repository(owner: $owner, name: $repo) {
+    ref(qualifiedName: $branch) {
+      target { ... on Commit { oid } }
+    }
+  }
+}`;
+  const res = await fetch("https://api.github.com/graphql", {
+    method: "POST",
+    headers: githubHeaders(env),
+    body: JSON.stringify({
+      query,
+      variables: { owner, repo, branch: `refs/heads/${branch}` },
+    }),
+  });
+  if (!res.ok) {
+    const message = await readErrorMessage(res);
+    throw new PublishError({
+      status: res.status,
+      message: `GraphQL branch oid HTTP ${res.status}: ${message}`,
+    });
+  }
+  const json = (await res.json()) as GraphqlBranchOidData;
+  const oid = json.data?.repository?.ref?.target?.oid;
+  if (!oid) {
+    throw new PublishError({
+      status: 0,
+      message: `GraphQL branch oid: branch '${branch}' not found on ${owner}/${repo}`,
+    });
+  }
+  return oid;
+}
+
+function splitRepo(nameWithOwner: string): [string, string] {
+  const [owner, repo] = nameWithOwner.split("/");
+  if (!owner || !repo) {
+    throw new PublishError({
+      status: 0,
+      message: `GITHUB_JOURNAL_REPO must be 'owner/repo', got '${nameWithOwner}'`,
+    });
+  }
+  return [owner, repo];
+}
+
+function extensionForMime(mimeType: string): string {
+  const m = mimeType.toLowerCase();
+  if (m.includes("png")) return "png";
+  if (m.includes("jpeg") || m.includes("jpg")) return "jpg";
+  if (m.includes("webp")) return "webp";
+  if (m.includes("gif")) return "gif";
+  return "img";
+}
+
+interface RenderArgsWithImage extends RenderArgs {
+  imagePath: string;
+}
+
+function renderMarkdownWithImage(a: RenderArgsWithImage): string {
+  const lines: string[] = ["---"];
+  lines.push(`title: ${quoteYaml(a.title)}`);
+  lines.push(`date: ${a.date}`);
+  lines.push(`image: /${a.imagePath}`);
+  if (a.lat !== undefined && a.lon !== undefined) {
+    const place = a.placeName !== undefined ? `, place: ${quoteYaml(a.placeName)}` : "";
+    lines.push(`location: { lat: ${a.lat}, lon: ${a.lon}${place} }`);
+  }
+  if (a.weather !== undefined) {
+    lines.push(`weather: ${quoteYaml(a.weather)}`);
+  }
+  lines.push("tags: [trailscribe]");
+  lines.push("---");
+  lines.push(`![${a.title}](/${a.imagePath})`);
+  lines.push("");
+  lines.push(a.haiku);
+  lines.push("");
+  lines.push(a.body);
+  return lines.join("\n");
+}
+
 async function readErrorMessage(res: Response): Promise<string> {
   try {
     const body = (await res.json()) as ContentsApiErrorBody;

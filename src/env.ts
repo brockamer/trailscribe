@@ -34,6 +34,7 @@ export interface Env {
   IMAGE_PROVIDER: string;
   IMAGE_MODEL: string;
   IMAGE_COST_PER_CALL_USD: string;
+  JOURNAL_IMAGE_PATH_TEMPLATE: string;
 
   // Secrets (Wrangler Secrets)
   GARMIN_INBOUND_TOKEN: string;
@@ -92,6 +93,7 @@ export const EnvSchema = z.object({
   IMAGE_PROVIDER: z.enum(["replicate"]),
   IMAGE_MODEL: z.string().min(1),
   IMAGE_COST_PER_CALL_USD: z.string(),
+  JOURNAL_IMAGE_PATH_TEMPLATE: z.string().min(1),
 
   GARMIN_INBOUND_TOKEN: z.string().min(16),
   GARMIN_IPC_INBOUND_API_KEY: z.string().min(8),

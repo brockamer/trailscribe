@@ -9,6 +9,7 @@ import { handleWeather } from "./commands/weather.js";
 import { handleDrop } from "./commands/drop.js";
 import { handleBrief } from "./commands/brief.js";
 import { handleAi } from "./commands/ai.js";
+import { handleCamp } from "./commands/camp.js";
 
 export interface OrchestratorContext {
   env: Env;
@@ -66,6 +67,7 @@ export async function orchestrate(
     case "ai":
       return handleAi(command, ctx);
     case "camp":
+      return handleCamp(command, ctx);
     case "share":
     case "blast":
     case "postimg":

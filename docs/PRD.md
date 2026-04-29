@@ -445,16 +445,33 @@ With D2=yes, IPC Inbound is the reliable path. Email fallback is belt-and-suspen
 
 ---
 
-## 9. Phase 2+ (preview, not specified here)
+## 9. Roadmap (forward arc beyond shipped phases)
 
-For alignment only — each phase gets its own PRD/plan when we reach it. This preview is the canonical short summary; §3 carries the engineering shape and `plans/` carries the per-phase sequencing.
+For alignment only — each phase gets its own PRD/plan when promoted to In Progress. This is the canonical short summary; §3 carries the engineering shape and `plans/` carries the per-phase sequencing. Milestones on the [project board](https://github.com/users/brockamer/projects/3) are the authoritative status; this section narrates the *why*.
 
-- **Phase 2 — Extended commands + `!postimg`** (active as of 2026-04-28). All eight α-deferred commands (`!where`, `!weather`, `!drop`, `!brief`, `!ai`, `!camp`, `!share`, `!blast`) plus `!postimg`. Single-operator scope; KV-only state; FieldLog as a per-IMEI bounded list; address book as env-var JSON. One new external dependency: image-gen (Replicate Flux schnell). No β-launch milestone. Plan: `plans/phase-2-extended-commands.md`; epic #98.
-- **Phase 3 — Storage migration (DO + D1).** Migrate `TS_CONTEXT` and FieldLog → Durable Objects (strong consistency for replay storms); migrate `TS_LEDGER` → D1 (SQL analytics, retention, budget alerts). Add Cloudflare Queues for async retries and multi-message chunking refinement. Epic #99.
-- **Phase 4+ — Media & polish.** Operator-uploaded photos (schema V4, R2, Image Resizing). Web dashboard for trip visualization. Operator-quality follow-ups filed during Phase 2 (P2-08b real web search, P2-18b image-provider upgrade) get scheduled here if still relevant.
+### Shipped
+
+- **Phase 0 — Workers scaffold + provisioning.** Closed 2026-04-24 (epic #29, milestone #1).
+- **Phase 1 — α-MVP.** Six commands (`!post`, `!mail`, `!todo`, `!ping`, `!help`, `!cost`) end-to-end on production. Closed 2026-04-26 (epic #30, milestone #2).
+- **Production-readiness.** Auto-deploy gated to main; secrets pinned; device-side recipient + Include-Location convention pinned. Closed 2026-04-28 (milestone #3).
+- **Phase 2 — Extended commands + `!postimg`.** Eight α-deferred commands + image-augmented journaling. Closed 2026-04-29 (epic #98, milestone #4).
+
+### Active
+
+- **Phase 2.5 — Field UX polish** (milestone #6, due 2026-05-06). Small post-Phase-2 grammar + reliability cleanups: intercept policy for non-`!command` messages (#122), `!mail` short-key aliases (#123), bare `!post` with LLM-from-metadata narrative (#124). Pullable independent of Phase 3; deliberately decoupled to avoid blocking infra work on UX paper-cuts.
+- **Phase 3 — Storage migration (DO + D1)** (epic #99, milestone #5, due 2026-05-15). Migrate `TS_IDEMPOTENCY` KV → Durable Object (#153) for serialized replay-storm handling; migrate `TS_CONTEXT` KV → DO (#154) for race-free per-IMEI windows; migrate `TS_LEDGER` KV → D1 (#155) for queryable cost analytics. Cloudflare Queues for async retries deferred to a follow-up; not blocking the migration. KV remains for `TS_CACHE` (geocode/weather) where eventual consistency is fine.
+- **Phase 4 — Extended commands II (`!snap`, `!call`)** (milestone #7, due 2026-05-31). Telemetry-only `!snap`/`!snapimg` journal posts (#150) and PSTN voice-bridge `!call` (#152). `!call` carries the heavier scope: telephony provider selection (Twilio default), ElevenLabs TTS integration, single-party-consent legal guardrail, hard per-call cost ceiling, DO-backed call lifecycle state. Soft-depends on Phase 3 — `!call`'s state model wants Durable Objects, not KV.
+
+### Future arc (not yet milestoned)
+
+- **Phase 5+ — Media & polish.** Operator-uploaded photos (schema V4, R2, Image Resizing). Web dashboard for trip visualization. Operator-quality follow-ups filed during Phase 2 (P2-08b real web search, P2-18b image-provider upgrade) get scheduled here if still relevant.
 - **Post-v1.0 (out of scope until reached):** Multi-user, paid tier, mobile companion app.
 
-The original 2026-04-22 preview split the eight α-deferred commands across Phases 2/3/4 by complexity. That split has been collapsed into a single Phase 2 because the transport boundary (Workers + KV + same orchestrator) is identical for all eight; see §2 deferrals table for the per-command Phase 2 shape.
+### Phasing rationale (history)
+
+The original 2026-04-22 preview split the eight α-deferred commands across Phases 2/3/4 by complexity. That split was collapsed into a single Phase 2 because the transport boundary (Workers + KV + same orchestrator) is identical for all eight; see §2 deferrals table for the per-command Phase 2 shape.
+
+The 2026-04-29 structural reshape introduced Phase 2.5 (UX polish, decoupled from infra) and Phase 4 (new command verbs `!snap`, `!call`). Earlier drafts mis-labeled `!snap` and `!call` as "Phase 3" by title prefix; titles corrected to `feat:` and the work assigned to its own milestone so Phase 3 stays focused on storage migration.
 
 ---
 

@@ -90,6 +90,7 @@ plans/                          # per-milestone sprint plans (active: phase-2-ex
 - **Strict TS**, JSDoc on exported functions, short focused functions.
 - **Reply budget:** total outgoing ≤320 chars including the cost suffix (when `APPEND_COST_SUFFIX=true`).
 - **Idempotency key:** `sha256(imei + ":" + timeStamp + ":" + messageCode + ":" + content_hash)` — Garmin has no `msgId` field, so we derive a composite key (see PRD §5).
+- **Intercept policy (PRD §8 D10):** non-`!`-prefixed device messages are silent-dropped at the webhook (200 OK, no IPC Inbound reply, structured `intercept_skipped` log). `!`-prefixed unknowns still get `"Try !help"`. Operator's casual messages to friends/family bypass TrailScribe entirely.
 - **Env:** validated via zod schema in `src/env.ts`; access via typed `Env` binding in Worker handlers.
 - **Tool adapters** live in `src/adapters/*` and accept `{ ...args, env: Env }`.
 

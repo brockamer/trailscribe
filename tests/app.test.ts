@@ -3,10 +3,13 @@ import { makeApp } from "../src/app.js";
 import { makeTestEnv, kvSize, kvKeys } from "./helpers/env.js";
 import type { Env } from "../src/env.js";
 import fixture from "./fixtures/garmin/free-text-ping.json";
+import { sendReply } from "../src/adapters/outbound/garmin-ipc-inbound.js";
 
 vi.mock("../src/adapters/outbound/garmin-ipc-inbound.js", () => ({
   sendReply: vi.fn().mockResolvedValue({ count: 1 }),
 }));
+
+const sendReplyMock = vi.mocked(sendReply);
 
 let app: ReturnType<typeof makeApp>;
 let env: Env;
@@ -14,6 +17,8 @@ let env: Env;
 beforeEach(() => {
   app = makeApp();
   env = makeTestEnv();
+  sendReplyMock.mockReset();
+  sendReplyMock.mockResolvedValue({ count: 1 });
 });
 
 async function postIpc(body: unknown, opts: { bearer?: string } = {}): Promise<Response> {
@@ -120,6 +125,57 @@ describe("Worker /garmin/ipc — Phase 0 behavior", () => {
     const keysEnv2 = kvKeys(env2.TS_IDEMPOTENCY);
 
     expect(keysEnv1).toEqual(keysEnv2);
+  });
+});
+
+describe("Worker /garmin/ipc — intercept policy (PRD §8 D10, #122)", () => {
+  function envelopeWithFreeText(freeText: string) {
+    return {
+      ...fixture,
+      Events: [{ ...fixture.Events[0], freeText, timeStamp: 1700000000000 }],
+    };
+  }
+
+  test("non-! text is silent-dropped: 200 OK, no IPC reply, idempotency key still recorded", async () => {
+    const res = await postIpc(envelopeWithFreeText("hi mom, made it to camp"), {
+      bearer: env.GARMIN_INBOUND_TOKEN,
+    });
+    expect(res.status).toBe(200);
+    expect(sendReplyMock).not.toHaveBeenCalled();
+    // Idempotency record exists so Garmin retries short-circuit.
+    expect(kvSize(env.TS_IDEMPOTENCY)).toBe(1);
+  });
+
+  test("empty freeText is silent-dropped: 200 OK, no IPC reply", async () => {
+    const res = await postIpc(envelopeWithFreeText(""), { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(res.status).toBe(200);
+    expect(sendReplyMock).not.toHaveBeenCalled();
+  });
+
+  test("whitespace-only freeText is silent-dropped: 200 OK, no IPC reply", async () => {
+    const res = await postIpc(envelopeWithFreeText("   \t  "), {
+      bearer: env.GARMIN_INBOUND_TOKEN,
+    });
+    expect(res.status).toBe(200);
+    expect(sendReplyMock).not.toHaveBeenCalled();
+  });
+
+  test("!-prefixed unknown verb still gets 'Try !help' (typo recoverability preserved)", async () => {
+    const res = await postIpc(envelopeWithFreeText("!pst hi"), {
+      bearer: env.GARMIN_INBOUND_TOKEN,
+    });
+    expect(res.status).toBe(200);
+    expect(sendReplyMock).toHaveBeenCalledTimes(1);
+    const [, messages] = sendReplyMock.mock.calls[0];
+    expect(messages.join(" ")).toContain("Try !help");
+  });
+
+  test("leading whitespace before ! is tolerated (treated as command, not silent-dropped)", async () => {
+    const res = await postIpc(envelopeWithFreeText("  !ping"), {
+      bearer: env.GARMIN_INBOUND_TOKEN,
+    });
+    expect(res.status).toBe(200);
+    expect(sendReplyMock).toHaveBeenCalledTimes(1);
   });
 });
 

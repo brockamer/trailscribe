@@ -10,7 +10,7 @@ export type ParsedCommand =
   | { type: "ping" }
   | { type: "help" }
   | { type: "cost" }
-  | { type: "post"; note: string }
+  | { type: "post"; note?: string }
   | { type: "mail"; to: string; subj?: string; body?: string }
   | { type: "todo"; task: string }
   | { type: "where" }

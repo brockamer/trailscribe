@@ -18,8 +18,13 @@ import { log } from "../adapters/logging/worker-logs.js";
  * character-count proxies (drift over time, undercounts on multi-byte text).
  */
 export interface NarrativeInput {
-  /** The user's note text from `!post <note>`. */
-  note: string;
+  /**
+   * The user's note text from `!post <note>`. Omitted for bare `!post` (#124),
+   * in which case the LLM constructs the narrative purely from enrichment
+   * context (lat/lon/placeName/weather) and is given a no-note system prompt
+   * that explicitly forbids inventing activities or feelings.
+   */
+  note?: string;
   lat?: number;
   lon?: number;
   /** Reverse-geocoded place name (P1-09). Optional — omitted prompt when absent. */
@@ -66,13 +71,30 @@ const NarrativeContentSchema = z.object({
  * length caps server-side; the prompt is what makes the model actually *try*
  * to stay within them and to match the user's voice.
  */
-const SYSTEM_PROMPT = [
+const SYSTEM_PROMPT_WITH_NOTE = [
   "You write short field-journal entries from a backcountry traveller's brief notes.",
   "Always return valid JSON matching the schema. No prose outside the JSON.",
   "Constraints:",
   '- "title": ≤ 60 characters, evocative, no clickbait, no emoji.',
   '- "haiku": exactly three lines separated by newlines, in 5/7/5 syllables, ≤ 110 characters total (count strictly — including spaces and newlines). Plain English. No formatting marks.',
   '- "body": ≤ 500 characters. Match the voice and tone of the input note. First-person if the note is first-person; observational if observational. Do not invent specifics not implied by the note, place, or weather context.',
+].join("\n");
+
+/**
+ * No-note variant for bare `!post` (#124). The operator sent no caption, so the
+ * LLM must construct the narrative purely from enrichment context (location,
+ * weather, time). Tone is observational rather than first-person, and the
+ * model is explicitly forbidden from inventing activities, feelings, or
+ * specifics not present in the metadata — a stronger constraint than the
+ * with-note prompt because there's no anchoring caption to ground it.
+ */
+const SYSTEM_PROMPT_NO_NOTE = [
+  "You write short field-journal entries from a backcountry traveller's location and weather snapshot. The traveller did not provide a caption — describe what is true about this position and moment, in observational third-person, from the metadata alone.",
+  "Always return valid JSON matching the schema. No prose outside the JSON.",
+  "Constraints:",
+  '- "title": ≤ 60 characters, evocative, no clickbait, no emoji. Anchor to the place name or weather, not to invented activities.',
+  '- "haiku": exactly three lines separated by newlines, in 5/7/5 syllables, ≤ 110 characters total (count strictly — including spaces and newlines). Plain English. No formatting marks. Anchor to observable detail (place, weather, time, terrain).',
+  '- "body": ≤ 500 characters. Observational voice. Do not invent activities, feelings, companions, or specifics that are not present in the location or weather context. If context is sparse, keep the body short rather than padding.',
 ].join("\n");
 
 export class NarrativeError extends Error {
@@ -85,12 +107,16 @@ export class NarrativeError extends Error {
 export async function generateNarrative(input: NarrativeInput): Promise<NarrativeOutput> {
   const userPrompt = buildUserPrompt(input);
   const model = input.env.LLM_MODEL || "anthropic/claude-sonnet-4-6";
+  const systemPrompt =
+    input.note !== undefined && input.note.trim().length > 0
+      ? SYSTEM_PROMPT_WITH_NOTE
+      : SYSTEM_PROMPT_NO_NOTE;
 
   const response = await chatCompletion({
     req: {
       model,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       response_format: { type: "json_schema", json_schema: NARRATIVE_SCHEMA },
@@ -151,10 +177,16 @@ export async function generateNarrative(input: NarrativeInput): Promise<Narrativ
  * (no GPS fix or geocode/weather lookup failed upstream), those lines are
  * omitted entirely — no "(unknown)" or "(0,0)" placeholders that would steer
  * the model toward synthesising location-specific detail.
+ *
+ * Bare `!post` (#124) supplies no `note` — the `Note:` line is omitted and the
+ * model relies on the no-note system prompt + enrichment lines below.
  */
 function buildUserPrompt(input: NarrativeInput): string {
   const lines: string[] = [];
-  lines.push(`Note: ${input.note}`);
+
+  if (input.note !== undefined && input.note.trim().length > 0) {
+    lines.push(`Note: ${input.note}`);
+  }
 
   if (
     input.placeName !== undefined &&

@@ -10,6 +10,7 @@ import { handleDrop } from "./commands/drop.js";
 import { handleBrief } from "./commands/brief.js";
 import { handleAi } from "./commands/ai.js";
 import { handleCamp } from "./commands/camp.js";
+import { handleShare } from "./commands/share.js";
 
 export interface OrchestratorContext {
   env: Env;
@@ -69,6 +70,7 @@ export async function orchestrate(
     case "camp":
       return handleCamp(command, ctx);
     case "share":
+      return handleShare(command, ctx);
     case "blast":
     case "postimg":
       // Phase 2 commands parse cleanly (P2-02) but the per-command handlers

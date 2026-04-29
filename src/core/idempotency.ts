@@ -49,7 +49,8 @@ export type OpName =
   | "ai"
   | "ai_overflow_email"
   | "camp"
-  | "camp_overflow_email";
+  | "camp_overflow_email"
+  | "share";
 
 /**
  * Message-lifecycle record stored under `idem:<key>` (PRD §5).

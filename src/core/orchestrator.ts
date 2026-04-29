@@ -6,6 +6,7 @@ import { handleMail } from "./commands/mail.js";
 import { handleTodo } from "./commands/todo.js";
 import { handleWhere } from "./commands/where.js";
 import { handleWeather } from "./commands/weather.js";
+import { handleDrop } from "./commands/drop.js";
 
 export interface OrchestratorContext {
   env: Env;
@@ -57,6 +58,7 @@ export async function orchestrate(
     case "weather":
       return handleWeather(command, ctx);
     case "drop":
+      return handleDrop(command, ctx);
     case "brief":
     case "ai":
     case "camp":

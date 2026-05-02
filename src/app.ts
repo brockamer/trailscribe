@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "./env.js";
-import { appendCostSuffix, imeiAllowSet, ipcInboundDryRun } from "./env.js";
+import { appendCostSuffix, imeiAllowSet, ipcInboundDryRun, logTrackPayloads } from "./env.js";
 import type { CommandResult, GarminEnvelope, GarminEvent } from "./core/types.js";
 import {
   idempotencyKey,
@@ -119,12 +119,21 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
     if (event.messageCode === 4) {
       log({ event: "sos_received_ignored", level: "warn", imei: event.imei, key });
     } else {
+      const isTrack =
+        event.messageCode === 0 ||
+        event.messageCode === 10 ||
+        event.messageCode === 11 ||
+        event.messageCode === 12;
       log({
         event: "non_free_text",
         level: "info",
         imei: event.imei,
         messageCode: event.messageCode,
         key,
+        // Diagnostic: when LOG_TRACK_PAYLOADS=true, attach the full tracking
+        // event so a fixture can be reconstructed from logs. Silent-drop
+        // policy is unchanged — this only affects the log line's content.
+        ...(isTrack && logTrackPayloads(env) ? { payload: event } : {}),
       });
     }
     return;

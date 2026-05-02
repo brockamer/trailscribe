@@ -179,6 +179,82 @@ describe("Worker /garmin/ipc — intercept policy (PRD §8 D10, #122)", () => {
   });
 });
 
+describe("Worker /garmin/ipc — LOG_TRACK_PAYLOADS diagnostic", () => {
+  let consoleLog: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
+  });
+
+  function trackEvent(messageCode: number) {
+    return {
+      Version: "2.0",
+      Events: [
+        {
+          imei: "123456789012345",
+          messageCode,
+          timeStamp: 1739753925000,
+          point: {
+            latitude: 34.0379,
+            longitude: -118.6916,
+            altitude: 12,
+            gpsFix: 2,
+            course: 215,
+            speed: 8.4,
+          },
+          status: { autonomous: 1, lowBattery: 0, intervalChange: 0, resetDetected: 0 },
+        },
+      ],
+    };
+  }
+
+  function nonFreeTextLogs(): Array<Record<string, unknown>> {
+    return consoleLog.mock.calls
+      .map((args) => {
+        try {
+          return JSON.parse(String(args[0])) as Record<string, unknown>;
+        } catch {
+          return null;
+        }
+      })
+      .filter((entry): entry is Record<string, unknown> => entry?.event === "non_free_text");
+  }
+
+  test("default (LOG_TRACK_PAYLOADS=false): non_free_text log omits payload", async () => {
+    const res = await postIpc(trackEvent(0), { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(res.status).toBe(200);
+    const logs = nonFreeTextLogs();
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).not.toHaveProperty("payload");
+    expect(logs[0].messageCode).toBe(0);
+  });
+
+  test.each([0, 10, 11, 12])(
+    "LOG_TRACK_PAYLOADS=true: messageCode %i carries full event payload in log",
+    async (messageCode) => {
+      env = makeTestEnv({ LOG_TRACK_PAYLOADS: "true" });
+      const res = await postIpc(trackEvent(messageCode), {
+        bearer: env.GARMIN_INBOUND_TOKEN,
+      });
+      expect(res.status).toBe(200);
+      const logs = nonFreeTextLogs();
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toHaveProperty("payload");
+      expect((logs[0].payload as { messageCode: number }).messageCode).toBe(messageCode);
+      expect((logs[0].payload as { point?: { latitude: number } }).point?.latitude).toBe(34.0379);
+    },
+  );
+
+  test("LOG_TRACK_PAYLOADS=true does NOT attach payload for non-tracking codes (e.g. 64)", async () => {
+    env = makeTestEnv({ LOG_TRACK_PAYLOADS: "true" });
+    const res = await postIpc(trackEvent(64), { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(res.status).toBe(200);
+    const logs = nonFreeTextLogs();
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).not.toHaveProperty("payload");
+  });
+});
+
 describe("Worker sanity routes", () => {
   test("GET / returns banner", async () => {
     const res = await app.request("/", {}, env);

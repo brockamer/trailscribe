@@ -179,6 +179,62 @@ describe("Worker /garmin/ipc — intercept policy (PRD §8 D10, #122)", () => {
   });
 });
 
+describe("Worker /garmin/ipc — ipc_received envelope-shape diagnostic", () => {
+  let consoleLog: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
+  });
+
+  function ipcReceivedLog(): Record<string, unknown> | undefined {
+    return consoleLog.mock.calls
+      .map((args) => {
+        try {
+          return JSON.parse(String(args[0])) as Record<string, unknown>;
+        } catch {
+          return null;
+        }
+      })
+      .find((entry): entry is Record<string, unknown> => entry?.event === "ipc_received");
+  }
+
+  test("logs ipc_received with body shape on every authorized POST", async () => {
+    const res = await postIpc(fixture, { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(res.status).toBe(200);
+    const log = ipcReceivedLog();
+    expect(log).toBeDefined();
+    expect(log!.version).toBe("2.0");
+    expect(log!.eventsLength).toBe(1);
+    expect(log!.topLevelKeys).toEqual(expect.arrayContaining(["Version", "Events"]));
+    expect(typeof log!.bodyBytes).toBe("number");
+    expect(typeof log!.rawBodySample).toBe("string");
+  });
+
+  test("logs ipc_received even when Events array is empty", async () => {
+    const res = await postIpc({ Version: "4.0", Events: [] }, { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(res.status).toBe(200);
+    const log = ipcReceivedLog();
+    expect(log).toBeDefined();
+    expect(log!.version).toBe("4.0");
+    expect(log!.eventsLength).toBe(0);
+  });
+
+  test("logs ipc_received with extra top-level fields when Garmin sends them (V4 hypothesis)", async () => {
+    const v4Body = {
+      Version: "4.0",
+      Events: [],
+      // hypothetical sibling field — what we suspect V4 may add
+      Tracks: [{ imei: "123456789012345", points: [{ lat: 34.0, lon: -118.5 }] }],
+    };
+    const res = await postIpc(v4Body, { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(res.status).toBe(200);
+    const log = ipcReceivedLog();
+    expect(log).toBeDefined();
+    expect(log!.topLevelKeys).toEqual(expect.arrayContaining(["Version", "Events", "Tracks"]));
+    expect(log!.eventsLength).toBe(0);
+  });
+});
+
 describe("Worker /garmin/ipc — LOG_TRACK_PAYLOADS diagnostic", () => {
   let consoleLog: ReturnType<typeof vi.spyOn>;
 

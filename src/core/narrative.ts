@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Env } from "../env.js";
 import { chatCompletion } from "../adapters/ai/openrouter.js";
 import { log } from "../adapters/logging/worker-logs.js";
+import type { TrackMetrics } from "./track-metrics.js";
 
 /**
  * Narrative module — composes a `!post` event into a structured blog post via
@@ -200,5 +201,121 @@ function buildUserPrompt(input: NarrativeInput): string {
     lines.push(`Weather: ${input.weather}`);
   }
 
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Track-session narrative (Task 3.3)
+// ---------------------------------------------------------------------------
+
+export interface TrackNarrativeInput {
+  metrics: TrackMetrics;
+  startPlace?: string;
+  endPlace?: string;
+  midpointPlace?: string;
+  weatherSummary?: string;
+  env: Env;
+}
+
+const TRACK_NARRATIVE_SCHEMA = {
+  name: "track_narrative",
+  strict: true,
+  schema: {
+    type: "object",
+    properties: {
+      title: { type: "string", maxLength: 60 },
+      haiku: { type: "string", maxLength: 110 },
+      body: { type: "string", maxLength: 1200 },
+    },
+    required: ["title", "haiku", "body"],
+    additionalProperties: false,
+  },
+} as const;
+
+const TrackContentSchema = z.object({
+  title: z.string().min(1).max(60),
+  haiku: z.string().min(1).max(110),
+  body: z.string().min(1).max(1200),
+});
+
+/**
+ * Third system-prompt variant alongside SYSTEM_PROMPT_WITH_NOTE and
+ * SYSTEM_PROMPT_NO_NOTE. Used for closed Garmin tracking sessions.
+ * Body cap is 1200 chars (vs 500 for !post). Explicitly forbids inventing
+ * specifics not present in metrics or place names.
+ */
+const SYSTEM_PROMPT_TRACK = [
+  "You write field-journal entries from a backcountry tracking session. Given metrics, start/end places, and weather, produce a polished post.",
+  "Always return valid JSON matching the schema. No prose outside the JSON.",
+  "Constraints:",
+  '- "title": <=60 characters, evocative, anchored to place + activity. No clickbait, no emoji.',
+  '- "haiku": exactly three lines separated by newlines, in 5/7/5 syllables, <=110 characters total. Plain English, observational.',
+  '- "body": <=1200 characters. Describe the route, place, conditions, and pace. Use long stops as paragraph breaks. Do not invent companions, motivations, or destinations not present in the metrics or place names.',
+].join("\n");
+
+/**
+ * Generate a structured journal-post narrative from a closed tracking session.
+ * Returns the same `NarrativeOutput` shape as `generateNarrative` so the
+ * publish layer can treat all three variants uniformly.
+ */
+export async function generateTrackNarrative(
+  input: TrackNarrativeInput,
+): Promise<NarrativeOutput> {
+  const userPrompt = buildTrackPrompt(input);
+  const model = input.env.LLM_MODEL || "anthropic/claude-sonnet-4-6";
+
+  const response = await chatCompletion({
+    req: {
+      model,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT_TRACK },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_schema", json_schema: TRACK_NARRATIVE_SCHEMA },
+      temperature: 0.7,
+      max_tokens: 1500,
+    },
+    env: input.env,
+  });
+
+  const content = response.choices[0]?.message?.content;
+  if (typeof content !== "string" || content.length === 0) {
+    throw new NarrativeError("LLM returned no content for track narrative");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (e) {
+    throw new NarrativeError(`LLM returned non-JSON: ${content.slice(0, 120)}`, { cause: e });
+  }
+  const validated = TrackContentSchema.safeParse(parsed);
+  if (!validated.success) {
+    const issues = validated.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+    throw new NarrativeError(`Track narrative failed schema: ${issues}`);
+  }
+  return {
+    title: validated.data.title,
+    haiku: validated.data.haiku,
+    body: validated.data.body,
+    usage: {
+      prompt_tokens: response.usage.prompt_tokens,
+      completion_tokens: response.usage.completion_tokens,
+    },
+  };
+}
+
+function buildTrackPrompt(input: TrackNarrativeInput): string {
+  const m = input.metrics;
+  const lines: string[] = [];
+  lines.push("Tracking session metrics:");
+  lines.push(`- Distance: ${m.distanceKm.toFixed(2)} km`);
+  lines.push(`- Duration: ${(m.durationSeconds / 60).toFixed(0)} minutes`);
+  lines.push(`- Elevation gain: ${m.elevation.gainM.toFixed(0)} m`);
+  lines.push(`- Activity: ${m.activityHint}, route shape: ${m.routeShape}`);
+  lines.push(`- Average speed: ${m.pace.avgKmh.toFixed(1)} km/h, p95: ${m.pace.p95Kmh.toFixed(1)} km/h`);
+  if (input.startPlace) lines.push(`Start: ${input.startPlace}`);
+  if (input.endPlace) lines.push(`End: ${input.endPlace}`);
+  if (input.midpointPlace) lines.push(`Midpoint: ${input.midpointPlace}`);
+  if (input.weatherSummary) lines.push(`Weather: ${input.weatherSummary}`);
   return lines.join("\n");
 }

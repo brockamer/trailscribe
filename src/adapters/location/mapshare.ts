@@ -1,3 +1,6 @@
+import type { Env } from "../../env.js";
+import { log } from "../logging/worker-logs.js";
+
 /**
  * One breadcrumb position parsed out of a Garmin MapShare KML feed.
  *
@@ -91,4 +94,41 @@ function readNumberField(block: string, name: string): number | null {
   if (!m) return null;
   const n = Number.parseFloat(m[1]);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * GET the operator's MapShare KML feed for a session window.
+ *
+ * URL composes from MAPSHARE_BASE (e.g. https://share.garmin.com/trailscribe)
+ * + the standard /Feed/Share/<key> suffix + d1/d2 ISO 8601 query params.
+ * d1/d2 are inclusive bounds in UTC.
+ *
+ * No retry — Garmin's share endpoint is fast and the caller (handleStopTrack)
+ * runs inside withCheckpoint; transient failures bubble up so a Garmin webhook
+ * retry can re-attempt. Throws MapShareError with the HTTP status on non-200.
+ */
+export async function fetchMapShareKml(
+  env: Env,
+  startedAtMs: number,
+  closedAtMs: number,
+): Promise<string> {
+  const d1 = new Date(startedAtMs).toISOString();
+  const d2 = new Date(closedAtMs).toISOString();
+  const url = `${env.MAPSHARE_BASE}/Feed/Share/${env.MAPSHARE_KEY}?d1=${d1}&d2=${d2}`;
+  const res = await fetch(url, {
+    headers: { Accept: "application/vnd.google-earth.kml+xml" },
+  });
+  if (!res.ok) {
+    log({
+      event: "mapshare_fetch_failed",
+      level: "warn",
+      status: res.status,
+      url,
+    });
+    throw new MapShareError({
+      status: res.status,
+      message: `MapShare fetch returned HTTP ${res.status}`,
+    });
+  }
+  return res.text();
 }

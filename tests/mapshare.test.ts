@@ -1,7 +1,12 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { parsePings } from "../src/adapters/location/mapshare.js";
+import {
+  parsePings,
+  fetchMapShareKml,
+  MapShareError,
+} from "../src/adapters/location/mapshare.js";
+import { makeTestEnv } from "./helpers/env.js";
 
 const FIXTURE_PATH = resolve(__dirname, "fixtures/mapshare/pch-2026-05-02.kml");
 const fixtureKml = readFileSync(FIXTURE_PATH, "utf8");
@@ -62,6 +67,63 @@ describe("parsePings — PCH 2026-05-02 fixture", () => {
       expect(Number.isFinite(p.alt)).toBe(true);
       expect(Number.isFinite(p.velocityKmh)).toBe(true);
       expect(Number.isFinite(p.courseDeg)).toBe(true);
+    }
+  });
+});
+
+describe("fetchMapShareKml", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("composes the URL from MAPSHARE_BASE + MAPSHARE_KEY + ISO timestamps", async () => {
+    const env = makeTestEnv();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("<kml/>", { status: 200 }));
+    await fetchMapShareKml(
+      env,
+      Date.parse("2026-05-02T15:00:00Z"),
+      Date.parse("2026-05-02T17:00:00Z"),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const calledUrl = fetchMock.mock.calls[0][0] as string;
+    expect(calledUrl).toBe(
+      "https://share.garmin.com/trailscribe/Feed/Share/trailscribe?d1=2026-05-02T15:00:00.000Z&d2=2026-05-02T17:00:00.000Z",
+    );
+  });
+
+  test("returns the response body on 200", async () => {
+    const env = makeTestEnv();
+    const expectedBody = "<kml>payload</kml>";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(expectedBody, { status: 200 }),
+    );
+    const body = await fetchMapShareKml(env, 0, 1);
+    expect(body).toBe(expectedBody);
+  });
+
+  test("throws MapShareError on non-200 status", async () => {
+    const env = makeTestEnv();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("not found", { status: 404 }),
+    );
+    await expect(fetchMapShareKml(env, 0, 1)).rejects.toBeInstanceOf(
+      MapShareError,
+    );
+  });
+
+  test("MapShareError exposes status code", async () => {
+    const env = makeTestEnv();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("server error", { status: 503 }),
+    );
+    try {
+      await fetchMapShareKml(env, 0, 1);
+      expect.fail("should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(MapShareError);
+      expect((e as MapShareError).status).toBe(503);
     }
   });
 });

@@ -6,6 +6,7 @@ import {
 import { generateTrackNarrative } from "../src/core/narrative.js";
 import { chatCompletion } from "../src/adapters/ai/openrouter.js";
 import { makeTestEnv } from "./helpers/env.js";
+import { publishTrackPost } from "../src/adapters/publish/github-pages.js";
 
 vi.mock("../src/adapters/ai/openrouter.js");
 
@@ -144,5 +145,46 @@ describe("generateTrackNarrative", () => {
         env,
       }),
     ).rejects.toThrow(/Track narrative failed schema/);
+  });
+});
+
+describe("publishTrackPost", () => {
+  test("commits markdown with type:track frontmatter via existing publishPost path", async () => {
+    const env = makeTestEnv();
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("not found", { status: 404 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        content: { sha: "abc", path: "_posts/2026-05-02-pch.md", html_url: "x" },
+        commit: { sha: "deadbeef" },
+      }), { status: 200 }));
+
+    const result = await publishTrackPost({
+      title: "PCH and back",
+      haiku: "a\nb\nc",
+      body: "A nice run.",
+      metrics: {
+        pingCount: 14,
+        startedAt: Date.parse("2026-05-02T15:51:30Z"),
+        closedAt: Date.parse("2026-05-02T16:24:30Z"),
+        durationSeconds: 1980,
+        distanceKm: 2.5,
+        pace: { avgKmh: 5, p50Kmh: 4, p95Kmh: 12 },
+        elevation: { gainM: 35, lossM: 35, minM: 0, maxM: 35 },
+        routeShape: "out-and-back",
+        activityHint: "mixed",
+      },
+      endLat: 34.0269,
+      endLon: -118.7603,
+      endPlace: "Malibu, CA",
+      env,
+    });
+
+    expect(result.url).toMatch(/trailscribe-journal/);
+    const putCall = fetchMock.mock.calls[1];
+    const body = JSON.parse((putCall[1]?.body ?? "{}") as string);
+    const decoded = atob(body.content);
+    expect(decoded).toContain("type: track");
+    expect(decoded).toContain("distance_km: 2.5");
+    expect(decoded).toContain("route_shape: out-and-back");
   });
 });

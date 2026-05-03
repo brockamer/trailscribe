@@ -1,9 +1,47 @@
 # Tracking Session Artifacts — Design Spec
 
-**Status:** Draft, pending review
+**Status:** Draft, pending review — **blocked on Garmin Pro Support reply** (see §0)
 **Author:** Claude (Opus 4.7) with Brock Amer
-**Date:** 2026-05-01
+**Date:** 2026-05-01 (updated 2026-05-03 with empirical findings — see §0 and §13)
 **Related:** PRD §9 Roadmap, Epic #99 (Phase 3 — DO + D1), Epic-candidate (this spec → new epic)
+
+---
+
+## 0. Critical empirical finding — 2026-05-03
+
+> **The data we assumed flows over IPC Outbound is not flowing.** This finding is load-bearing for everything below and was discovered via real-device testing on 2026-05-02 and 2026-05-03. Read this section before reading the rest of the spec.
+
+**What we expected (per the original design):** Garmin IPC Outbound delivers `messageCode: 0` (Position Report) events to our Worker every N minutes during a tracking session, alongside `Start Track` (10), `Track Interval` (11), and `Stop Track` (12) lifecycle events.
+
+**What we observed:** Across two real tracking sessions and 5+ days of normal device traffic captured at the Worker (full payload, no sampling, verified via Cloudflare ray IDs):
+
+| Code | Name | Count |
+|---|---|---|
+| 0 | Position Report | **0** events |
+| 10 | Start Track | 1 |
+| 11 | Track Interval | 1 (`intervalChange: 14400` — 4-hour power-saving auto-fallback) |
+| 12 | Stop Track | 2 (one per session) |
+| 3 | Free Text | works correctly |
+| 20 | Mail Check | normal |
+| 21 | Am I Alive | normal |
+
+The **2026-05-02 PCH/Malibu session** (~50 min, real movement: 0.25mi run + beach walking + return — well past the 100m power-saving threshold) produced 0 Position Reports. Yesterday's session is the load-bearing data point because it had unambiguous movement.
+
+**Diagnostics ruling out our-side bugs:**
+- Auth passes (10/11/12 events arrive over the same channel with the same token)
+- Outbound queue size = 0 with `Last Send Attempt` timestamps matching every POST we receive
+- V4 envelope shape is identical to V2 (`topLevelKeys: ["Version", "Events"]`) — no sibling array carries position data
+- Diagnostic `LOG_TRACK_PAYLOADS=true` flag confirmed live on production; would have captured payloads if any arrived
+
+**Most likely explanations** (Pro Support email sent 2026-05-03 to disambiguate):
+
+1. **`transportMode: "Internet"` (phone-paired) routing bypasses IPC entirely.** The phone-paired path may go phone → cellular → MapShare directly, skipping Iridium GSS and therefore IPC Outbound. Control-plane events (10/11/12) still flow because they're status messages, not position pings.
+2. **Per-tenant configuration gate** that's not exposed in the Portal Connect UI; would require Garmin to flip a flag on our account.
+3. **Position Reports are simply not part of IPC Outbound for Mini 3 Plus + V4 + Internet transport** under any configuration; tracking data lives only in MapShare KML feeds.
+
+External research (2026-05-03 via Perplexity) confirmed: production integrations (CalTopo, GSatTrack, NCAR's `inreach-nodeorm`, j-arens' `garmin-ipc`) DO receive tracking positions via IPC Outbound somehow — but none publicly document the exact mechanism, and the official IPC_Outbound.pdf v2.0.8 documents *no* tenant-level toggle for `messageCode: 0` enablement. The MapShare KML/JSON feed at `share.garmin.com/<key>` is a documented alternative tracking-data surface used by many integrations.
+
+**This spec is therefore presenting two architectural alternatives** (§5.0) and the choice between them depends on Garmin's reply. Until that reply arrives, the spec is in draft.
 
 ---
 
@@ -50,6 +88,23 @@ From `materials/Garmin IPC Outbound.txt` (V2 schema), every event has the same e
 A test-fixture for a position report already exists at `tests/fixtures/garmin/breadcrumb-position-report.json` — same envelope as a Free Text event. No new auth, no new transport.
 
 ## 5. Architectural choices
+
+### 5.0 Data source — three modes (added 2026-05-03 per §0 finding)
+
+The design now branches on Garmin's reply. Until then, the spec carries three modes; on the day Garmin answers we collapse to one.
+
+**Mode A — IPC ping stream (the original design).** Assumes mc 0 events flow over IPC Outbound. DO ingests them live, accumulates the session, publishes on Stop Track. Everything in §5.2-§6.7 below is written for this mode. **Viable only if Garmin Pro Support confirms mc 0 is or can be enabled for our tenant + Internet transport.**
+
+**Mode B — MapShare pull-on-close.** Skip live ingestion entirely. On Stop Track (mc 12) hitting the Worker, asynchronously fetch the MapShare KML feed at `https://share.garmin.com/Feed/Share/<MAPSHARE_KEY>?d1=<startedAt>&d2=<closedAt>`, parse the `<Placemark>` elements into a ping array, then run the same metrics → narrative → publish pipeline. **No DO needed for ingestion; the existing Phase 3 DO scope shrinks back to its original "idempotency + context" purpose.** Trades real-time-ish ingestion for one HTTP fetch at session end. Viable today (no Garmin support dependency) IF MapShare is enabled for the device AND the feed contains the breadcrumbs from `transportMode: "Internet"` sessions.
+
+**Mode C — Bookend-only (what we know works).** Use only Start Track (10) + Stop Track (12) events that already arrive reliably. The "narrative" becomes start_place → end_place → duration → straight-line distance, with no elevation profile, pace, route shape, or stops/breaks. Smallest scope, immediately buildable, but a much thinner product. Acceptable as a fallback if both A and B fail.
+
+**Decision rule:**
+- If Garmin Pro Support says "yes, mc 0 enabled" → **Mode A** (original spec body applies)
+- If they say "no, breadcrumbs only via MapShare" + MapShare KML contains real movement data → **Mode B**
+- If both fail → **Mode C** as a degraded but shippable v1
+
+Mode B is independently worth validating *before* Garmin replies — pull yesterday's PCH session window from MapShare and check whether the breadcrumbs are there. If yes, Mode B is viable regardless of what Garmin says (and is arguably the cleaner architecture: pull-on-close eliminates the live-ingestion DO from the design).
 
 ### 5.1 Storage approach — three options
 
@@ -320,7 +375,9 @@ Cuts 1 and 2 land sequentially; cut 3 can land before or after cut 2.
 
 ## 11. Open questions for review
 
-- **Should this spec become its own epic, or be folded into Phase 3 (#99) as added scope?** Recommendation: new epic ("Phase 3.5 — Tracking session artifacts" or similar), filed as soft-blocked-by #99 so it doesn't muddy the storage-migration milestone. But Phase 3's plan needs to know about it so the DO interface is designed with this in mind.
+- **Garmin Pro Support response (BLOCKER).** Email sent 2026-05-03 (see §13.5). Reply determines whether we go Mode A (IPC stream), Mode B (MapShare pull), or Mode C (bookend-only).
+- **Validate Mode B independently of Garmin's reply.** Pull yesterday's PCH session window from the operator's MapShare KML feed (`https://share.garmin.com/Feed/Share/<MAPSHARE_KEY>?d1=2026-05-02T16:00:00Z&d2=2026-05-02T17:00:00Z`) and check whether breadcrumbs are present. If yes, Mode B is viable today. Requires the operator to enable MapShare and pick an identifier first — currently `MAPSHARE_BASE` env var is empty.
+- **Should this spec become its own epic, or be folded into Phase 3 (#99) as added scope?** Recommendation: new epic ("Phase 3.5 — Tracking session artifacts" or similar), filed as soft-blocked-by #99 so it doesn't muddy the storage-migration milestone. But Phase 3's plan needs to know about it so the DO interface is designed with this in mind. **Note:** if Mode B wins, the Phase 3 dependency loosens significantly — pull-on-close doesn't need a per-IMEI DO at all.
 - **Auto-close timeout default.** 30 min feels right for hiking; might be too short for a multi-hour bike ride at variable cadence. Could make it variable based on the most recent `intervalChange` (e.g., `idle_timeout = max(30 min, 3 × current_interval)`).
 - **Persona styling — do we need it for v1?** Spec currently says no (single tone). If you want Yuki-mode in v1, scope grows ~20% (prompt variants, env knob, test matrix).
 - **Map render in v1?** Spec says no — Google-Maps-link-of-waypoints only. A static map image (Mapbox/Stadia/Maptiler) would be richer but adds a provider, an env, a cost line, and potentially a `publishPostWithImage` parallel. Defer unless it's a hard product requirement.
@@ -331,3 +388,58 @@ Cuts 1 and 2 land sequentially; cut 3 can land before or after cut 2.
 - 2026-05-01 — Audience locked: future-self artifacts (B). Watcher channels (C) deferred to a follow-up epic that may target Substack/Posthaven/RSS.
 - 2026-05-01 — Storage approach: build on Phase 3 DO + D1 (recommendation B above). To be confirmed.
 - 2026-05-01 — One-post-per-session vs. multi-waypoint: one post for v1.
+- 2026-05-03 — **Empirical reality discovered (§0):** Position Reports (mc 0) do not flow over IPC Outbound for our tenant. Spec now branches across Modes A / B / C in §5.0. Garmin Pro Support email sent. PR #163 (`LOG_TRACK_PAYLOADS`) and PR #166 (`ipc_received` envelope diagnostic) shipped during this investigation.
+
+---
+
+## 13. Empirical evidence appendix (2026-05-03)
+
+Raw data behind §0. Kept for traceability when Garmin replies and we collapse to a single mode.
+
+### 13.1 What we observed across the 2026-05-02 PCH session
+
+Operator: Daniel Brock. Device: inReach Mini 3 Plus, IMEI `300052030374220`. Session ended 2026-05-02T16:26:42Z.
+
+- 1 × `messageCode: 12` (Stop Track) at the session-end timestamp
+- 0 × `messageCode: 0` (Position Report) for the entire session
+- 0 × `messageCode: 10` (Start Track) — note this — yesterday's session lacks a Start Track event, only a Stop. May be a separate quirk to investigate.
+
+Real movement during this session: ~0.25 mile run + beach walking + return to start. Well past the 100m power-saving threshold.
+
+### 13.2 What we observed across the 2026-05-03 indoor session
+
+Same device. Session 16:29:58Z (Start Track) → 17:20:39Z (Stop Track), ~50 minutes, mostly indoors and stationary.
+
+- 1 × `messageCode: 10` Start Track at 16:29:58Z, `intervalChange: 120` (2-min interval as user-set)
+- 1 × `messageCode: 11` Track Interval at 16:31:59Z (~2 min after Start), `intervalChange: 14400` (= 4-hour power-saving auto-fallback)
+- 1 × `messageCode: 12` Stop Track at 17:20:39Z
+- 0 × `messageCode: 0` Position Report
+
+The 14400s interval bump is *correct device behavior* per Garmin docs (CalTopo-quoted): *"The inReach device has a power-saving function that will change the Send Interval to 4 hours if the device has not traveled more than 100 meters."* So this session's 0 Position Reports is consistent with stationary behavior. **The 2026-05-02 session is the cleaner test** for the IPC-Position-Report question because real movement happened.
+
+### 13.3 V4 envelope shape
+
+All POSTs in this period (5 captured) had identical top-level shape: `{Version: "4.0", Events: [<single event>]}`. No `Tracks[]`, `Positions[]`, or other sibling arrays. The advisor-suggested "V4 moved tracking to a separate top-level field" hypothesis is empirically refuted. V4's only addition over V2 (visible in our data) is a per-event `transportMode` field with values `"Internet"` (phone-paired, observed) or `"Satellite"` (Iridium, presumed but not observed in this period).
+
+### 13.4 Production integrations that *do* receive tracking via IPC
+
+Per 2026-05-03 research:
+
+- **CalTopo** — explicitly says it uses IPC Outbound for Pro accounts to receive tracking locations
+- **GSatTrack** — Pro account + IPC Outbound + "Share Map View" toggle for tracking visibility
+- **SafetyLine** — Pro + Outbound URL only, no extra toggles documented
+- **NCAR `inreach-nodeorm`** (GitHub) — production app reading IPC Outbound events, displays "latest locations"
+- **j-arens `garmin-ipc`** (GitHub) — explicitly built around IPC Outbound carrying tracking events for inReach-to-inReach forwarding
+
+None of these public sources document a tenant-side enablement step. So either (a) they have a configuration our account lacks, (b) Garmin enabled mc 0 for them on request, or (c) they receive tracking via a path that's incidentally not Internet-transport.
+
+### 13.5 Pro Support question (sent 2026-05-03)
+
+Email to inreach.professional@garmin.com sent on 2026-05-03 covering: tenant + IMEI + V4 schema + empirical findings + four specific questions (mc 0 currently configured; per-tenant flag mechanism; tracking-via-different-surface; Internet-transport routing path). Awaiting reply.
+
+### 13.6 Diagnostic instrumentation shipped during this investigation
+
+- **PR #163 (merged 2026-05-02):** `LOG_TRACK_PAYLOADS` env flag, default off; when true, `non_free_text` log lines for tracking events carry the full event JSON.
+- **PR #166 (merged 2026-05-03):** unconditional `ipc_received` log line right after JSON parse on every webhook POST; captures `version`, `topLevelKeys`, `bodyBytes`, `eventsLength`, and first 1KB of raw body. This is the diagnostic that surfaced the V4-envelope-is-same-as-V2 finding and made it possible to ray-correlate Garmin's "Last Send Attempt" timestamps with our received POSTs.
+
+Both diagnostics are still live on production as of 2026-05-03. Production is on `LOG_TRACK_PAYLOADS=true` via `--var` deploy override (not toml change) — will be reset on next normal `pnpm deploy:production`. Scheduled remote agent (`trig_01ErxEExpBUzbNngPqAaEbaB`, fires 2026-05-16) will verify the override has been cleared.

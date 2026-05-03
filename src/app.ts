@@ -63,13 +63,44 @@ export function makeApp() {
       return c.text("ok", 200);
     }
 
+    // Read the raw text once so we can both parse it and capture a sample for
+    // the ipc_received diagnostic. Parsing happens after capture so even an
+    // un-parseable body is visible in logs.
+    const rawBody = await c.req.text();
     let body: unknown;
     try {
-      body = await c.req.json();
+      body = JSON.parse(rawBody);
     } catch {
-      log({ event: "bad_json", level: "warn" });
+      log({
+        event: "bad_json",
+        level: "warn",
+        bodyBytes: rawBody.length,
+        rawBodySample: rawBody.slice(0, 1024),
+      });
       return c.text("ok", 200);
     }
+
+    // Diagnostic: log envelope shape on every webhook POST so we can see what
+    // Garmin actually sends. Counts events, lists top-level keys, and snapshots
+    // the first 1KB of raw body. One log per webhook (low volume — Garmin IPC
+    // batches per-device). Not gated on any flag — this is metadata about the
+    // shape, not payload contents.
+    log({
+      event: "ipc_received",
+      level: "info",
+      bodyBytes: rawBody.length,
+      version: typeof (body as { Version?: unknown })?.Version === "string"
+        ? (body as { Version: string }).Version
+        : null,
+      topLevelKeys:
+        body && typeof body === "object" && !Array.isArray(body)
+          ? Object.keys(body as Record<string, unknown>)
+          : [],
+      eventsLength: Array.isArray((body as { Events?: unknown })?.Events)
+        ? (body as { Events: unknown[] }).Events.length
+        : null,
+      rawBodySample: rawBody.slice(0, 1024),
+    });
 
     if (!isGarminEnvelope(body)) {
       log({ event: "bad_envelope", level: "warn" });

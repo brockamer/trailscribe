@@ -180,6 +180,8 @@ describe("publishTrackPost", () => {
     });
 
     expect(result.url).toMatch(/trailscribe-journal/);
+    expect(result.path).toContain("2026-05-02");
+    expect(result.url).toContain("2026/05/02");
     const putCall = fetchMock.mock.calls[1];
     const body = JSON.parse((putCall[1]?.body ?? "{}") as string);
     const decoded = atob(body.content);

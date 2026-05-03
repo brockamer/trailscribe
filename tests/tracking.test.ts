@@ -1,14 +1,25 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import {
   storeTrackRecord,
+  handleStopTrack,
   type TrackSessionRecord,
 } from "../src/core/tracking.js";
 import { generateTrackNarrative } from "../src/core/narrative.js";
 import { chatCompletion } from "../src/adapters/ai/openrouter.js";
 import { makeTestEnv } from "./helpers/env.js";
 import { publishTrackPost } from "../src/adapters/publish/github-pages.js";
+import { sendReply } from "../src/adapters/outbound/garmin-ipc-inbound.js";
+import * as mapshareMod from "../src/adapters/location/mapshare.js";
+import * as narrativeMod from "../src/core/narrative.js";
+import * as publishMod from "../src/adapters/publish/github-pages.js";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import type { GarminEvent } from "../src/core/types.js";
 
 vi.mock("../src/adapters/ai/openrouter.js");
+vi.mock("../src/adapters/outbound/garmin-ipc-inbound.js", () => ({
+  sendReply: vi.fn().mockResolvedValue({ count: 1 }),
+}));
 
 describe("storeTrackRecord", () => {
   test("writes the record under track:<imei>:<sessionId>", async () => {
@@ -188,5 +199,105 @@ describe("publishTrackPost", () => {
     expect(decoded).toContain("type: track");
     expect(decoded).toContain("distance_km: 2.5");
     expect(decoded).toContain("route_shape: out-and-back");
+  });
+});
+
+const FIXTURE_KML_E2E = readFileSync(
+  resolve(__dirname, "fixtures/mapshare/pch-2026-05-02.kml"),
+  "utf8",
+);
+
+async function sessionIdFor(imei: string, closedAtMs: number): Promise<string> {
+  const buf = new TextEncoder().encode(`${imei}:${closedAtMs}`);
+  const hash = await crypto.subtle.digest("SHA-256", buf);
+  return Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+describe("handleStopTrack — end to end", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(sendReply).mockReset();
+    vi.mocked(sendReply).mockResolvedValue({ count: 1 });
+  });
+
+  test("fetches KML, generates narrative, publishes, replies, persists record", async () => {
+    const env = makeTestEnv();
+    vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
+    vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
+      title: "PCH and back",
+      haiku: "a\nb\nc",
+      body: "Run + beach + return.",
+      usage: { prompt_tokens: 100, completion_tokens: 50 },
+    });
+    const publishSpy = vi.spyOn(publishMod, "publishTrackPost").mockResolvedValue({
+      url: "https://brockamer.github.io/trailscribe-journal/2026/05/02/pch.html",
+      path: "_posts/2026-05-02-pch.md",
+      sha: "abc",
+    });
+
+    const stopEvent: GarminEvent = {
+      imei: "300052030374220",
+      messageCode: 12,
+      timeStamp: Date.parse("2026-05-02T16:24:30Z"),
+    };
+
+    await handleStopTrack(stopEvent, env, "idem-key-1");
+
+    expect(publishSpy).toHaveBeenCalledTimes(1);
+    expect(sendReply).toHaveBeenCalledTimes(1);
+    const replyArgs = vi.mocked(sendReply).mock.calls[0];
+    expect(replyArgs[0]).toBe("300052030374220");
+    expect(replyArgs[1][0]).toContain("Track posted");
+    expect(replyArgs[1][0]).toContain("trailscribe-journal");
+
+    const sessionId = await sessionIdFor("300052030374220", stopEvent.timeStamp);
+    const stored = await env.TS_TRACKS.get(`track:300052030374220:${sessionId}`, "json") as TrackSessionRecord;
+    expect(stored).not.toBeNull();
+    expect(stored.pingCount).toBe(14);
+    expect(stored.journalUrl).toBe("https://brockamer.github.io/trailscribe-journal/2026/05/02/pch.html");
+  });
+
+  test("empty KML: logs warning, sends 'no breadcrumbs' reply, no publish", async () => {
+    const env = makeTestEnv();
+    vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue("<kml/>");
+    const publishSpy = vi.spyOn(publishMod, "publishTrackPost");
+
+    await handleStopTrack(
+      { imei: "300052030374220", messageCode: 12, timeStamp: Date.now() },
+      env,
+      "idem-key-2",
+    );
+
+    expect(publishSpy).not.toHaveBeenCalled();
+    expect(sendReply).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendReply).mock.calls[0][1][0]).toContain("no breadcrumbs");
+  });
+
+  test("idempotent on replay: second handleStopTrack call short-circuits", async () => {
+    const env = makeTestEnv();
+    vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
+    vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
+      title: "x", haiku: "a\nb\nc", body: "y",
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    });
+    const publishSpy = vi.spyOn(publishMod, "publishTrackPost").mockResolvedValue({
+      url: "https://x", path: "p", sha: "s",
+    });
+
+    const event: GarminEvent = {
+      imei: "300052030374220",
+      messageCode: 12,
+      timeStamp: Date.parse("2026-05-02T16:24:30Z"),
+    };
+
+    const { writeRecord } = await import("../src/core/idempotency.js");
+    await writeRecord(env, "idem-replay", { status: "received", receivedAt: Date.now() });
+
+    await handleStopTrack(event, env, "idem-replay");
+    await handleStopTrack(event, env, "idem-replay");
+
+    expect(publishSpy).toHaveBeenCalledTimes(1);
   });
 });

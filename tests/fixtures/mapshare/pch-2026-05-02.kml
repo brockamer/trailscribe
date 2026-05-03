@@ -1,0 +1,1097 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<kml xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>KML Export 5/3/2026 10:01:45 PM</name>
+    <Style id="style_emergency">
+      <IconStyle>
+        <colorMode>normal</colorMode>
+        <Icon>
+          <href>http://maps.google.com/mapfiles/kml/shapes/caution.png</href>
+        </Icon>
+      </IconStyle>
+      <BalloonStyle>
+        <text>&lt;table&gt;&lt;tr&gt;&lt;td&gt;Id&lt;/td&gt;&lt;td&gt; $[Id] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Time&lt;/td&gt;&lt;td&gt; $[Time] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Time UTC&lt;/td&gt;&lt;td&gt; $[Time UTC] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Name&lt;/td&gt;&lt;td&gt; $[Name] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Map Display Name&lt;/td&gt;&lt;td&gt; $[Map Display Name] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Device Type&lt;/td&gt;&lt;td&gt; $[Device Type] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;IMEI&lt;/td&gt;&lt;td&gt; $[IMEI] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Incident Id&lt;/td&gt;&lt;td&gt; $[Incident Id] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Latitude&lt;/td&gt;&lt;td&gt; $[Latitude] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Longitude&lt;/td&gt;&lt;td&gt; $[Longitude] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Elevation&lt;/td&gt;&lt;td&gt; $[Elevation] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Velocity&lt;/td&gt;&lt;td&gt; $[Velocity] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Course&lt;/td&gt;&lt;td&gt; $[Course] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Valid GPS Fix&lt;/td&gt;&lt;td&gt; $[Valid GPS Fix] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;In Emergency&lt;/td&gt;&lt;td&gt; $[In Emergency] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Text&lt;/td&gt;&lt;td&gt; $[Text] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Event&lt;/td&gt;&lt;td&gt; $[Event] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Device Identifier&lt;/td&gt;&lt;td&gt; $[Device Identifier] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;SpatialRefSystem&lt;/td&gt;&lt;td&gt; $[SpatialRefSystem] &lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</text>
+      </BalloonStyle>
+    </Style>
+    <Style id="style_6613406">
+      <IconStyle>
+        <color>ffdd2289</color>
+        <colorMode>normal</colorMode>
+        <Icon>
+          <href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href>
+        </Icon>
+      </IconStyle>
+      <BalloonStyle>
+        <text>&lt;table&gt;&lt;tr&gt;&lt;td&gt;Id&lt;/td&gt;&lt;td&gt; $[Id] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Time&lt;/td&gt;&lt;td&gt; $[Time] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Time UTC&lt;/td&gt;&lt;td&gt; $[Time UTC] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Name&lt;/td&gt;&lt;td&gt; $[Name] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Map Display Name&lt;/td&gt;&lt;td&gt; $[Map Display Name] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Device Type&lt;/td&gt;&lt;td&gt; $[Device Type] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;IMEI&lt;/td&gt;&lt;td&gt; $[IMEI] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Incident Id&lt;/td&gt;&lt;td&gt; $[Incident Id] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Latitude&lt;/td&gt;&lt;td&gt; $[Latitude] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Longitude&lt;/td&gt;&lt;td&gt; $[Longitude] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Elevation&lt;/td&gt;&lt;td&gt; $[Elevation] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Velocity&lt;/td&gt;&lt;td&gt; $[Velocity] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Course&lt;/td&gt;&lt;td&gt; $[Course] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Valid GPS Fix&lt;/td&gt;&lt;td&gt; $[Valid GPS Fix] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;In Emergency&lt;/td&gt;&lt;td&gt; $[In Emergency] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Text&lt;/td&gt;&lt;td&gt; $[Text] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Event&lt;/td&gt;&lt;td&gt; $[Event] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Device Identifier&lt;/td&gt;&lt;td&gt; $[Device Identifier] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;SpatialRefSystem&lt;/td&gt;&lt;td&gt; $[SpatialRefSystem] &lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</text>
+      </BalloonStyle>
+    </Style>
+    <Style id="waypointstyle_6613406">
+      <IconStyle>
+        <color>ffdd2289</color>
+        <colorMode>normal</colorMode>
+        <Icon>
+          <href>http://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href>
+        </Icon>
+      </IconStyle>
+      <BalloonStyle>
+        <text>&lt;table&gt;&lt;tr&gt;&lt;td&gt;Time&lt;/td&gt;&lt;td&gt; $[Time] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Time UTC&lt;/td&gt;&lt;td&gt; $[Time UTC] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Latitude&lt;/td&gt;&lt;td&gt; $[Latitude] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Longitude&lt;/td&gt;&lt;td&gt; $[Longitude] &lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Text&lt;/td&gt;&lt;td&gt; $[Text] &lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</text>
+      </BalloonStyle>
+    </Style>
+    <Style id="linestyle_6613406">
+      <LineStyle>
+        <color>ffdd2289</color>
+        <colorMode>normal</colorMode>
+        <width>1</width>
+        <labelVisibility xmlns="http://www.google.com/kml/ext/2.2">false</labelVisibility>
+      </LineStyle>
+    </Style>
+    <Folder>
+      <name>Daniel Brock</name>
+      <Placemark>
+        <name />
+        <visibility>true</visibility>
+        <description />
+        <TimeStamp>
+          <when>2026-05-02T15:51:30Z</when>
+        </TimeStamp>
+        <styleUrl>#style_6613406</styleUrl>
+        <ExtendedData>
+          <Data name="Id">
+            <value>946862048</value>
+          </Data>
+          <Data name="Time UTC">
+            <value>5/2/2026 3:51:30 PM</value>
+          </Data>
+          <Data name="Time">
+            <value>5/2/2026 8:51:30 AM</value>
+          </Data>
+          <Data name="Name">
+            <value>Daniel Brock</value>
+          </Data>
+          <Data name="Map Display Name">
+            <value>Brock</value>
+          </Data>
+          <Data name="Device Type">
+            <value>inReach Mini 3 Plus</value>
+          </Data>
+          <Data name="IMEI">
+            <value>300052030374220</value>
+          </Data>
+          <Data name="Incident Id">
+            <value />
+          </Data>
+          <Data name="Latitude">
+            <value>34.026825</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-118.760255</value>
+          </Data>
+          <Data name="Elevation">
+            <value>30.76 m from MSL</value>
+          </Data>
+          <Data name="Velocity">
+            <value>0.0 km/h</value>
+          </Data>
+          <Data name="Course">
+            <value>0.00 ° True</value>
+          </Data>
+          <Data name="Valid GPS Fix">
+            <value>True</value>
+          </Data>
+          <Data name="In Emergency">
+            <value>False</value>
+          </Data>
+          <Data name="Text">
+            <value />
+          </Data>
+          <Data name="Event">
+            <value>Tracking turned on from device.</value>
+          </Data>
+          <Data name="Device Identifier">
+            <value />
+          </Data>
+          <Data name="SpatialRefSystem">
+            <value>WGS84</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <extrude>false</extrude>
+          <altitudeMode>absolute</altitudeMode>
+          <coordinates>-118.760255,34.026825,30.76</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name />
+        <visibility>true</visibility>
+        <description />
+        <TimeStamp>
+          <when>2026-05-02T15:53:30Z</when>
+        </TimeStamp>
+        <styleUrl>#style_6613406</styleUrl>
+        <ExtendedData>
+          <Data name="Id">
+            <value>946862059</value>
+          </Data>
+          <Data name="Time UTC">
+            <value>5/2/2026 3:53:30 PM</value>
+          </Data>
+          <Data name="Time">
+            <value>5/2/2026 8:53:30 AM</value>
+          </Data>
+          <Data name="Name">
+            <value>Daniel Brock</value>
+          </Data>
+          <Data name="Map Display Name">
+            <value>Brock</value>
+          </Data>
+          <Data name="Device Type">
+            <value>inReach Mini 3 Plus</value>
+          </Data>
+          <Data name="IMEI">
+            <value>300052030374220</value>
+          </Data>
+          <Data name="Incident Id">
+            <value />
+          </Data>
+          <Data name="Latitude">
+            <value>34.026440</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-118.761820</value>
+          </Data>
+          <Data name="Elevation">
+            <value>22.63 m from MSL</value>
+          </Data>
+          <Data name="Velocity">
+            <value>12.2 km/h</value>
+          </Data>
+          <Data name="Course">
+            <value>247.50 ° True</value>
+          </Data>
+          <Data name="Valid GPS Fix">
+            <value>True</value>
+          </Data>
+          <Data name="In Emergency">
+            <value>False</value>
+          </Data>
+          <Data name="Text">
+            <value />
+          </Data>
+          <Data name="Event">
+            <value>Tracking message received.</value>
+          </Data>
+          <Data name="Device Identifier">
+            <value />
+          </Data>
+          <Data name="SpatialRefSystem">
+            <value>WGS84</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <extrude>false</extrude>
+          <altitudeMode>absolute</altitudeMode>
+          <coordinates>-118.76182,34.02644,22.63</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name />
+        <visibility>true</visibility>
+        <description />
+        <TimeStamp>
+          <when>2026-05-02T15:55:30Z</when>
+        </TimeStamp>
+        <styleUrl>#style_6613406</styleUrl>
+        <ExtendedData>
+          <Data name="Id">
+            <value>946862685</value>
+          </Data>
+          <Data name="Time UTC">
+            <value>5/2/2026 3:55:30 PM</value>
+          </Data>
+          <Data name="Time">
+            <value>5/2/2026 8:55:30 AM</value>
+          </Data>
+          <Data name="Name">
+            <value>Daniel Brock</value>
+          </Data>
+          <Data name="Map Display Name">
+            <value>Brock</value>
+          </Data>
+          <Data name="Device Type">
+            <value>inReach Mini 3 Plus</value>
+          </Data>
+          <Data name="IMEI">
+            <value>300052030374220</value>
+          </Data>
+          <Data name="Incident Id">
+            <value />
+          </Data>
+          <Data name="Latitude">
+            <value>34.025495</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-118.765748</value>
+          </Data>
+          <Data name="Elevation">
+            <value>2.34 m from MSL</value>
+          </Data>
+          <Data name="Velocity">
+            <value>4.0 km/h</value>
+          </Data>
+          <Data name="Course">
+            <value>202.50 ° True</value>
+          </Data>
+          <Data name="Valid GPS Fix">
+            <value>True</value>
+          </Data>
+          <Data name="In Emergency">
+            <value>False</value>
+          </Data>
+          <Data name="Text">
+            <value />
+          </Data>
+          <Data name="Event">
+            <value>Tracking message received.</value>
+          </Data>
+          <Data name="Device Identifier">
+            <value />
+          </Data>
+          <Data name="SpatialRefSystem">
+            <value>WGS84</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <extrude>false</extrude>
+          <altitudeMode>absolute</altitudeMode>
+          <coordinates>-118.765748,34.025495,2.34</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name />
+        <visibility>true</visibility>
+        <description />
+        <TimeStamp>
+          <when>2026-05-02T15:57:30Z</when>
+        </TimeStamp>
+        <styleUrl>#style_6613406</styleUrl>
+        <ExtendedData>
+          <Data name="Id">
+            <value>946863192</value>
+          </Data>
+          <Data name="Time UTC">
+            <value>5/2/2026 3:57:30 PM</value>
+          </Data>
+          <Data name="Time">
+            <value>5/2/2026 8:57:30 AM</value>
+          </Data>
+          <Data name="Name">
+            <value>Daniel Brock</value>
+          </Data>
+          <Data name="Map Display Name">
+            <value>Brock</value>
+          </Data>
+          <Data name="Device Type">
+            <value>inReach Mini 3 Plus</value>
+          </Data>
+          <Data name="IMEI">
+            <value>300052030374220</value>
+          </Data>
+          <Data name="Incident Id">
+            <value />
+          </Data>
+          <Data name="Latitude">
+            <value>34.025645</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-118.762786</value>
+          </Data>
+          <Data name="Elevation">
+            <value>10.46 m from MSL</value>
+          </Data>
+          <Data name="Velocity">
+            <value>11.1 km/h</value>
+          </Data>
+          <Data name="Course">
+            <value>90.00 ° True</value>
+          </Data>
+          <Data name="Valid GPS Fix">
+            <value>True</value>
+          </Data>
+          <Data name="In Emergency">
+            <value>False</value>
+          </Data>
+          <Data name="Text">
+            <value />
+          </Data>
+          <Data name="Event">
+            <value>Tracking message received.</value>
+          </Data>
+          <Data name="Device Identifier">
+            <value />
+          </Data>
+          <Data name="SpatialRefSystem">
+            <value>WGS84</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <extrude>false</extrude>
+          <altitudeMode>absolute</altitudeMode>
+          <coordinates>-118.762786,34.025645,10.46</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name />
+        <visibility>true</visibility>
+        <description />
+        <TimeStamp>
+          <when>2026-05-02T15:59:30Z</when>
+        </TimeStamp>
+        <styleUrl>#style_6613406</styleUrl>
+        <ExtendedData>
+          <Data name="Id">
+            <value>946864624</value>
+          </Data>
+          <Data name="Time UTC">
+            <value>5/2/2026 3:59:30 PM</value>
+          </Data>
+          <Data name="Time">
+            <value>5/2/2026 8:59:30 AM</value>
+          </Data>
+          <Data name="Name">
+            <value>Daniel Brock</value>
+          </Data>
+          <Data name="Map Display Name">
+            <value>Brock</value>
+          </Data>
+          <Data name="Device Type">
+            <value>inReach Mini 3 Plus</value>
+          </Data>
+          <Data name="IMEI">
+            <value>300052030374220</value>
+          </Data>
+          <Data name="Incident Id">
+            <value />
+          </Data>
+          <Data name="Latitude">
+            <value>34.025688</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-118.758795</value>
+          </Data>
+          <Data name="Elevation">
+            <value>6.40 m from MSL</value>
+          </Data>
+          <Data name="Velocity">
+            <value>12.2 km/h</value>
+          </Data>
+          <Data name="Course">
+            <value>90.00 ° True</value>
+          </Data>
+          <Data name="Valid GPS Fix">
+            <value>True</value>
+          </Data>
+          <Data name="In Emergency">
+            <value>False</value>
+          </Data>
+          <Data name="Text">
+            <value />
+          </Data>
+          <Data name="Event">
+            <value>Tracking message received.</value>
+          </Data>
+          <Data name="Device Identifier">
+            <value />
+          </Data>
+          <Data name="SpatialRefSystem">
+            <value>WGS84</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <extrude>false</extrude>
+          <altitudeMode>absolute</altitudeMode>
+          <coordinates>-118.758795,34.025688,6.4</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name />
+        <visibility>true</visibility>
+        <description />
+        <TimeStamp>
+          <when>2026-05-02T16:01:30Z</when>
+        </TimeStamp>
+        <styleUrl>#style_6613406</styleUrl>
+        <ExtendedData>
+          <Data name="Id">
+            <value>946864626</value>
+          </Data>
+          <Data name="Time UTC">
+            <value>5/2/2026 4:01:30 PM</value>
+          </Data>
+          <Data name="Time">
+            <value>5/2/2026 9:01:30 AM</value>
+          </Data>
+          <Data name="Name">
+            <value>Daniel Brock</value>
+          </Data>
+          <Data name="Map Display Name">
+            <value>Brock</value>
+          </Data>
+          <Data name="Device Type">
+            <value>inReach Mini 3 Plus</value>
+          </Data>
+          <Data name="IMEI">
+            <value>300052030374220</value>
+          </Data>
+          <Data name="Incident Id">
+            <value />
+          </Data>
+          <Data name="Latitude">
+            <value>34.026310</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-118.755920</value>
+          </Data>
+          <Data name="Elevation">
+            <value>0.31 m from MSL</value>
+          </Data>
+          <Data name="Velocity">
+            <value>0.0 km/h</value>
+          </Data>
+          <Data name="Course">
+            <value>0.00 ° True</value>
+          </Data>
+          <Data name="Valid GPS Fix">
+            <value>True</value>
+          </Data>
+          <Data name="In Emergency">
+            <value>False</value>
+          </Data>
+          <Data name="Text">
+            <value />
+          </Data>
+          <Data name="Event">
+            <value>Tracking message received.</value>
+          </Data>
+          <Data name="Device Identifier">
+            <value />
+          </Data>
+          <Data name="SpatialRefSystem">
+            <value>WGS84</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <extrude>false</extrude>
+          <altitudeMode>absolute</altitudeMode>
+          <coordinates>-118.75592,34.02631,0.31</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name />
+        <visibility>true</visibility>
+        <description />
+        <TimeStamp>
+          <when>2026-05-02T16:03:30Z</when>
+        </TimeStamp>
+        <styleUrl>#style_6613406</styleUrl>
+        <ExtendedData>
+          <Data name="Id">
+            <value>946865525</value>
+          </Data>
+          <Data name="Time UTC">
+            <value>5/2/2026 4:03:30 PM</value>
+          </Data>
+          <Data name="Time">
+            <value>5/2/2026 9:03:30 AM</value>
+          </Data>
+          <Data name="Name">
+            <value>Daniel Brock</value>
+          </Data>
+          <Data name="Map Display Name">
+            <value>Brock</value>
+          </Data>
+          <Data name="Device Type">
+            <value>inReach Mini 3 Plus</value>
+          </Data>
+          <Data name="IMEI">
+            <value>300052030374220</value>
+          </Data>
+          <Data name="Incident Id">
+            <value />
+          </Data>
+          <Data name="Latitude">
+            <value>34.026331</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-118.755898</value>
+          </Data>
+          <Data name="Elevation">
+            <value>0.31 m from MSL</value>
+          </Data>
+          <Data name="Velocity">
+            <value>0.0 km/h</value>
+          </Data>
+          <Data name="Course">
+            <value>0.00 ° True</value>
+          </Data>
+          <Data name="Valid GPS Fix">
+            <value>True</value>
+          </Data>
+          <Data name="In Emergency">
+            <value>False</value>
+          </Data>
+          <Data name="Text">
+            <value />
+          </Data>
+          <Data name="Event">
+            <value>Tracking interval received.</value>
+          </Data>
+          <Data name="Device Identifier">
+            <value />
+          </Data>
+          <Data name="SpatialRefSystem">
+            <value>WGS84</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <extrude>false</extrude>
+          <altitudeMode>absolute</altitudeMode>
+          <coordinates>-118.755898,34.026331,0.31</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name />
+        <visibility>true</visibility>
+        <description />
+        <TimeStamp>
+          <when>2026-05-02T16:08:30Z</when>
+        </TimeStamp>
+        <styleUrl>#style_6613406</styleUrl>
+        <ExtendedData>
+          <Data name="Id">
+            <value>946868271</value>
+          </Data>
+          <Data name="Time UTC">
+            <value>5/2/2026 4:08:30 PM</value>
+          </Data>
+          <Data name="Time">
+            <value>5/2/2026 9:08:30 AM</value>
+          </Data>
+          <Data name="Name">
+            <value>Daniel Brock</value>
+          </Data>
+          <Data name="Map Display Name">
+            <value>Brock</value>
+          </Data>
+          <Data name="Device Type">
+            <value>inReach Mini 3 Plus</value>
+          </Data>
+          <Data name="IMEI">
+            <value>300052030374220</value>
+          </Data>
+          <Data name="Incident Id">
+            <value />
+          </Data>
+          <Data name="Latitude">
+            <value>34.025656</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-118.759353</value>
+          </Data>
+          <Data name="Elevation">
+            <value>6.40 m from MSL</value>
+          </Data>
+          <Data name="Velocity">
+            <value>5.0 km/h</value>
+          </Data>
+          <Data name="Course">
+            <value>247.50 ° True</value>
+          </Data>
+          <Data name="Valid GPS Fix">
+            <value>True</value>
+          </Data>
+          <Data name="In Emergency">
+            <value>False</value>
+          </Data>
+          <Data name="Text">
+            <value />
+          </Data>
+          <Data name="Event">
+            <value>Tracking interval received.</value>
+          </Data>
+          <Data name="Device Identifier">
+            <value />
+          </Data>
+          <Data name="SpatialRefSystem">
+            <value>WGS84</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <extrude>false</extrude>
+          <altitudeMode>absolute</altitudeMode>
+          <coordinates>-118.759353,34.025656,6.4</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name />
+        <visibility>true</visibility>
+        <description />
+        <TimeStamp>
+          <when>2026-05-02T16:13:30Z</when>
+        </TimeStamp>
+        <styleUrl>#style_6613406</styleUrl>
+        <ExtendedData>
+          <Data name="Id">
+            <value>946869622</value>
+          </Data>
+          <Data name="Time UTC">
+            <value>5/2/2026 4:13:30 PM</value>
+          </Data>
+          <Data name="Time">
+            <value>5/2/2026 9:13:30 AM</value>
+          </Data>
+          <Data name="Name">
+            <value>Daniel Brock</value>
+          </Data>
+          <Data name="Map Display Name">
+            <value>Brock</value>
+          </Data>
+          <Data name="Device Type">
+            <value>inReach Mini 3 Plus</value>
+          </Data>
+          <Data name="IMEI">
+            <value>300052030374220</value>
+          </Data>
+          <Data name="Incident Id">
+            <value />
+          </Data>
+          <Data name="Latitude">
+            <value>34.025485</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-118.765726</value>
+          </Data>
+          <Data name="Elevation">
+            <value>4.37 m from MSL</value>
+          </Data>
+          <Data name="Velocity">
+            <value>3.0 km/h</value>
+          </Data>
+          <Data name="Course">
+            <value>0.00 ° True</value>
+          </Data>
+          <Data name="Valid GPS Fix">
+            <value>True</value>
+          </Data>
+          <Data name="In Emergency">
+            <value>False</value>
+          </Data>
+          <Data name="Text">
+            <value />
+          </Data>
+          <Data name="Event">
+            <value>Tracking message received.</value>
+          </Data>
+          <Data name="Device Identifier">
+            <value />
+          </Data>
+          <Data name="SpatialRefSystem">
+            <value>WGS84</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <extrude>false</extrude>
+          <altitudeMode>absolute</altitudeMode>
+          <coordinates>-118.765726,34.025485,4.37</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name />
+        <visibility>true</visibility>
+        <description />
+        <TimeStamp>
+          <when>2026-05-02T16:15:30Z</when>
+        </TimeStamp>
+        <styleUrl>#style_6613406</styleUrl>
+        <ExtendedData>
+          <Data name="Id">
+            <value>946870012</value>
+          </Data>
+          <Data name="Time UTC">
+            <value>5/2/2026 4:15:30 PM</value>
+          </Data>
+          <Data name="Time">
+            <value>5/2/2026 9:15:30 AM</value>
+          </Data>
+          <Data name="Name">
+            <value>Daniel Brock</value>
+          </Data>
+          <Data name="Map Display Name">
+            <value>Brock</value>
+          </Data>
+          <Data name="Device Type">
+            <value>inReach Mini 3 Plus</value>
+          </Data>
+          <Data name="IMEI">
+            <value>300052030374220</value>
+          </Data>
+          <Data name="Incident Id">
+            <value />
+          </Data>
+          <Data name="Latitude">
+            <value>34.025688</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-118.765618</value>
+          </Data>
+          <Data name="Elevation">
+            <value>4.37 m from MSL</value>
+          </Data>
+          <Data name="Velocity">
+            <value>3.0 km/h</value>
+          </Data>
+          <Data name="Course">
+            <value>90.00 ° True</value>
+          </Data>
+          <Data name="Valid GPS Fix">
+            <value>True</value>
+          </Data>
+          <Data name="In Emergency">
+            <value>False</value>
+          </Data>
+          <Data name="Text">
+            <value />
+          </Data>
+          <Data name="Event">
+            <value>Tracking interval received.</value>
+          </Data>
+          <Data name="Device Identifier">
+            <value />
+          </Data>
+          <Data name="SpatialRefSystem">
+            <value>WGS84</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <extrude>false</extrude>
+          <altitudeMode>absolute</altitudeMode>
+          <coordinates>-118.765618,34.025688,4.37</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name />
+        <visibility>true</visibility>
+        <description />
+        <TimeStamp>
+          <when>2026-05-02T16:19:30Z</when>
+        </TimeStamp>
+        <styleUrl>#style_6613406</styleUrl>
+        <ExtendedData>
+          <Data name="Id">
+            <value>946871868</value>
+          </Data>
+          <Data name="Time UTC">
+            <value>5/2/2026 4:19:30 PM</value>
+          </Data>
+          <Data name="Time">
+            <value>5/2/2026 9:19:30 AM</value>
+          </Data>
+          <Data name="Name">
+            <value>Daniel Brock</value>
+          </Data>
+          <Data name="Map Display Name">
+            <value>Brock</value>
+          </Data>
+          <Data name="Device Type">
+            <value>inReach Mini 3 Plus</value>
+          </Data>
+          <Data name="IMEI">
+            <value>300052030374220</value>
+          </Data>
+          <Data name="Incident Id">
+            <value />
+          </Data>
+          <Data name="Latitude">
+            <value>34.025935</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-118.763838</value>
+          </Data>
+          <Data name="Elevation">
+            <value>10.46 m from MSL</value>
+          </Data>
+          <Data name="Velocity">
+            <value>6.0 km/h</value>
+          </Data>
+          <Data name="Course">
+            <value>67.50 ° True</value>
+          </Data>
+          <Data name="Valid GPS Fix">
+            <value>True</value>
+          </Data>
+          <Data name="In Emergency">
+            <value>False</value>
+          </Data>
+          <Data name="Text">
+            <value />
+          </Data>
+          <Data name="Event">
+            <value>Tracking interval received.</value>
+          </Data>
+          <Data name="Device Identifier">
+            <value />
+          </Data>
+          <Data name="SpatialRefSystem">
+            <value>WGS84</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <extrude>false</extrude>
+          <altitudeMode>absolute</altitudeMode>
+          <coordinates>-118.763838,34.025935,10.46</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name />
+        <visibility>true</visibility>
+        <description />
+        <TimeStamp>
+          <when>2026-05-02T16:21:30Z</when>
+        </TimeStamp>
+        <styleUrl>#style_6613406</styleUrl>
+        <ExtendedData>
+          <Data name="Id">
+            <value>946872381</value>
+          </Data>
+          <Data name="Time UTC">
+            <value>5/2/2026 4:21:30 PM</value>
+          </Data>
+          <Data name="Time">
+            <value>5/2/2026 9:21:30 AM</value>
+          </Data>
+          <Data name="Name">
+            <value>Daniel Brock</value>
+          </Data>
+          <Data name="Map Display Name">
+            <value>Brock</value>
+          </Data>
+          <Data name="Device Type">
+            <value>inReach Mini 3 Plus</value>
+          </Data>
+          <Data name="IMEI">
+            <value>300052030374220</value>
+          </Data>
+          <Data name="Incident Id">
+            <value />
+          </Data>
+          <Data name="Latitude">
+            <value>34.026440</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-118.761800</value>
+          </Data>
+          <Data name="Elevation">
+            <value>22.63 m from MSL</value>
+          </Data>
+          <Data name="Velocity">
+            <value>6.0 km/h</value>
+          </Data>
+          <Data name="Course">
+            <value>67.50 ° True</value>
+          </Data>
+          <Data name="Valid GPS Fix">
+            <value>True</value>
+          </Data>
+          <Data name="In Emergency">
+            <value>False</value>
+          </Data>
+          <Data name="Text">
+            <value />
+          </Data>
+          <Data name="Event">
+            <value>Tracking message received.</value>
+          </Data>
+          <Data name="Device Identifier">
+            <value />
+          </Data>
+          <Data name="SpatialRefSystem">
+            <value>WGS84</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <extrude>false</extrude>
+          <altitudeMode>absolute</altitudeMode>
+          <coordinates>-118.7618,34.02644,22.63</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name />
+        <visibility>true</visibility>
+        <description />
+        <TimeStamp>
+          <when>2026-05-02T16:23:30Z</when>
+        </TimeStamp>
+        <styleUrl>#style_6613406</styleUrl>
+        <ExtendedData>
+          <Data name="Id">
+            <value>946873195</value>
+          </Data>
+          <Data name="Time UTC">
+            <value>5/2/2026 4:23:30 PM</value>
+          </Data>
+          <Data name="Time">
+            <value>5/2/2026 9:23:30 AM</value>
+          </Data>
+          <Data name="Name">
+            <value>Daniel Brock</value>
+          </Data>
+          <Data name="Map Display Name">
+            <value>Brock</value>
+          </Data>
+          <Data name="Device Type">
+            <value>inReach Mini 3 Plus</value>
+          </Data>
+          <Data name="IMEI">
+            <value>300052030374220</value>
+          </Data>
+          <Data name="Incident Id">
+            <value />
+          </Data>
+          <Data name="Latitude">
+            <value>34.026911</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-118.760296</value>
+          </Data>
+          <Data name="Elevation">
+            <value>34.82 m from MSL</value>
+          </Data>
+          <Data name="Velocity">
+            <value>0.0 km/h</value>
+          </Data>
+          <Data name="Course">
+            <value>0.00 ° True</value>
+          </Data>
+          <Data name="Valid GPS Fix">
+            <value>True</value>
+          </Data>
+          <Data name="In Emergency">
+            <value>False</value>
+          </Data>
+          <Data name="Text">
+            <value />
+          </Data>
+          <Data name="Event">
+            <value>Tracking message received.</value>
+          </Data>
+          <Data name="Device Identifier">
+            <value />
+          </Data>
+          <Data name="SpatialRefSystem">
+            <value>WGS84</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <extrude>false</extrude>
+          <altitudeMode>absolute</altitudeMode>
+          <coordinates>-118.760296,34.026911,34.82</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Daniel Brock</name>
+        <visibility>true</visibility>
+        <description />
+        <TimeStamp>
+          <when>2026-05-02T16:24:30Z</when>
+        </TimeStamp>
+        <styleUrl>#style_6613406</styleUrl>
+        <ExtendedData>
+          <Data name="Id">
+            <value>946874081</value>
+          </Data>
+          <Data name="Time UTC">
+            <value>5/2/2026 4:24:30 PM</value>
+          </Data>
+          <Data name="Time">
+            <value>5/2/2026 9:24:30 AM</value>
+          </Data>
+          <Data name="Name">
+            <value>Daniel Brock</value>
+          </Data>
+          <Data name="Map Display Name">
+            <value>Brock</value>
+          </Data>
+          <Data name="Device Type">
+            <value>inReach Mini 3 Plus</value>
+          </Data>
+          <Data name="IMEI">
+            <value>300052030374220</value>
+          </Data>
+          <Data name="Incident Id">
+            <value />
+          </Data>
+          <Data name="Latitude">
+            <value>34.026515</value>
+          </Data>
+          <Data name="Longitude">
+            <value>-118.760276</value>
+          </Data>
+          <Data name="Elevation">
+            <value>32.79 m from MSL</value>
+          </Data>
+          <Data name="Velocity">
+            <value>0.0 km/h</value>
+          </Data>
+          <Data name="Course">
+            <value>0.00 ° True</value>
+          </Data>
+          <Data name="Valid GPS Fix">
+            <value>True</value>
+          </Data>
+          <Data name="In Emergency">
+            <value>False</value>
+          </Data>
+          <Data name="Text">
+            <value />
+          </Data>
+          <Data name="Event">
+            <value>Tracking turned off from device.</value>
+          </Data>
+          <Data name="Device Identifier">
+            <value />
+          </Data>
+          <Data name="SpatialRefSystem">
+            <value>WGS84</value>
+          </Data>
+        </ExtendedData>
+        <Point>
+          <extrude>false</extrude>
+          <altitudeMode>absolute</altitudeMode>
+          <coordinates>-118.760276,34.026515,32.79</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark>
+        <name>Daniel Brock</name>
+        <visibility>true</visibility>
+        <description>Daniel Brock's track log</description>
+        <styleUrl>#linestyle_6613406</styleUrl>
+        <LineString>
+          <tessellate>true</tessellate>
+          <coordinates>-118.760255,34.026825,30.76
+-118.76182,34.02644,22.63
+-118.765748,34.025495,2.34
+-118.762786,34.025645,10.46
+-118.758795,34.025688,6.4
+-118.75592,34.02631,0.31
+-118.755898,34.026331,0.31
+-118.759353,34.025656,6.4
+-118.765726,34.025485,4.37
+-118.765618,34.025688,4.37
+-118.763838,34.025935,10.46
+-118.7618,34.02644,22.63
+-118.760296,34.026911,34.82
+-118.760276,34.026515,32.79</coordinates>
+        </LineString>
+      </Placemark>
+    </Folder>
+  </Document>
+</kml>

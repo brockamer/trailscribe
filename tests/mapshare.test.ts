@@ -2,7 +2,6 @@ import { describe, test, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parsePings } from "../src/adapters/location/mapshare.js";
-import type { KmlPing } from "../src/adapters/location/mapshare.js";
 
 const FIXTURE_PATH = resolve(__dirname, "fixtures/mapshare/pch-2026-05-02.kml");
 const fixtureKml = readFileSync(FIXTURE_PATH, "utf8");

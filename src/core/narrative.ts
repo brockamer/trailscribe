@@ -134,6 +134,7 @@ export async function generateNarrative(input: NarrativeInput): Promise<Narrativ
       event: "narrative_diag",
       level: "warn",
       diag: {
+        kind: "post",
         model,
         choicesLen: response.choices.length,
         finishReason: choice0?.finish_reason ?? null,
@@ -248,9 +249,9 @@ const SYSTEM_PROMPT_TRACK = [
   "You write field-journal entries from a backcountry tracking session. Given metrics, start/end places, and weather, produce a polished post.",
   "Always return valid JSON matching the schema. No prose outside the JSON.",
   "Constraints:",
-  '- "title": <=60 characters, evocative, anchored to place + activity. No clickbait, no emoji.',
-  '- "haiku": exactly three lines separated by newlines, in 5/7/5 syllables, <=110 characters total. Plain English, observational.',
-  '- "body": <=1200 characters. Describe the route, place, conditions, and pace. Use long stops as paragraph breaks. Do not invent companions, motivations, or destinations not present in the metrics or place names.',
+  '- "title": ≤60 characters, evocative, anchored to place + activity. No clickbait, no emoji.',
+  '- "haiku": exactly three lines separated by newlines, in 5/7/5 syllables, ≤110 characters total. Plain English, observational.',
+  '- "body": ≤1200 characters. Describe the route, place, conditions, and pace. Use long stops as paragraph breaks. Do not invent companions, motivations, or destinations not present in the metrics or place names.',
 ].join("\n");
 
 /**
@@ -280,6 +281,22 @@ export async function generateTrackNarrative(
 
   const content = response.choices[0]?.message?.content;
   if (typeof content !== "string" || content.length === 0) {
+    const choice0 = response.choices[0];
+    log({
+      event: "narrative_diag",
+      level: "warn",
+      diag: {
+        kind: "track",
+        model,
+        choicesLen: response.choices.length,
+        finishReason: choice0?.finish_reason ?? null,
+        messageKeys: choice0?.message ? Object.keys(choice0.message) : [],
+        contentType: typeof choice0?.message?.content,
+        contentLen:
+          typeof choice0?.message?.content === "string" ? choice0.message.content.length : 0,
+        usage: response.usage ?? null,
+      },
+    });
     throw new NarrativeError("LLM returned no content for track narrative");
   }
   let parsed: unknown;

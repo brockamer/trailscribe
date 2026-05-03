@@ -27,6 +27,7 @@ export interface Env {
   IPC_SCHEMA_VERSION: string;
   IPC_INBOUND_SENDER: string;
   IPC_INBOUND_DRY_RUN: string;
+  LOG_TRACK_PAYLOADS: string;
   RESEND_FROM_EMAIL: string;
   RESEND_FROM_NAME: string;
   JOURNAL_POST_PATH_TEMPLATE: string;
@@ -87,6 +88,7 @@ export const EnvSchema = z.object({
   IPC_SCHEMA_VERSION: z.enum(["2", "3", "4"]),
   IPC_INBOUND_SENDER: z.string().min(1),
   IPC_INBOUND_DRY_RUN: z.string(),
+  LOG_TRACK_PAYLOADS: z.string(),
   RESEND_FROM_EMAIL: z.string().email(),
   RESEND_FROM_NAME: z.string().min(1),
   JOURNAL_POST_PATH_TEMPLATE: z.string().min(1),
@@ -167,6 +169,16 @@ export function appendCostSuffix(env: Env): boolean {
  */
 export function ipcInboundDryRun(env: Env): boolean {
   return env.IPC_INBOUND_DRY_RUN.toLowerCase() === "true";
+}
+
+/**
+ * Parse LOG_TRACK_PAYLOADS. When true, `non_free_text` log lines for tracking
+ * events (messageCode 0/10/11/12) carry the full event JSON so a fixture can
+ * be reconstructed from logs during a real device session. Default off; the
+ * silent-drop policy is unchanged either way.
+ */
+export function logTrackPayloads(env: Env): boolean {
+  return env.LOG_TRACK_PAYLOADS.toLowerCase() === "true";
 }
 
 /** Parse DAILY_TOKEN_BUDGET (0 = unlimited). */

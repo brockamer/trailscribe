@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "./env.js";
-import { appendCostSuffix, imeiAllowSet, ipcInboundDryRun } from "./env.js";
+import { appendCostSuffix, imeiAllowSet, ipcInboundDryRun, logTrackPayloads } from "./env.js";
 import type { CommandResult, GarminEnvelope, GarminEvent } from "./core/types.js";
 import {
   idempotencyKey,
@@ -63,13 +63,44 @@ export function makeApp() {
       return c.text("ok", 200);
     }
 
+    // Read the raw text once so we can both parse it and capture a sample for
+    // the ipc_received diagnostic. Parsing happens after capture so even an
+    // un-parseable body is visible in logs.
+    const rawBody = await c.req.text();
     let body: unknown;
     try {
-      body = await c.req.json();
+      body = JSON.parse(rawBody);
     } catch {
-      log({ event: "bad_json", level: "warn" });
+      log({
+        event: "bad_json",
+        level: "warn",
+        bodyBytes: rawBody.length,
+        rawBodySample: rawBody.slice(0, 1024),
+      });
       return c.text("ok", 200);
     }
+
+    // Diagnostic: log envelope shape on every webhook POST so we can see what
+    // Garmin actually sends. Counts events, lists top-level keys, and snapshots
+    // the first 1KB of raw body. One log per webhook (low volume — Garmin IPC
+    // batches per-device). Not gated on any flag — this is metadata about the
+    // shape, not payload contents.
+    log({
+      event: "ipc_received",
+      level: "info",
+      bodyBytes: rawBody.length,
+      version: typeof (body as { Version?: unknown })?.Version === "string"
+        ? (body as { Version: string }).Version
+        : null,
+      topLevelKeys:
+        body && typeof body === "object" && !Array.isArray(body)
+          ? Object.keys(body as Record<string, unknown>)
+          : [],
+      eventsLength: Array.isArray((body as { Events?: unknown })?.Events)
+        ? (body as { Events: unknown[] }).Events.length
+        : null,
+      rawBodySample: rawBody.slice(0, 1024),
+    });
 
     if (!isGarminEnvelope(body)) {
       log({ event: "bad_envelope", level: "warn" });
@@ -119,12 +150,21 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
     if (event.messageCode === 4) {
       log({ event: "sos_received_ignored", level: "warn", imei: event.imei, key });
     } else {
+      const isTrack =
+        event.messageCode === 0 ||
+        event.messageCode === 10 ||
+        event.messageCode === 11 ||
+        event.messageCode === 12;
       log({
         event: "non_free_text",
         level: "info",
         imei: event.imei,
         messageCode: event.messageCode,
         key,
+        // Diagnostic: when LOG_TRACK_PAYLOADS=true, attach the full tracking
+        // event so a fixture can be reconstructed from logs. Silent-drop
+        // policy is unchanged — this only affects the log line's content.
+        ...(isTrack && logTrackPayloads(env) ? { payload: event } : {}),
       });
     }
     return;

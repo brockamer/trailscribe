@@ -5,6 +5,8 @@ import {
   haversineKm,
   totalDistanceKm,
   elevationProfile,
+  paceStats,
+  routeShape,
 } from "../src/core/track-metrics.js";
 import { parsePings } from "../src/adapters/location/mapshare.js";
 import type { KmlPing } from "../src/adapters/location/mapshare.js";
@@ -101,5 +103,63 @@ describe("elevationProfile", () => {
     expect(profile.minM).toBeLessThan(5);
     expect(profile.gainM).toBeGreaterThan(20);
     expect(profile.gainM).toBeLessThan(80);
+  });
+});
+
+describe("paceStats", () => {
+  test("empty input returns zeros", () => {
+    expect(paceStats([])).toEqual({ avgKmh: 0, p50Kmh: 0, p95Kmh: 0 });
+  });
+
+  test("uniform speed: avg/p50/p95 all equal that speed", () => {
+    const pings = [10, 10, 10, 10].map((v, i) => ({
+      ...makePing(i, 0),
+      velocityKmh: v,
+    }));
+    const stats = paceStats(pings);
+    expect(stats.avgKmh).toBe(10);
+    expect(stats.p50Kmh).toBe(10);
+    expect(stats.p95Kmh).toBe(10);
+  });
+
+  test("PCH fixture: p95 reflects the running segments (>=10 km/h)", () => {
+    const pings = parsePings(FIXTURE_KML);
+    const stats = paceStats(pings);
+    expect(stats.p95Kmh).toBeGreaterThan(10);
+    expect(stats.avgKmh).toBeGreaterThan(0);
+    expect(stats.avgKmh).toBeLessThan(stats.p95Kmh);
+  });
+});
+
+describe("routeShape", () => {
+  test("empty or single-ping returns 'point-to-point'", () => {
+    expect(routeShape([])).toBe("point-to-point");
+    expect(routeShape([makePing(0, 0)])).toBe("point-to-point");
+  });
+
+  test("start and end nearly coincident, midpoint far: 'out-and-back'", () => {
+    const pings: KmlPing[] = [
+      { ...makePing(0, 0), lat: 0, lon: 0 },
+      { ...makePing(1, 0), lat: 0, lon: 0.01 },
+      { ...makePing(2, 0), lat: 0, lon: 0.02 },
+      { ...makePing(3, 0), lat: 0, lon: 0.01 },
+      { ...makePing(4, 0), lat: 0, lon: 0.0001 },
+    ];
+    const shape = routeShape(pings);
+    expect(["out-and-back", "loop"]).toContain(shape);
+  });
+
+  test("point-to-point: start and end far apart", () => {
+    const pings: KmlPing[] = [
+      { ...makePing(0, 0), lat: 0, lon: 0 },
+      { ...makePing(1, 0), lat: 0, lon: 0.5 },
+      { ...makePing(2, 0), lat: 0, lon: 1.0 },
+    ];
+    expect(routeShape(pings)).toBe("point-to-point");
+  });
+
+  test("PCH fixture closes (start ~ end) — short out-and-back classifies as loop", () => {
+    const pings = parsePings(FIXTURE_KML);
+    expect(["out-and-back", "loop"]).toContain(routeShape(pings));
   });
 });

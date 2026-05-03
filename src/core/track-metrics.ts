@@ -82,3 +82,58 @@ function medianSmooth(values: number[], window: number): number[] {
     return slice[Math.floor(slice.length / 2)];
   });
 }
+
+export interface PaceStats {
+  avgKmh: number;
+  p50Kmh: number;
+  p95Kmh: number;
+}
+
+/** Speed quantiles using the per-ping velocityKmh that Garmin already populates. */
+export function paceStats(pings: KmlPing[]): PaceStats {
+  if (pings.length === 0) return { avgKmh: 0, p50Kmh: 0, p95Kmh: 0 };
+  const speeds = pings.map((p) => p.velocityKmh).sort((a, b) => a - b);
+  const avg = speeds.reduce((s, v) => s + v, 0) / speeds.length;
+  return {
+    avgKmh: avg,
+    p50Kmh: percentile(speeds, 0.5),
+    p95Kmh: percentile(speeds, 0.95),
+  };
+}
+
+function percentile(sortedAsc: number[], q: number): number {
+  if (sortedAsc.length === 0) return 0;
+  if (sortedAsc.length === 1) return sortedAsc[0];
+  const idx = q * (sortedAsc.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sortedAsc[lo];
+  return sortedAsc[lo] + (sortedAsc[hi] - sortedAsc[lo]) * (idx - lo);
+}
+
+export type RouteShape = "out-and-back" | "loop" | "point-to-point";
+
+/**
+ * Heuristic classifier from start/end/midpoint geometry.
+ *
+ *   start ~ end AND midpoint far from start  -> "out-and-back"
+ *   start ~ end (no clear far midpoint)      -> "loop"
+ *   start far from end                       -> "point-to-point"
+ */
+export function routeShape(pings: KmlPing[]): RouteShape {
+  if (pings.length < 2) return "point-to-point";
+  const start = pings[0];
+  const end = pings[pings.length - 1];
+  const mid = pings[Math.floor(pings.length / 2)];
+
+  const startEndKm = haversineKm(start.lat, start.lon, end.lat, end.lon);
+  const startMidKm = haversineKm(start.lat, start.lon, mid.lat, mid.lon);
+
+  const LOOP_CLOSURE_KM = 0.1;
+  const FAR_KM = 1.0;
+
+  if (startEndKm < LOOP_CLOSURE_KM) {
+    return startMidKm >= FAR_KM ? "out-and-back" : "loop";
+  }
+  return "point-to-point";
+}

@@ -137,3 +137,92 @@ export function routeShape(pings: KmlPing[]): RouteShape {
   }
   return "point-to-point";
 }
+
+export type ActivityHint =
+  | "walk"
+  | "hike"
+  | "run"
+  | "bike"
+  | "drive"
+  | "mixed";
+
+/**
+ * Classify activity by the band that holds the most non-zero pings.
+ *
+ *   walk:  0-5 km/h
+ *   hike:  5-9 km/h
+ *   run:   9-15 km/h
+ *   bike:  15-35 km/h
+ *   drive: 35+ km/h
+ *
+ * Returns "mixed" if no band gets a clear majority (>=40% of moving pings).
+ */
+export function activityHint(pings: KmlPing[]): ActivityHint {
+  if (pings.length === 0) return "mixed";
+  const moving = pings.filter((p) => p.velocityKmh > 1);
+  if (moving.length === 0) return "mixed";
+
+  const counts: Record<Exclude<ActivityHint, "mixed">, number> = {
+    walk: 0,
+    hike: 0,
+    run: 0,
+    bike: 0,
+    drive: 0,
+  };
+  for (const p of moving) {
+    if (p.velocityKmh < 5) counts.walk++;
+    else if (p.velocityKmh < 9) counts.hike++;
+    else if (p.velocityKmh < 15) counts.run++;
+    else if (p.velocityKmh < 35) counts.bike++;
+    else counts.drive++;
+  }
+
+  const sorted = (
+    Object.entries(counts) as Array<[Exclude<ActivityHint, "mixed">, number]>
+  ).sort(([, a], [, b]) => b - a);
+  const [topName, topCount] = sorted[0];
+  if (topCount / moving.length >= 0.4) return topName;
+  return "mixed";
+}
+
+export interface TrackMetrics {
+  pingCount: number;
+  startedAt: number;
+  closedAt: number;
+  durationSeconds: number;
+  distanceKm: number;
+  pace: PaceStats;
+  elevation: ElevationProfile;
+  routeShape: RouteShape;
+  activityHint: ActivityHint;
+}
+
+/** Aggregate every metric the narrative pipeline needs into one record. */
+export function computeMetrics(pings: KmlPing[]): TrackMetrics {
+  if (pings.length === 0) {
+    return {
+      pingCount: 0,
+      startedAt: 0,
+      closedAt: 0,
+      durationSeconds: 0,
+      distanceKm: 0,
+      pace: { avgKmh: 0, p50Kmh: 0, p95Kmh: 0 },
+      elevation: { gainM: 0, lossM: 0, minM: 0, maxM: 0 },
+      routeShape: "point-to-point",
+      activityHint: "mixed",
+    };
+  }
+  const startedAt = pings[0].t;
+  const closedAt = pings[pings.length - 1].t;
+  return {
+    pingCount: pings.length,
+    startedAt,
+    closedAt,
+    durationSeconds: Math.round((closedAt - startedAt) / 1000),
+    distanceKm: totalDistanceKm(pings),
+    pace: paceStats(pings),
+    elevation: elevationProfile(pings),
+    routeShape: routeShape(pings),
+    activityHint: activityHint(pings),
+  };
+}

@@ -7,6 +7,8 @@ import {
   elevationProfile,
   paceStats,
   routeShape,
+  activityHint,
+  computeMetrics,
 } from "../src/core/track-metrics.js";
 import { parsePings } from "../src/adapters/location/mapshare.js";
 import type { KmlPing } from "../src/adapters/location/mapshare.js";
@@ -161,5 +163,74 @@ describe("routeShape", () => {
   test("PCH fixture closes (start ~ end) — short out-and-back classifies as loop", () => {
     const pings = parsePings(FIXTURE_KML);
     expect(["out-and-back", "loop"]).toContain(routeShape(pings));
+  });
+});
+
+describe("activityHint", () => {
+  test("empty input returns 'mixed'", () => {
+    expect(activityHint([])).toBe("mixed");
+  });
+
+  test("walking pace dominant: 'walk'", () => {
+    const pings = Array.from({ length: 20 }, (_, i) => ({
+      ...makePing(i, 0),
+      velocityKmh: 4,
+    }));
+    expect(activityHint(pings)).toBe("walk");
+  });
+
+  test("hiking pace dominant: 'hike'", () => {
+    const pings = Array.from({ length: 20 }, (_, i) => ({
+      ...makePing(i, 0),
+      velocityKmh: 7,
+    }));
+    expect(activityHint(pings)).toBe("hike");
+  });
+
+  test("running pace dominant: 'run'", () => {
+    const pings = Array.from({ length: 20 }, (_, i) => ({
+      ...makePing(i, 0),
+      velocityKmh: 11,
+    }));
+    expect(activityHint(pings)).toBe("run");
+  });
+
+  test("cycling pace: 'bike'", () => {
+    const pings = Array.from({ length: 20 }, (_, i) => ({
+      ...makePing(i, 0),
+      velocityKmh: 22,
+    }));
+    expect(activityHint(pings)).toBe("bike");
+  });
+
+  test("PCH fixture (run + walk mix): 'mixed', 'run', or 'walk'", () => {
+    const pings = parsePings(FIXTURE_KML);
+    expect(["mixed", "run", "walk"]).toContain(activityHint(pings));
+  });
+});
+
+describe("computeMetrics", () => {
+  test("PCH fixture produces a populated TrackMetrics object", () => {
+    const pings = parsePings(FIXTURE_KML);
+    const metrics = computeMetrics(pings);
+
+    expect(metrics.pingCount).toBe(14);
+    expect(metrics.startedAt).toBe(Date.parse("2026-05-02T15:51:30Z"));
+    expect(metrics.closedAt).toBe(Date.parse("2026-05-02T16:24:30Z"));
+    expect(metrics.durationSeconds).toBeGreaterThan(1900);
+    expect(metrics.durationSeconds).toBeLessThan(2100);
+    expect(metrics.distanceKm).toBeGreaterThan(1.0);
+    expect(metrics.distanceKm).toBeLessThan(4.0);
+    expect(["out-and-back", "loop"]).toContain(metrics.routeShape);
+    expect(metrics.activityHint).toBeDefined();
+    expect(metrics.elevation.maxM).toBeGreaterThan(25);
+    expect(metrics.pace.p95Kmh).toBeGreaterThan(0);
+  });
+
+  test("empty input returns a zeroed TrackMetrics", () => {
+    const m = computeMetrics([]);
+    expect(m.pingCount).toBe(0);
+    expect(m.distanceKm).toBe(0);
+    expect(m.durationSeconds).toBe(0);
   });
 });

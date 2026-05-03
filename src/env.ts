@@ -12,11 +12,14 @@ export interface Env {
   TS_LEDGER: KVNamespace;
   TS_CONTEXT: KVNamespace;
   TS_CACHE: KVNamespace;
+  TS_TRACKS: KVNamespace;
 
   // Vars (non-secret)
   TRAILSCRIBE_ENV: string;
   GOOGLE_MAPS_BASE: string;
   MAPSHARE_BASE: string;
+  TRACK_LOOKBACK_HOURS: string;
+  TRACK_NARRATIVE_BODY_MAX: string;
   LLM_BASE_URL: string;
   LLM_MODEL: string;
   LLM_INPUT_COST_PER_1K: string;
@@ -51,6 +54,7 @@ export interface Env {
   GITHUB_JOURNAL_BRANCH: string;
   ADDRESS_BOOK_JSON: string;
   IMAGE_API_KEY: string;
+  MAPSHARE_KEY: string;
 }
 
 /**
@@ -73,10 +77,13 @@ export const EnvSchema = z.object({
   TS_LEDGER: KVNamespaceLike,
   TS_CONTEXT: KVNamespaceLike,
   TS_CACHE: KVNamespaceLike,
+  TS_TRACKS: KVNamespaceLike,
 
   TRAILSCRIBE_ENV: z.string().min(1),
   GOOGLE_MAPS_BASE: z.string().url(),
   MAPSHARE_BASE: z.string(),
+  TRACK_LOOKBACK_HOURS: z.string(),
+  TRACK_NARRATIVE_BODY_MAX: z.string(),
   LLM_BASE_URL: z.string().url(),
   LLM_MODEL: z.string().min(1),
   LLM_INPUT_COST_PER_1K: z.string(),
@@ -126,6 +133,7 @@ export const EnvSchema = z.object({
     }
   }),
   IMAGE_API_KEY: z.string().min(8),
+  MAPSHARE_KEY: z.string().min(1),
 });
 
 /**

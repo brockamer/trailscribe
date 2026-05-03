@@ -1,9 +1,9 @@
 # Tracking Session Artifacts — Design Spec
 
-**Status:** Draft, pending review — **blocked on Garmin Pro Support reply** (see §0)
+**Status:** Draft, pending review. **Mode B (MapShare pull-on-close) confirmed canonical 2026-05-03.**
 **Author:** Claude (Opus 4.7) with Brock Amer
-**Date:** 2026-05-01 (updated 2026-05-03 with empirical findings — see §0 and §13)
-**Related:** PRD §9 Roadmap, Epic #99 (Phase 3 — DO + D1), Epic-candidate (this spec → new epic)
+**Date:** 2026-05-01 (rewritten 2026-05-03 around MapShare data source — see §0, §13.7)
+**Related:** PRD §9 Roadmap, Epic #99 (Phase 3 — DO + D1, **dependency dropped**), Epic-candidate (this spec → its own new epic)
 
 ---
 
@@ -41,25 +41,25 @@ The **2026-05-02 PCH/Malibu session** (~50 min, real movement: 0.25mi run + beac
 
 External research (2026-05-03 via Perplexity) confirmed: production integrations (CalTopo, GSatTrack, NCAR's `inreach-nodeorm`, j-arens' `garmin-ipc`) DO receive tracking positions via IPC Outbound somehow — but none publicly document the exact mechanism, and the official IPC_Outbound.pdf v2.0.8 documents *no* tenant-level toggle for `messageCode: 0` enablement. The MapShare KML/JSON feed at `share.garmin.com/<key>` is a documented alternative tracking-data surface used by many integrations.
 
-**This spec is therefore presenting two architectural alternatives** (§5.0) and the choice between them depends on Garmin's reply. Until that reply arrives, the spec is in draft.
+**Resolution (2026-05-03):** validated MapShare KML returns the full breadcrumb stream — see §13.7 for the verified 14-Placemark dump from the 2026-05-02 PCH session. **The spec now uses MapShare as the canonical tracking-data source** (Mode B). The Stop Track event from IPC remains the trigger; the breadcrumb data comes from the KML feed. See §5 / §6 for the (much simpler) implementation.
 
 ---
 
 ## 1. Goal
 
-Turn the *tracking ping stream* that a Garmin inReach already emits during an active tracking session into a polished, AI-narrated journal artifact published on session end — without any operator-side ceremony beyond turning tracking on and off.
+Turn a Garmin inReach tracking session into a polished, AI-narrated journal artifact published on session end — without any operator-side ceremony beyond turning tracking on and off.
 
-Today the Worker silent-drops every tracking event (`src/app.ts:118` rejects everything that isn't `messageCode === 3`). This spec opens that path, persists the session, and produces a future-self artifact when the session closes.
+Today the Worker silent-drops every tracking event (`src/app.ts:118` rejects everything that isn't `messageCode === 3`). This spec routes `messageCode === 12` (Stop Track) to a new pipeline that fetches the session's breadcrumbs from MapShare KML, derives metrics, runs an LLM narrative, and commits a journal post.
 
 **Audience for v1:** the operator, post-trip. ("Future-self artifacts" — chosen 2026-05-01.)
 **Out of audience for v1:** watchers / family / followers. Watcher digests via Substack/Posthaven/RSS-style fan-out are a separate, follow-on epic.
 
 ## 2. In Scope (v1)
 
-- Ingest `messageCode` 0 (Position Report), 10 (Start Track), 11 (Track Interval), 12 (Stop Track) instead of dropping them.
-- Persist a per-IMEI tracking session: Start → N pings → Stop, idempotent under Garmin retries.
-- On Stop Track (or session timeout), derive metrics from the position stream and generate an LLM-narrated journal post.
+- Route `messageCode === 12` (Stop Track) to a new pipeline; log `messageCode` 10/11 for diagnostics but don't act on them.
+- On Stop Track, fetch the session's breadcrumb stream from MapShare KML, derive metrics, run an LLM narrative.
 - Commit the post to the existing journal repo via the existing `publishPost` path, with an extended frontmatter shape that captures the trajectory.
+- Persist a closed-session record (raw KML + derived metrics) to KV for future re-derivation.
 - Reply to the operator with a single confirmation SMS containing the journal URL.
 
 ## 3. Out of Scope (v1) — with rationale
@@ -72,316 +72,377 @@ Today the Worker silent-drops every tracking event (`src/app.ts:118` rejects eve
 - **Session-aware `!brief`** ("what have I done today" computed from the active track). Strictly Operator-Facing audience (Option A from brainstorm) — defer to a follow-up that can reuse the storage built here.
 - **Map renders / GPX export / route GeoJSON.** v1 uses lat/lon arrays in frontmatter and a Google-Maps-link of waypoints; rendered map images come later.
 
-## 4. Source-of-truth: what each event actually carries
+## 4. Source-of-truth: what data we actually have
 
-From `materials/Garmin IPC Outbound.txt` (V2 schema), every event has the same envelope. The fields that matter to this spec:
+Per §0's empirical finding, this spec is built around **two complementary data sources** — IPC Outbound (control plane) and MapShare KML (data plane).
 
-| Code | Name | What it tells us |
+### 4.1 IPC Outbound — control plane (already wired)
+
+These messageCodes are confirmed to flow over our existing webhook (`/garmin/ipc`) reliably:
+
+| Code | Name | Role in this spec |
 |---|---|---|
-| `0` | Position Report | A breadcrumb. `point.{latitude, longitude, altitude, gpsFix, course, speed}` + `status.{lowBattery, intervalChange}`. |
-| `10` | Start Track | Tracking session began on the device. |
-| `11` | Track Interval | Operator changed the tracking interval mid-session. `status.intervalChange` = new interval in seconds. |
-| `12` | Stop Track | Tracking session ended cleanly. |
+| `10` | Start Track | Could trigger session-open work, but we don't *need* it (see §6) |
+| `11` | Track Interval | Power-saving / interval-change status; informational |
+| `12` | **Stop Track** | **Trigger for the entire pipeline** — session ended, fetch KML now |
 
-**Speed** is over-ground in km/h. **Course** is true bearing in degrees (0-360). **gpsFix:** 0=no fix, 1=2D, 2=3D, 3=3D+. **lowBattery:** 0=ok, 1=below 25%, 2=not reported.
+Per-event envelope shape (V4): `{Version: "4.0", Events: [<event>]}` where each event has `imei`, `messageCode`, `timeStamp`, `point.{latitude, longitude, altitude, gpsFix, course, speed}`, `status.{lowBattery, intervalChange}`, and (V3+) `transportMode: "Internet" | "Satellite"`.
 
-A test-fixture for a position report already exists at `tests/fixtures/garmin/breadcrumb-position-report.json` — same envelope as a Free Text event. No new auth, no new transport.
+### 4.2 MapShare KML — data plane (the breadcrumb stream)
+
+`https://share.garmin.com/Feed/Share/<MAPSHARE_KEY>?d1=<startISO>&d2=<endISO>` returns a KML document with:
+
+- **N `<Placemark>` elements**, one per breadcrumb position. Each has:
+  - `<TimeStamp><when>` — ISO 8601 UTC
+  - `<ExtendedData>` with named `<Data name="X"><value>Y</value></Data>` fields:
+    - `Latitude`, `Longitude` — decimal degrees
+    - `Elevation` — `"30.76 m from MSL"` (numeric value + unit suffix)
+    - `Velocity` — `"12.2 km/h"` (numeric value + unit suffix)
+    - `Course` — `"247.50 ° True"` (numeric value + unit suffix)
+    - `Valid GPS Fix` — `"True" | "False"`
+    - `IMEI`, `Map Display Name`, `Device Type`, `Name` (operator), `Time UTC`, `Time` (local)
+- **One trailing `<Placemark>` with `<LineString><coordinates>`** containing all points as `lon,lat,alt\n` triples — pre-computed route geometry, no derivation needed.
+- Auth: **none for public MapShare; password-protected MapShare adds basic auth or query string**. Our v1 setting is operator's choice (recommended: password-protected so the feed isn't public).
+
+**Verified 2026-05-03** with `curl https://share.garmin.com/Feed/Share/trailscribe?d1=...&d2=...` for the 2026-05-02 PCH session: 14 individual Placemarks + 1 LineString summary, ~37KB total. See §13.
+
+### 4.3 Why MapShare is the canonical data source
+
+- **It actually contains the data.** IPC Outbound mc 0 is empirically absent for our tenant.
+- **The schema is richer than IPC mc 0 would have been.** MapShare provides explicit `Valid GPS Fix` per point, units on every numeric field, a pre-computed LineString, and operator/device metadata baked in.
+- **Pull-on-close is architecturally simpler** than live ingestion. Single HTTP fetch at session end instead of per-IMEI Durable Object holding live session state.
+- **Decouples this spec from Phase 3** (DO + D1 storage migration). Mode B doesn't need a per-IMEI DO; the existing KV stores are sufficient.
 
 ## 5. Architectural choices
 
-### 5.0 Data source — three modes (added 2026-05-03 per §0 finding)
+### 5.1 Mode B (MapShare pull-on-close) is canonical
 
-The design now branches on Garmin's reply. Until then, the spec carries three modes; on the day Garmin answers we collapse to one.
+The original spec considered three modes:
 
-**Mode A — IPC ping stream (the original design).** Assumes mc 0 events flow over IPC Outbound. DO ingests them live, accumulates the session, publishes on Stop Track. Everything in §5.2-§6.7 below is written for this mode. **Viable only if Garmin Pro Support confirms mc 0 is or can be enabled for our tenant + Internet transport.**
+- **Mode A — IPC ping stream (live ingestion).** Empirically not viable: mc 0 events don't reach our Worker (§0).
+- **Mode B — MapShare pull-on-close.** Verified working 2026-05-03 (§13.7). **Selected.**
+- **Mode C — Bookend-only (start/end/duration only).** Degraded fallback. No longer needed.
 
-**Mode B — MapShare pull-on-close.** Skip live ingestion entirely. On Stop Track (mc 12) hitting the Worker, asynchronously fetch the MapShare KML feed at `https://share.garmin.com/Feed/Share/<MAPSHARE_KEY>?d1=<startedAt>&d2=<closedAt>`, parse the `<Placemark>` elements into a ping array, then run the same metrics → narrative → publish pipeline. **No DO needed for ingestion; the existing Phase 3 DO scope shrinks back to its original "idempotency + context" purpose.** Trades real-time-ish ingestion for one HTTP fetch at session end. Viable today (no Garmin support dependency) IF MapShare is enabled for the device AND the feed contains the breadcrumbs from `transportMode: "Internet"` sessions.
+Mode B beats Mode A even on architectural grounds: a single HTTP fetch at session close is simpler than a per-IMEI Durable Object holding live state, kills the missing-Stop-Track timeout problem (we just pull whatever's in MapShare), and decouples this spec from Phase 3 (#99). The KML schema is also richer than IPC mc 0 would have been (named fields, units, GPS-fix flags, pre-computed LineString).
 
-**Mode C — Bookend-only (what we know works).** Use only Start Track (10) + Stop Track (12) events that already arrive reliably. The "narrative" becomes start_place → end_place → duration → straight-line distance, with no elevation profile, pace, route shape, or stops/breaks. Smallest scope, immediately buildable, but a much thinner product. Acceptable as a fallback if both A and B fail.
+If Garmin Pro Support later confirms mc 0 enablement, the live-IPC data source can replace MapShare behind the same `parsePings()`-equivalent abstraction with no downstream changes.
 
-**Decision rule:**
-- If Garmin Pro Support says "yes, mc 0 enabled" → **Mode A** (original spec body applies)
-- If they say "no, breadcrumbs only via MapShare" + MapShare KML contains real movement data → **Mode B**
-- If both fail → **Mode C** as a degraded but shippable v1
+### 5.2 Trigger model — Stop Track triggers, MapShare delivers
 
-Mode B is independently worth validating *before* Garmin replies — pull yesterday's PCH session window from MapShare and check whether the breadcrumbs are there. If yes, Mode B is viable regardless of what Garmin says (and is arguably the cleaner architecture: pull-on-close eliminates the live-ingestion DO from the design).
+```
+Garmin device                      Worker                    External
+┌─────────────┐                ┌─────────────┐         ┌──────────────┐
+│ Track on    │                │             │         │              │
+│ ┌──────────►│  mc 10 Start   │ logs only   │         │              │
+│ │           │ ──────────────►│             │         │              │
+│ │ (during   │                │             │         │              │
+│ │  session, │  mc 11 Interval│ logs only   │         │              │
+│ │  Garmin   │ ──────────────►│             │         │              │
+│ │  posts no │                │             │         │              │
+│ │  mc 0 to  │                │             │         │              │
+│ │  us; data │                │             │         │              │
+│ │  goes to  │                │             │         │ MapShare     │
+│ │  MapShare)│ ───────────────────────────────────────►│ accumulates  │
+│ │           │                │             │         │ breadcrumbs  │
+│ │           │                │             │         │              │
+│ Track off   │  mc 12 Stop    │ ◄── trigger │         │              │
+│             │ ──────────────►│             │         │              │
+│             │                │ ┌─────────────────────►│  GET KML    │
+│             │                │ │           │         │              │
+│             │                │ │ ◄────────────────────│  N pings +  │
+│             │                │ │           │         │  LineString  │
+│             │                │ ▼           │         │              │
+│             │                │ parse       │         │              │
+│             │                │ → metrics   │         │              │
+│             │                │ → narrative │         │              │
+│             │                │ → publish   │         │ GitHub Pages │
+│             │                │ ──────────────────────►│ (commit md)  │
+│             │                │             │         │              │
+│             │  IPC Inbound   │ ◄── reply   │         │              │
+│             │ ◄──────────────│ "Track      │         │              │
+│             │                │  posted:    │         │              │
+│             │                │  ...URL"    │         │              │
+└─────────────┘                └─────────────┘         └──────────────┘
+```
 
-### 5.1 Storage approach — three options
+The whole pipeline is reactive: nothing happens until mc 12 arrives. There's no DO holding session state, no alarm timer, no live ingestion path. The Worker doesn't even need to know tracking is in progress.
 
-**A. KV-only, pre-Phase-3.** Add a `TS_TRACKS` KV namespace; key `track:<imei>:<sessionId>`; append-on-write to a JSON array of pings. Simple but inherits KV's eventual-consistency caveat (`src/core/context.ts:30-34` already documents the read-modify-write race) — much worse for tracking because pings arrive on a 2-minute cadence, sometimes faster on interval change. A burst of replays after a brief Worker outage could lose pings.
+### 5.3 Storage — KV only
 
-**B. Build on the Phase-3 Durable Object as the forcing function.** Phase 3 (epic #99) was filed as an infra migration. Extend its scope: the per-IMEI DO that already serializes idempotency-write contention also owns the active tracking session. DO storage is strongly consistent and serialized — exactly the right semantics for an append-only ping stream. The DO holds the in-progress session; on Stop Track it flushes a record to D1 (the same D1 instance the Phase-3 ledger migration is about to provision) and publishes the post.
+A single new KV namespace `TS_TRACKS` storing closed-session records, keyed by `track:<imei>:<sessionId>` where `sessionId = sha256(imei + ":" + closedAtMs)`. TTL: 1 year (long enough for v2 re-derivation, short enough to bound storage). Existing KV is sufficient — no need to wait for Phase 3 D1.
 
-**C. KV now, migrate later.** Ship v1 on KV; migrate to DO when Phase 3 lands. Carries migration cost twice and risks a partial-session at cutover.
+Stored shape (`TrackSessionRecord`):
 
-**Recommended: B.** Phase 3 is already in-flight (milestone #5, due 2026-05-15) and its scope is being extended for storage migration anyway. Folding tracking-session ownership into the same per-IMEI DO is the natural unit of work, gives us the consistency guarantees this feature genuinely needs, and avoids a second migration. The cost is that this spec depends on Phase 3 landing; the upside is that it gives Phase 3 a *product* deliverable, not just an infra one.
+```ts
+interface TrackSessionRecord {
+  sessionId: string;
+  imei: string;
+  startedAt: number;        // ms epoch (from KML first-Placemark timestamp)
+  closedAt: number;         // ms epoch (from mc 12 timeStamp)
+  closeReason: "stop";      // future: "timeout" if we add safety nets
+  pingCount: number;
+  distanceKm: number;
+  elevationGainM: number;
+  durationSeconds: number;
+  journalUrl: string | null;  // populated post-publish
+  rawKml: string;            // verbatim KML response, for v2 re-derivation
+}
+```
 
-**Timing coupling — explicit:** if Phase 3 slips, this spec slips with it. That risk is acceptable given Phase 3 is already on the active milestone and the alternative (option A or C) burns engineering cost building a KV path we'd then throw away. If Phase 3 timing becomes uncertain, revisit and consider option A as a temporary path. (Tracked as an open question in §11.)
+`rawKml` is kept verbatim (~5-50 KB per session) so a future v2 with better metrics, persona styles, or map renders can re-derive without re-fetching from Garmin.
 
-### 5.2 Session boundaries
+### 5.4 Edge cases handled by the design (vs. needing explicit code)
 
-**Cleanest case:** `Start Track → … → Stop Track`, both received exactly once. The DO opens a session on Start, accumulates Position Reports, closes and publishes on Stop.
+The trigger-and-pull architecture eliminates most of the original Mode A complexity:
 
-**Real-world cases we have to handle:**
+| Edge case | How Mode B handles it |
+|---|---|
+| Missing Start Track | Irrelevant — we don't act on Start. KML feed reveals the actual session window. |
+| Missing Stop Track | Session is never published. Operator can manually trigger replay (future feature) or notice "no track posted" and investigate. Acceptable v1 behavior. |
+| Duplicate Stop Track | Idempotent at the existing `withCheckpoint` layer — second mc 12 finds an already-published session and short-circuits. |
+| Position Report after Stop | We don't ingest Position Reports — non-issue. |
+| Track Interval changes | Visible in `intervalChange` field of mc 11 events (logged for diagnostics) but not load-bearing for the narrative. |
+| Worker crash mid-publish | KV record survives; replay finds an unpublished session and retries. |
 
-- **Missing Start Track.** Position Reports arrive without a preceding Start. Auto-open a session on the first Position Report seen for an IMEI without an active session. Edge: device was tracking before the Worker came online.
-- **Missing Stop Track.** Battery dies, device crashes, operator just turns off without proper Stop. Resolved by a **session-idle timeout**: if no ping arrives within `TRACK_SESSION_IDLE_TIMEOUT_SECONDS` (proposed default: 30 min — long enough to absorb a 10-min interval × 3, short enough that a session ends in the same day it started), the DO auto-closes and publishes. Implemented with Workers' DO `setAlarm` API — no polling cron needed.
-- **Duplicate Start Track.** Garmin retries until 200 OK. Idempotent under our existing key. If a Start arrives while a session is already open, log and ignore.
-- **Stop Track with no open session.** Log and ignore (Garmin retried Stop after we'd already auto-closed).
-- **Track Interval mid-session.** Record the interval change in the session record so derived metrics (cadence-per-leg) reflect it; not load-bearing for v1 narrative.
-- **Position Report after Stop.** Likely a retry from before the Stop. Idempotent key handles dedup.
+### 5.5 One post per session
 
-### 5.3 One post per session vs. many
-
-**Choice for v1: one post per session, published on close.** Maps directly to the existing `publishPost` shape (no new commit semantics). Multi-waypoint narratives (a post for the trailhead, one for the summit, one for camp) are a richer surface but require deciding how subsequent commits relate to the first — defer.
+Same as the original spec: one published markdown per closed session. Multi-waypoint narratives are deferred.
 
 ## 6. Detailed design
 
 ### 6.1 Webhook ingestion change
 
-`src/app.ts:118-131` is the silent-drop block. Replace with:
+`src/app.ts` currently silent-drops everything that isn't `messageCode === 3`. Change: route `messageCode === 12` (Stop Track) to a new handler. Other tracking codes (10, 11) get logged but not acted on.
 
 ```ts
 if (event.messageCode === 3) {
   // existing free-text path unchanged
-} else if (event.messageCode === 0 || event.messageCode === 10 ||
-           event.messageCode === 11 || event.messageCode === 12) {
-  await ingestTrackEvent(event, env, key);
+} else if (event.messageCode === 12) {
+  // Trigger the tracking-session-publish pipeline.
+  await handleStopTrack(event, env, key);
 } else if (event.messageCode === 4) {
-  log({ event: "sos_received_ignored", ... }); // unchanged
+  log({ event: "sos_received_ignored", ... });   // unchanged
 } else {
-  log({ event: "non_tracked_message_code", ... }); // unchanged for 64/66/etc.
+  // Includes mc 10, 11, 20, 21, etc. — log only, no action.
+  log({ event: "non_free_text", ... });          // existing behavior preserved
 }
 ```
 
-`ingestTrackEvent` lives in a new module `src/core/tracking.ts` and routes the event to the per-IMEI DO. Idempotency for tracking events uses the same composite key (`imei + timeStamp + messageCode + content_hash`) — Position Reports with empty `freeText` hash to a stable key per `(imei, timeStamp)`, so Garmin retries dedup naturally.
-
-### 6.2 Per-IMEI Durable Object — extended responsibilities
-
-(Pre-existing Phase-3 scope: serialize idempotency writes, hold the rolling context window.)
-
-**New responsibilities for this spec:**
-
-- `openSession(startEvent)` — creates a session record with `sessionId = sha256(imei + ":" + startEvent.timeStamp)`, opens the alarm timer.
-- `appendPing(positionEvent)` — appends to the session's ping array; resets the alarm timer.
-- `recordIntervalChange(event)` — appends to a leg-boundary array.
-- `closeSession(reason: "stop" | "timeout")` — finalizes the record, calls the publish pipeline, clears state.
-- `alarm()` — DO-internal handler; calls `closeSession("timeout")`.
-
-**Storage shape inside the DO:**
+`handleStopTrack` lives in a new module `src/core/tracking.ts`:
 
 ```ts
-interface ActiveSession {
-  sessionId: string;
-  imei: string;
-  startedAt: number;        // ms epoch
-  lastPingAt: number;
-  pings: Array<{
-    t: number;              // ms epoch
-    lat: number; lon: number; alt?: number;
-    course?: number; speed?: number;
-    fix?: number;
-    lowBattery?: number;
-  }>;
-  intervals: Array<{ t: number; intervalSeconds: number }>;
-  startEvent: GarminEvent;  // kept for diag
+export async function handleStopTrack(
+  event: GarminEvent,
+  env: Env,
+  idemKey: string,
+): Promise<void> {
+  await withCheckpoint(env, idemKey, "publish_track", async () => {
+    // 1. Define session window (look back N hours from Stop)
+    const closedAt = event.timeStamp;
+    const startedAt = closedAt - TRACK_LOOKBACK_HOURS * 3_600_000;
+
+    // 2. Fetch + parse KML
+    const kml = await fetchMapShareKml(env, startedAt, closedAt);
+    const pings = parsePings(kml);
+    if (pings.length === 0) {
+      log({ event: "track_no_pings", level: "warn", imei: event.imei, idemKey });
+      return { skipped: "no_pings" };
+    }
+
+    // 3. Derive metrics
+    const metrics = computeMetrics(pings);
+
+    // 4. Reverse-geocode + weather (existing adapters)
+    const startPlace = await reverseGeocode(pings[0], env);
+    const endPlace = await reverseGeocode(pings.at(-1)!, env);
+    const weather = await fetchWeather(midpointInTime(pings), env);
+
+    // 5. LLM narrative (extension of core/narrative.ts)
+    const narrative = await generateTrackNarrative({ pings, metrics, startPlace, endPlace, weather, env });
+
+    // 6. Publish to journal repo (existing publishPost)
+    const result = await publishTrackPost({ narrative, metrics, pings, env });
+
+    // 7. Persist record + reply
+    await storeTrackRecord(env, { ..., journalUrl: result.url });
+    await sendReply(event.imei, [`Track posted: ${formatStats(metrics)}\n${result.url}`], env);
+
+    return { sessionId, journalUrl: result.url };
+  });
 }
 ```
 
-D1 schema for closed sessions (lives alongside the Phase-3 ledger table):
+### 6.2 KML adapter — `src/adapters/location/mapshare.ts`
 
-```sql
-CREATE TABLE track_sessions (
-  session_id TEXT PRIMARY KEY,
-  imei TEXT NOT NULL,
-  started_at INTEGER NOT NULL,
-  closed_at INTEGER NOT NULL,
-  close_reason TEXT NOT NULL,           -- 'stop' | 'timeout'
-  ping_count INTEGER NOT NULL,
-  distance_km REAL,
-  elevation_gain_m REAL,
-  duration_seconds INTEGER NOT NULL,
-  journal_url TEXT,                     -- null until publish succeeds
-  raw_pings_json TEXT NOT NULL,         -- the full ping array, for re-derivation later
-  CHECK (close_reason IN ('stop', 'timeout'))
-);
-CREATE INDEX idx_track_sessions_imei_started ON track_sessions(imei, started_at DESC);
-```
-
-`raw_pings_json` is kept verbatim so a future v2 (better metrics, persona styles, map renders) can re-derive without replaying the device.
-
-### 6.3 Derived metrics — pure functions on the ping array
-
-A new module `src/core/track-metrics.ts` exports pure functions over `Ping[]`:
-
-- `totalDistanceKm(pings)` — Haversine sum between consecutive points.
-- `elevationProfile(pings)` — `{ gainM, lossM, maxM, minM }`. Apply a small smoothing window (5-point median) to reject GPS altitude noise — handheld GPS altitude is ±10-15m and would otherwise inflate gain.
-- `paceStats(pings)` — `{ avgKmh, p50Kmh, p95Kmh }` from `point.speed` (already provided per ping; no need to derive from positions).
-- `stopsAndBreaks(pings)` — clusters of ≥3 consecutive pings within 50m of each other; returns `Array<{ at, lat, lon, durationSeconds }>`. Useful as paragraph breaks in narrative.
-- `routeShape(pings)` — `"out-and-back" | "loop" | "point-to-point"` heuristic from start/end/midpoint distances.
-- `activityHint(pings)` — naive speed-distribution classifier: `"hike" | "run" | "bike" | "drive" | "mixed"` (5/10/20/40 km/h band centers). Input to the LLM, not surfaced as a hard claim.
-
-All pure, all testable with fixtures from a real session.
-
-### 6.4 Narrative pipeline — extension of `core/narrative.ts`
-
-Add a new mode to `narrative.ts`:
+Single new adapter. Two functions:
 
 ```ts
-export interface TrackNarrativeInput {
-  startedAt: number;
-  closedAt: number;
-  closeReason: "stop" | "timeout";
-  metrics: {
-    distanceKm: number;
-    durationSeconds: number;
-    elevationGainM: number;
-    avgSpeedKmh: number;
-    activityHint: string;
-    routeShape: string;
-    stops: Array<{ at: number; placeName?: string; durationSeconds: number }>;
-  };
-  startPlace?: string;       // reverse-geocoded
-  endPlace?: string;
-  midpointPlace?: string;
-  weatherSummary?: string;   // experienced weather along the route, summarized
-  env: Env;
+export async function fetchMapShareKml(
+  env: Env,
+  startedAt: number,
+  closedAt: number,
+): Promise<string> {
+  const url = `${env.MAPSHARE_BASE}/Feed/Share/${env.MAPSHARE_KEY}` +
+    `?d1=${new Date(startedAt).toISOString()}&d2=${new Date(closedAt).toISOString()}`;
+  const res = await fetch(url, { headers: { Accept: "application/vnd.google-earth.kml+xml" } });
+  if (!res.ok) throw new MapShareError(`KML fetch ${res.status}`);
+  return res.text();
 }
+
+export interface KmlPing {
+  t: number;            // ms epoch from <when>
+  lat: number; lon: number; alt: number;
+  velocityKmh: number;
+  courseDeg: number;
+  validFix: boolean;
+}
+
+export function parsePings(kml: string): KmlPing[] { ... }
 ```
 
-Output: same `{ title, haiku, body, usage }` as existing `NarrativeOutput`. `body` cap can grow from 500 → 1200 chars for track narratives — these have more to say and are not constrained by the SMS reply budget (the device only sees the URL).
+**Parsing approach:** regex-based extraction of `<Placemark>` blocks, then per-Placemark regexes for `<when>` and each `<Data name="X"><value>Y</value></Data>` field. Skip the trailing LineString Placemark (no `<TimeStamp>`). Strip unit suffixes (`" m from MSL"`, `" km/h"`, `" ° True"`) before number parsing. **Do not pull in a full XML parser** — Workers' bundle size matters and the schema is tightly constrained. ~80 lines of TypeScript total.
 
-System prompt is a third variant alongside `SYSTEM_PROMPT_WITH_NOTE` and `SYSTEM_PROMPT_NO_NOTE`. Forbids inventing companions, motivations, or destinations not present in the metrics.
+### 6.3 Derived metrics — `src/core/track-metrics.ts`
 
-**Place-name strategy:** reverse-geocode the start, the end, and the route midpoint via the existing `adapters/location/geocode.ts` (Nominatim, cached). Don't reverse-geocode every ping — wasteful and slow. Three lookups is enough for the LLM to ground a narrative.
+Pure functions over `KmlPing[]`. Same shape as the original Mode A spec, mostly unchanged:
 
-**Weather strategy:** call `adapters/location/weather.ts` once for the *midpoint* in *time* (not space) — the weather the operator most likely experienced. Don't try to reconstruct hour-by-hour weather; it's expensive and overkill for v1.
+- `totalDistanceKm(pings)` — Haversine sum (or use the LineString-derived path length if we prefer; equivalent at this resolution).
+- `elevationProfile(pings)` — `{ gainM, lossM, maxM, minM }` with 5-point median smoothing.
+- `paceStats(pings)` — `{ avgKmh, p50Kmh, p95Kmh }` from `velocityKmh` (already populated by Garmin).
+- `stopsAndBreaks(pings)` — clusters of ≥3 consecutive low-velocity pings within 50m. Useful as natural narrative paragraph breaks.
+- `routeShape(pings)` — `"out-and-back" | "loop" | "point-to-point"` from start/end/midpoint geometry.
+- `activityHint(pings)` — speed-distribution classifier: `"walk" | "hike" | "run" | "bike" | "drive" | "mixed"`. Input to the LLM, not surfaced as fact.
 
-### 6.5 Journal post format — extended frontmatter
+All testable against the 2026-05-02 PCH session fixture (will be committed at `tests/fixtures/mapshare/pch-2026-05-02.kml`).
 
-Existing `publishPost` markdown shape (from `src/adapters/publish/github-pages.ts:219-236`):
+### 6.4 Narrative pipeline — `core/narrative.ts` extension
+
+Add `generateTrackNarrative(input)` alongside `generateNarrative`. Input: pings + metrics + place names + weather. Output: same `{title, haiku, body, usage}` shape, `body` cap raised from 500 → 1200 chars (the SMS reply budget doesn't apply to track posts — operator only sees the URL).
+
+Third system-prompt variant (alongside `SYSTEM_PROMPT_WITH_NOTE` and `SYSTEM_PROMPT_NO_NOTE`):
+
+```
+You write field-journal entries from a backcountry tracking session. Constraints:
+- "title": ≤60 chars, evocative, anchored to place + activity
+- "haiku": 5/7/5 syllables, ≤110 chars, observational
+- "body": ≤1200 chars. Describe the route, place, conditions, and pace.
+  Use stops/breaks as natural paragraph breaks. Do not invent companions,
+  destinations, or motivations not present in metrics or place names.
+```
+
+Place-name strategy: reverse-geocode start + end + route midpoint via existing `adapters/location/geocode.ts`. Three lookups, all cached. Don't geocode every ping.
+
+Weather strategy: one call to existing `adapters/location/weather.ts` for the time-midpoint of the session. Don't reconstruct hour-by-hour weather.
+
+### 6.5 Journal post format
+
+Same shape as the original spec:
 
 ```yaml
 ---
 title: "..."
-date: 2026-05-01T18:30:00.000Z
-location: { lat: ..., lon: ..., place: "..." }
-weather: "..."
-tags: [trailscribe]
----
-<haiku>
-
-<body>
-```
-
-Extension for track posts — add to the existing renderer or split a `renderTrackMarkdown`:
-
-```yaml
----
-title: "..."
-date: 2026-05-01T22:14:00.000Z       # closedAt
-type: track                            # discriminator: 'post' | 'postimg' | 'track'
+date: 2026-05-02T16:24:30Z         # closedAt
+type: track
 track:
-  started_at: 2026-05-01T18:30:00Z
-  duration_seconds: 13440
-  distance_km: 8.7
-  elevation_gain_m: 412
-  activity_hint: hike
+  started_at: 2026-05-02T15:51:30Z
+  duration_seconds: 1980
+  distance_km: 1.2
+  elevation_gain_m: 60
+  activity_hint: run
   route_shape: out-and-back
-  start_place: "Onion Valley TH, Inyo NF"
-  end_place: "Onion Valley TH, Inyo NF"
-  pings: 84
+  start_place: "PCH near Pepperdine, Malibu"
+  end_place: "PCH near Pepperdine, Malibu"
+  pings: 14
   close_reason: stop
-location: { lat: <end>, lon: <end>, place: "<endPlace>" }
+location: { lat: 34.0265, lon: -118.7603, place: "<endPlace>" }
 weather: "..."
 tags: [trailscribe, track]
 ---
+
 <haiku>
 
 <body>
 
-<!-- optional v1 extra: a Google-Maps multi-waypoint URL of, say, every 10th ping -->
-[Map of route](https://www.google.com/maps/dir/...)
+[View route on map](<MAPSHARE_BASE>?d1=...&d2=...)
 ```
 
-`type: track` is the discriminator a future Jekyll/Hugo theme can switch on to render differently from a regular `!post`.
+The map link points back to the user's MapShare page with the session's time window pre-filtered. Rendering the actual map (static image via Mapbox/Stadia) is deferred to v2.
 
 ### 6.6 Reply to the device
 
-On successful publish, send a single SMS to the operator (well within the 320-char budget):
+On successful publish, single SMS:
 
 ```
-Track posted: 8.7km, 412m gain, 3h44m
-trailscribe-journal/2026/05/01-onion-valley-loop.md
+Track posted: 1.2km, 60m gain, 33min
+brockamer.github.io/trailscribe-journal/2026/05/02/pch-pepperdine.html
 ```
 
-If publish fails after retries: log + send `Track save failed; raw pings retained` and *don't* delete the DO state — the next attempt or a manual replay can re-publish from `raw_pings_json` in D1.
+Format helpers: `{distance}km, {gain}m gain, {duration_in_minutes_or_hours}` then a newline, then the URL. Total stays ≤320 chars in realistic ranges.
 
-If the session closes by timeout (not Stop Track), the same SMS is sent but with the `close_reason` baked in: `Track auto-closed (no Stop): ...`. Operator learns their device went dark mid-session.
+If publish fails after retries: log and send `Track save failed; rawKml retained` — operator can investigate; KV record survives for manual replay.
 
-### 6.7 Idempotency & failure modes
+### 6.7 Idempotency
 
-- **Position Report retries.** Composite key already covers them — appending the same ping twice is short-circuited by the existing `idempotency.ts` path.
-- **Stop Track retried after publish.** The DO has already cleared state; `closeSession` on a missing session is a no-op (`log + return`).
-- **Worker crash mid-publish.** The DO state survives. On the next inbound event for that IMEI, the DO sees a closed-but-unpublished session and retries the publish step. Use `withCheckpoint` (existing) to avoid double-publishing.
+- **Stop Track retried after publish.** `withCheckpoint(env, idemKey, "publish_track", ...)` short-circuits — second invocation finds the cached result and returns without re-fetching/re-publishing.
+- **MapShare fetch fails transiently.** Bubble the error so the wrapping `withCheckpoint` doesn't store success, allowing Garmin's webhook retry (or a manual replay) to try again.
+- **KML returns an empty session.** Log `track_no_pings` warning, send a single SMS notice (`Track ended; no breadcrumbs in MapShare for this window`), don't crash, don't publish. May indicate the device wasn't actually tracking, or MapShare isn't enabled for the device.
+- **Identical Stop Track delivered twice.** Composite idempotency key in the existing `idempotency.ts` deduplicates at the webhook entry, before `handleStopTrack` is ever called.
 - **Operator runs `!post` during an active tracking session.** Today's `!post` is unchanged. v1 does not cross-link the two; v2 might emit "your `!post` was made during track session XYZ".
 - **No GPS fix on every ping.** If the entire session has `gpsFix === 0`, derived metrics fall back to `null` and the narrative reads as a duration-only summary. Don't crash; don't invent a position.
 
 ## 7. Env additions
 
-Two new vars (no new secrets):
+Two new vars, no new secrets, no new D1 binding:
 
-- `TRACK_SESSION_IDLE_TIMEOUT_SECONDS` — default `1800` (30 min). Stop-track-missing detection.
+- `MAPSHARE_KEY` — the operator's MapShare identifier (`trailscribe`, set via Garmin Explore). Combined with the existing `MAPSHARE_BASE` to form the feed URL. Add to `wrangler.toml` per env.
+- `TRACK_LOOKBACK_HOURS` — default `12`. How far back from the Stop Track timestamp to query MapShare. 12h handles all-day hikes; bumpable for multi-day if needed.
 - `TRACK_NARRATIVE_BODY_MAX` — default `1200`. Cap for the track-narrative body schema.
 
-(Optional, deferred to v2: `TRACK_PERSONA_PROFILE` for tone selection.)
-
-A new D1 binding (`TS_DB`) is part of the Phase-3 scope already; this spec consumes it.
+A new KV namespace `TS_TRACKS` for closed-session records — provisioned via `wrangler kv namespace create TS_TRACKS [--env <env>]`. Same setup pattern as the four existing KV namespaces.
 
 ## 8. Cost budget
 
-Cost depends on which Cut from §10 is live:
+Per published track session:
 
-- **Cut 1 only (ingest + persist, no narrative):** effectively $0/session. No LLM, no geocode, no weather call. Just D1 + DO storage.
-- **Cut 2 (with narrative + publish):** **~$0.013/session typical.**
-  - One LLM call at session close: ~1500 prompt tokens (metrics + place names + weather) + ~600 completion tokens (title/haiku/body) at Claude Sonnet 4.6 pricing → ~$0.012.
-  - Reverse-geocode: 3 calls per session, all cached via `TS_CACHE`. Effectively free amortized.
-  - Weather: 1 call per session, cached. Effectively free amortized.
-  - GitHub Contents API: free.
+- **One LLM call** at session close: ~1500 prompt tokens (metrics + place names + weather) + ~600 completion tokens (title/haiku/body) at Claude Sonnet 4.6 pricing → **~$0.012**.
+- **MapShare KML fetch:** free. Garmin doesn't rate-limit the share feed.
+- **Reverse-geocode:** 3 calls per session, all cached via `TS_CACHE`. Effectively free amortized.
+- **Weather:** 1 call per session, cached. Effectively free amortized.
+- **GitHub Contents API:** free.
 
-Per-session: **≤ $0.013** typical at full v1 (Cuts 1 + 2), well under the $0.05 PRD §6 ceiling.
+**Per session: ~$0.012**, well under the $0.05 PRD §6 ceiling.
 
 Storage:
-- D1: bounded — typical session is 50-200 pings × ~80 bytes JSON each = 5-20 KB. Even a year of daily 6-hour walks fits in MB.
-- DO: only the *active* session lives in DO storage; closed sessions are flushed to D1 and the DO state is cleared.
+- KV: ~5-50 KB raw KML per session under `TS_TRACKS`. A year of daily sessions ≈ 18 MB. Comfortable.
 
 ## 9. Test strategy
 
-- **Unit tests** for every function in `track-metrics.ts` against fixture ping arrays (Haversine, smoothing, clustering).
-- **A real fixture from the operator's test session** committed to `tests/fixtures/garmin/track-session-*.json` — the 2026-05-01 test walk is the seed. This fixture replays through the full DO + D1 + publish path under Miniflare.
-- **Integration test** for the session-lifecycle state machine: open → ping × N → stop → publish (mock GitHub + LLM).
-- **Auto-close timeout test**: open → ping × N → `setAlarm` fires → publish.
-- **Idempotency test**: replay the entire fixture twice through the webhook, assert one publish.
+- **KML fixture** at `tests/fixtures/mapshare/pch-2026-05-02.kml` — the verified 2026-05-02 PCH session, 14 Placemarks + 1 LineString. Real ground-truth, not synthesized.
+- **Unit tests** for `parsePings()` — assert 14 pings extracted with correct timestamps, lat/lon, velocity, course, elevation, validFix flag. Negative case: empty KML, malformed KML, KML with no `<Placemark>` elements.
+- **Unit tests** for every function in `track-metrics.ts` — Haversine on the PCH fixture should yield ~1.2 km total distance, route shape "out-and-back", activityHint "mixed" (run + walk velocities), stopsAndBreaks should detect the ~5-min gap as a break.
+- **Integration test** for `handleStopTrack()` end-to-end with mocked `fetch` (KML fixture) + mocked OpenRouter (canned narrative) + mocked GitHub Contents API. Asserts: one publishPost call, one sendReply call, one TS_TRACKS write, idempotent on replay.
+- **Empty-session test:** mock fetch returns KML with zero Placemarks → assert `track_no_pings` log + degraded reply, no publish, no crash.
+- **Idempotency test:** replay the same Stop Track event twice through the webhook → assert one publish (existing `withCheckpoint` covers this).
 
-## 10. Implementation phasing (within this spec)
+## 10. Implementation phasing
 
-If the work has to land incrementally:
+The Mode B design is small enough to ship as a single PR. If split:
 
-1. **Cut 1 — Ingest + persist (no narrative).** Open the webhook path, route to DO, accept Start/Position/Interval/Stop, flush to D1 on close. Operator gets no journal post yet — just a `Track ingested: 84 pings, 8.7km` reply. Validates the storage and lifecycle in production with real device traffic.
-2. **Cut 2 — Narrative + publish.** Add `track-metrics.ts`, the `TrackNarrativeInput` mode in `narrative.ts`, and the `publishTrackPost` helper. Operator gets the URL.
-3. **Cut 3 — Auto-close on timeout.** Add the DO `alarm()` path and the timeout flow.
+1. **Cut 1 — KML adapter + parser.** `src/adapters/location/mapshare.ts` with `fetchMapShareKml` + `parsePings`. Unit tests against the fixture. No webhook changes yet. Pure plumbing — provable in isolation.
+2. **Cut 2 — Metrics module.** `src/core/track-metrics.ts`. Unit tests against the parsed PCH session. Validates the derivations the narrative will use.
+3. **Cut 3 — End-to-end pipeline.** `src/core/tracking.ts handleStopTrack` + `narrative.ts generateTrackNarrative` + journal frontmatter extension + webhook routing change in `src/app.ts`. Integration tests + first real-device close-gate.
 
-Cuts 1 and 2 land sequentially; cut 3 can land before or after cut 2.
+Cuts 1 and 2 are independent (can parallelize). Cut 3 depends on both.
 
 ## 11. Open questions for review
 
-- **Garmin Pro Support response (BLOCKER).** Email sent 2026-05-03 (see §13.5). Reply determines whether we go Mode A (IPC stream), Mode B (MapShare pull), or Mode C (bookend-only).
-- **Validate Mode B independently of Garmin's reply.** Pull yesterday's PCH session window from the operator's MapShare KML feed (`https://share.garmin.com/Feed/Share/<MAPSHARE_KEY>?d1=2026-05-02T16:00:00Z&d2=2026-05-02T17:00:00Z`) and check whether breadcrumbs are present. If yes, Mode B is viable today. Requires the operator to enable MapShare and pick an identifier first — currently `MAPSHARE_BASE` env var is empty.
-- **Should this spec become its own epic, or be folded into Phase 3 (#99) as added scope?** Recommendation: new epic ("Phase 3.5 — Tracking session artifacts" or similar), filed as soft-blocked-by #99 so it doesn't muddy the storage-migration milestone. But Phase 3's plan needs to know about it so the DO interface is designed with this in mind. **Note:** if Mode B wins, the Phase 3 dependency loosens significantly — pull-on-close doesn't need a per-IMEI DO at all.
-- **Auto-close timeout default.** 30 min feels right for hiking; might be too short for a multi-hour bike ride at variable cadence. Could make it variable based on the most recent `intervalChange` (e.g., `idle_timeout = max(30 min, 3 × current_interval)`).
-- **Persona styling — do we need it for v1?** Spec currently says no (single tone). If you want Yuki-mode in v1, scope grows ~20% (prompt variants, env knob, test matrix).
-- **Map render in v1?** Spec says no — Google-Maps-link-of-waypoints only. A static map image (Mapbox/Stadia/Maptiler) would be richer but adds a provider, an env, a cost line, and potentially a `publishPostWithImage` parallel. Defer unless it's a hard product requirement.
-- **What does "real device verification" look like?** Need at least one end-to-end test with the Mini 3 Plus going for an actual walk before this can be marked shipped. The operator's 2026-05-01 test session is the fixture-source; a separate real-device burn-in is the close-gate.
+- **Garmin Pro Support response (informational).** Email sent 2026-05-03 (see §13.5). With Mode B confirmed, this is no longer a blocker — but a positive reply ("yes, mc 0 enabled") would let us swap the data source from MapShare to live IPC events behind the same `parsePings()`-equivalent abstraction with no downstream changes. Not load-bearing for v1.
+- **Should this spec become its own epic, or fold into Phase 3 (#99)?** With Mode B canonical, Phase 3 dependency is gone. **Recommendation: file as its own epic** ("Phase 3.5 — Tracking session artifacts" or similar), independent of Phase 3 timing.
+- **Map render in v1?** Spec says no — frontmatter has a MapShare deep-link, that's enough. Static map image rendering (Mapbox/Stadia/Maptiler) is a clean v2 add.
+- **MapShare privacy.** Operator should password-protect their MapShare to keep position history private. Worker fetches with the password baked into `MAPSHARE_KEY` env (or as a separate `MAPSHARE_PASSWORD` secret if Garmin requires basic auth on protected feeds). Verify the auth shape during Cut 1.
+- **`!brief` becomes session-aware?** The original Mode A "session-aware brief" idea is now trivial in Mode B — `!brief` could fetch the same KML with `d1=now-Xh` and produce a recent-activity summary. Out of scope for this spec but a clean follow-up.
+- **Persona styling — v1 or v2?** Single tone for v1. Persona-tagged variants are a v2 lever (~20% scope growth).
+- **Real-device close-gate.** Need at least one end-to-end test session producing a real published journal post before this can be marked shipped. The operator's 2026-05-02 PCH session is the fixture seed; the close-gate is a *fresh* tracking session with the implementation deployed.
 
 ## 12. Decision log (to be filled as we converge)
 
@@ -389,6 +450,8 @@ Cuts 1 and 2 land sequentially; cut 3 can land before or after cut 2.
 - 2026-05-01 — Storage approach: build on Phase 3 DO + D1 (recommendation B above). To be confirmed.
 - 2026-05-01 — One-post-per-session vs. multi-waypoint: one post for v1.
 - 2026-05-03 — **Empirical reality discovered (§0):** Position Reports (mc 0) do not flow over IPC Outbound for our tenant. Spec now branches across Modes A / B / C in §5.0. Garmin Pro Support email sent. PR #163 (`LOG_TRACK_PAYLOADS`) and PR #166 (`ipc_received` envelope diagnostic) shipped during this investigation.
+- 2026-05-03 — **Mode B confirmed canonical (§13.7):** MapShare KML at `share.garmin.com/trailscribe` returns the full 14-Placemark breadcrumb stream for the 2026-05-02 PCH session, with richer schema than IPC mc 0 would have provided. Spec rewritten — §5/§6 now describe MapShare pull-on-close as the only design. Mode A retained as a future swap target (the abstraction allows it). Mode C dropped (no longer needed). PR #167 set `MAPSHARE_BASE = "https://share.garmin.com/trailscribe"` across envs.
+- 2026-05-03 — **Phase 3 dependency dropped:** Mode B's pull-on-close architecture eliminates the need for a per-IMEI Durable Object. This spec is now independent of Phase 3 (#99) — both can ship in any order.
 
 ---
 
@@ -443,3 +506,30 @@ Email to inreach.professional@garmin.com sent on 2026-05-03 covering: tenant + I
 - **PR #166 (merged 2026-05-03):** unconditional `ipc_received` log line right after JSON parse on every webhook POST; captures `version`, `topLevelKeys`, `bodyBytes`, `eventsLength`, and first 1KB of raw body. This is the diagnostic that surfaced the V4-envelope-is-same-as-V2 finding and made it possible to ray-correlate Garmin's "Last Send Attempt" timestamps with our received POSTs.
 
 Both diagnostics are still live on production as of 2026-05-03. Production is on `LOG_TRACK_PAYLOADS=true` via `--var` deploy override (not toml change) — will be reset on next normal `pnpm deploy:production`. Scheduled remote agent (`trig_01ErxEExpBUzbNngPqAaEbaB`, fires 2026-05-16) will verify the override has been cleared.
+
+### 13.7 Mode B canonical — KML feed validation (2026-05-03)
+
+After the operator enabled MapShare on 2026-05-03 (identifier: `trailscribe`, set via Garmin Explore), `curl https://share.garmin.com/Feed/Share/trailscribe?d1=2026-05-02T15:00Z&d2=2026-05-02T17:00Z` returned **HTTP 200, 37,435 bytes, 15 `<Placemark>` elements** (14 individual breadcrumbs + 1 trailing LineString summary).
+
+Extracted ping stream from yesterday's PCH session:
+
+```
+ping  timestamp                lat        lon      elev   v_kmh  course
+  1   2026-05-02T15:51:30Z  34.026825 -118.760255  30.76    0.0   0.00
+  2   2026-05-02T15:53:30Z  34.026440 -118.761820  22.63   12.2 247.50  running W
+  3   2026-05-02T15:55:30Z  34.025495 -118.765748   2.34    4.0 202.50  reaching beach
+  4   2026-05-02T15:57:30Z  34.025645 -118.762786  10.46   11.1  90.00  running E
+  5   2026-05-02T15:59:30Z  34.025688 -118.758795   6.40   12.2  90.00
+  6   2026-05-02T16:01:30Z  34.026310 -118.755920   0.31    0.0   0.00  stopped
+  7   2026-05-02T16:03:30Z  34.026331 -118.755898   0.31    0.0   0.00  stopped
+  -- (5-min gap — intermittent walking, breadcrumbs filtered) --
+  8   2026-05-02T16:08:30Z  34.025656 -118.759353   6.40    5.0 247.50  walking W
+  9   2026-05-02T16:13:30Z  34.025485 -118.765726   4.37    3.0   0.00  beach turn
+ 10-12                          (back along beach + up)
+ 13   2026-05-02T16:23:30Z  34.026911 -118.760296  34.82    0.0   0.00  returned
+ 14   2026-05-02T16:24:30Z  34.026515 -118.760276  32.79    0.0   0.00  final
+```
+
+This is **the entire breadcrumb stream the original Mode A design wanted from IPC mc 0** — and it's already accessible via a single HTTP GET, with a richer schema (named fields, units, GPS-fix flags, pre-computed LineString) than IPC would have provided. Mode B is decisively viable.
+
+**Conclusion:** Mode B is canonical. Spec rewritten 2026-05-03 (this version) to make MapShare pull-on-close the only design path. Mode A is retained as a future swap target — if Garmin Pro Support enables mc 0, the live-IPC data source could replace MapShare behind the same `parsePings()`-equivalent abstraction with no downstream changes.

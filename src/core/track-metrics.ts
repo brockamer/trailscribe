@@ -37,3 +37,48 @@ export function totalDistanceKm(pings: KmlPing[]): number {
   }
   return km;
 }
+
+export interface ElevationProfile {
+  gainM: number;
+  lossM: number;
+  minM: number;
+  maxM: number;
+}
+
+/**
+ * Elevation aggregates over a smoothed altitude series.
+ *
+ * Handheld GPS altitude is noisy (10-15 m even with a fix). Without smoothing,
+ * a single bad sample can inflate gain by 50+ meters. We apply a 5-point
+ * median filter before differencing.
+ */
+export function elevationProfile(pings: KmlPing[]): ElevationProfile {
+  if (pings.length === 0) return { gainM: 0, lossM: 0, minM: 0, maxM: 0 };
+  const smoothed = medianSmooth(
+    pings.map((p) => p.alt),
+    5,
+  );
+
+  let gainM = 0;
+  let lossM = 0;
+  let minM = smoothed[0];
+  let maxM = smoothed[0];
+  for (let i = 1; i < smoothed.length; i++) {
+    const delta = smoothed[i] - smoothed[i - 1];
+    if (delta > 0) gainM += delta;
+    else lossM += -delta;
+    if (smoothed[i] < minM) minM = smoothed[i];
+    if (smoothed[i] > maxM) maxM = smoothed[i];
+  }
+  return { gainM, lossM, minM, maxM };
+}
+
+function medianSmooth(values: number[], window: number): number[] {
+  const half = Math.floor(window / 2);
+  return values.map((_, i) => {
+    const lo = Math.max(0, i - half);
+    const hi = Math.min(values.length, i + half + 1);
+    const slice = values.slice(lo, hi).sort((a, b) => a - b);
+    return slice[Math.floor(slice.length / 2)];
+  });
+}

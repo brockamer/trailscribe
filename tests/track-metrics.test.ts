@@ -4,8 +4,22 @@ import { resolve } from "node:path";
 import {
   haversineKm,
   totalDistanceKm,
+  elevationProfile,
 } from "../src/core/track-metrics.js";
 import { parsePings } from "../src/adapters/location/mapshare.js";
+import type { KmlPing } from "../src/adapters/location/mapshare.js";
+
+function makePing(secOffset: number, alt: number): KmlPing {
+  return {
+    t: secOffset * 1000,
+    lat: 34.0,
+    lon: -118.0,
+    alt,
+    velocityKmh: 0,
+    courseDeg: 0,
+    validFix: true,
+  };
+}
 
 const FIXTURE_KML = readFileSync(
   resolve(__dirname, "fixtures/mapshare/pch-2026-05-02.kml"),
@@ -50,5 +64,42 @@ describe("totalDistanceKm", () => {
     const km = totalDistanceKm(pings);
     expect(km).toBeGreaterThan(1.0);
     expect(km).toBeLessThan(4.0);
+  });
+});
+
+describe("elevationProfile", () => {
+  test("zero-pings input returns all zeros", () => {
+    expect(elevationProfile([])).toEqual({
+      gainM: 0,
+      lossM: 0,
+      minM: 0,
+      maxM: 0,
+    });
+  });
+
+  test("monotonic-up sequence: positive gain, zero loss", () => {
+    const pings = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110].map(
+      (alt, i) => makePing(i, alt),
+    );
+    const profile = elevationProfile(pings);
+    expect(profile.gainM).toBeGreaterThan(50);
+    expect(profile.lossM).toBe(0);
+    expect(profile.maxM).toBeGreaterThan(90);
+    expect(profile.minM).toBeLessThan(30);
+  });
+
+  test("smoothing rejects single-point spikes", () => {
+    const pings = [10, 10, 100, 10, 10].map((alt, i) => makePing(i, alt));
+    const profile = elevationProfile(pings);
+    expect(profile.gainM).toBeLessThan(5);
+  });
+
+  test("PCH fixture: trail starts ~30m, drops to beach ~0m, returns ~30m", () => {
+    const pings = parsePings(FIXTURE_KML);
+    const profile = elevationProfile(pings);
+    expect(profile.maxM).toBeGreaterThan(25);
+    expect(profile.minM).toBeLessThan(5);
+    expect(profile.gainM).toBeGreaterThan(20);
+    expect(profile.gainM).toBeLessThan(80);
   });
 });

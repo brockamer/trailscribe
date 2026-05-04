@@ -16,6 +16,7 @@ import { orchestrate } from "./core/orchestrator.js";
 import { sendReply } from "./adapters/outbound/garmin-ipc-inbound.js";
 import { buildReply } from "./core/reply.js";
 import { monthlyTotals } from "./core/ledger.js";
+import { handleStopTrack } from "./core/tracking.js";
 
 /**
  * Hono app factory. Lives in its own module so tests can call `makeApp()`
@@ -149,12 +150,25 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
   if (event.messageCode !== 3) {
     if (event.messageCode === 4) {
       log({ event: "sos_received_ignored", level: "warn", imei: event.imei, key });
+    } else if (event.messageCode === 12) {
+      try {
+        await handleStopTrack(event, env, key);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log({
+          event: "stop_track_handler_error",
+          level: "error",
+          imei: event.imei,
+          error: msg,
+          key,
+        });
+      }
     } else {
       const isTrack =
         event.messageCode === 0 ||
         event.messageCode === 10 ||
         event.messageCode === 11 ||
-        event.messageCode === 12;
+        event.messageCode === 12; // dead reference: mc 12 is handled above; kept for intent
       log({
         event: "non_free_text",
         level: "info",

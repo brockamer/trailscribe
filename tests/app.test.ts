@@ -4,9 +4,14 @@ import { makeTestEnv, kvSize, kvKeys } from "./helpers/env.js";
 import type { Env } from "../src/env.js";
 import fixture from "./fixtures/garmin/free-text-ping.json";
 import { sendReply } from "../src/adapters/outbound/garmin-ipc-inbound.js";
+import { handleStopTrack } from "../src/core/tracking.js";
 
 vi.mock("../src/adapters/outbound/garmin-ipc-inbound.js", () => ({
   sendReply: vi.fn().mockResolvedValue({ count: 1 }),
+}));
+
+vi.mock("../src/core/tracking.js", () => ({
+  handleStopTrack: vi.fn().mockResolvedValue(undefined),
 }));
 
 const sendReplyMock = vi.mocked(sendReply);
@@ -285,7 +290,7 @@ describe("Worker /garmin/ipc — LOG_TRACK_PAYLOADS diagnostic", () => {
     expect(logs[0].messageCode).toBe(0);
   });
 
-  test.each([0, 10, 11, 12])(
+  test.each([0, 10, 11])(
     "LOG_TRACK_PAYLOADS=true: messageCode %i carries full event payload in log",
     async (messageCode) => {
       env = makeTestEnv({ LOG_TRACK_PAYLOADS: "true" });
@@ -331,5 +336,46 @@ describe("Worker sanity routes", () => {
     expect(body.env).toBe("test");
     expect(typeof body.timestamp).toBe("string");
     expect(body.dry_run).toBe(false);
+  });
+});
+
+describe("Worker /garmin/ipc — Stop Track routing", () => {
+  beforeEach(() => {
+    vi.mocked(handleStopTrack).mockReset();
+    vi.mocked(handleStopTrack).mockResolvedValue(undefined);
+  });
+
+  test("messageCode 12 invokes handleStopTrack", async () => {
+    const stopEvent = {
+      Version: "4.0",
+      Events: [{
+        imei: "123456789012345",
+        messageCode: 12,
+        timeStamp: Date.parse("2026-05-02T16:24:30Z"),
+        point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
+        status: { autonomous: 0, lowBattery: 0, intervalChange: 0, resetDetected: 0 },
+      }],
+    };
+    const res = await postIpc(stopEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(res.status).toBe(200);
+    expect(handleStopTrack).toHaveBeenCalledTimes(1);
+    const args = vi.mocked(handleStopTrack).mock.calls[0];
+    expect(args[0].messageCode).toBe(12);
+  });
+
+  test("messageCode 10 (Start Track) does NOT invoke handleStopTrack", async () => {
+    const startEvent = {
+      Version: "4.0",
+      Events: [{
+        imei: "123456789012345",
+        messageCode: 10,
+        timeStamp: Date.now(),
+        point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
+        status: { autonomous: 0, lowBattery: 0, intervalChange: 120, resetDetected: 0 },
+      }],
+    };
+    const res = await postIpc(startEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(res.status).toBe(200);
+    expect(handleStopTrack).not.toHaveBeenCalled();
   });
 });

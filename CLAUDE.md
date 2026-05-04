@@ -83,7 +83,8 @@ plans/                          # per-milestone sprint plans (active: phase-2-ex
 - **Phase 1 — α-MVP:** complete 2026-04-27. Epic #30 closed 2026-04-26; close gate #111 (production traffic turn-on with the Mini 3 Plus against the production Worker) verified 2026-04-27. All 6 commands (`!post`, `!mail`, `!todo`, `!ping`, `!help`, `!cost`) return real responses on production; replay verification + cost measurement complete; OpenRouter LLM layer live (`anthropic/claude-sonnet-4-6`). Plan archived at `plans/archived/2026-04/phase-1-alpha-mvp.md`.
 - **Production-readiness:** complete 2026-04-28. All 8 milestone issues closed: shipped #32, #33 (auto-deploy on push to main re-enabled in #126), #121 (device-side recipient + Include-Location convention pinned in #127); closed-as-not-planned #14, #15, #26 (operator scope decision: personal-project housekeeping, no custom domain).
 - **Phase 2 — extended commands + `!postimg`:** complete 2026-04-29. All 9 commands shipped end-to-end on production (`!where`, `!weather`, `!drop`, `!brief`, `!ai`, `!camp`, `!share`, `!blast`, `!postimg`); P2-15 staging burn-in PASSED (84 ledger entries, idempotency confirmed). Epic #98 closed; sub-issues #112–#119 + #125 closed via PR-merge auto-close. Plan archived at `plans/archived/2026-04/phase-2-extended-commands.md`. Real-device verification (P2-16) pending operator + Mini.
-- **Phase 3 — DO + D1 migration:** filed as epic #99 (Low-priority Backlog). Active phase candidate now that Phase 2 has closed.
+- **Phase 3 — DO + D1 migration:** filed as epic #99 (Low-priority Backlog).
+- **Tracking session artifacts (Mode B — MapShare pull-on-close):** complete 2026-05-03. Issue #168 closed via PR #164 squashed to `788ab83` on main. Stop Track (Garmin `messageCode === 12`) auto-publishes a journal post by pulling MapShare KML, deriving metrics (distance, elevation, pace, route shape, activity hint), generating an LLM narrative, committing to the journal repo, persisting a `TrackSessionRecord` to `TS_TRACKS` KV, and SMS-replying with summary + URL. 388/388 tests, all gates clean. Plan archived at `docs/superpowers/plans/archived/2026-05/2026-05-03-tracking-session-artifacts.md`; canonical spec lives at `docs/superpowers/specs/2026-05-01-tracking-session-artifacts-design.md`. Real-device close-gate (analogous to P2-16) pending operator + Mini.
 
 ## Conventions
 
@@ -155,7 +156,7 @@ plans/                          # per-milestone sprint plans (active: phase-2-ex
 ## Workflow
 
 - **jared** manages the board: https://github.com/users/brockamer/projects/3 (see `docs/project-board.md`).
-- No active plan (Phase 2 closed 2026-04-29; archived at `plans/archived/2026-04/phase-2-extended-commands.md`). Phase 3 (DO + D1, epic #99) is the next promotion candidate.
+- No active plan (most recent: tracking session artifacts (Mode B) closed 2026-05-03, archived at `docs/superpowers/plans/archived/2026-05/2026-05-03-tracking-session-artifacts.md`). Phase 3 (DO + D1, epic #99) is the next promotion candidate; tracking-side cleanups + real-device close-gate are open backlog items.
 - Git: `origin` = `https://github.com/brockamer/trailscribe.git`, default branch `main`.
 - Commit sign-off: `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
 

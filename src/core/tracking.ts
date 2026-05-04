@@ -15,7 +15,6 @@ import { currentWeather } from "../adapters/location/weather.js";
 
 const TRACK_RECORD_TTL_SECONDS = 60 * 60 * 24 * 365;
 const TRACK_START_TTL_SECONDS = 60 * 60 * 24;
-const MS_PER_HOUR = 60 * 60 * 1000;
 
 interface TrackStartRecord {
   startedAt: number;
@@ -105,17 +104,32 @@ export async function handleStopTrack(
   // then 12h × 5d). Mirrors the per-op pattern in commands/post.ts.
   await withCheckpoint(env, idemKey, "publish_track", async () => {
     const closedAt = event.timeStamp;
-    // Prefer the recorded mc 10 start over the lookback heuristic — without
-    // this, closely-spaced Stop Tracks all query overlapping 12h windows and
-    // pull the same breadcrumbs, producing duplicate/conflated narratives.
+    // The session window is bounded by a recorded mc 10 (Start Track) only.
+    // Lookback fallback was removed — it produced wrong narratives by pulling
+    // unrelated breadcrumbs (e.g. a 100km drive earlier in the day) when a
+    // Stop arrived without a preceding Start (operator pressed Stop twice,
+    // device emitted Stop on its own, or Iridium delivered Stop before Start).
     const startRecord = await readSessionStart(env, event.imei);
-    const lookbackHours = Number.parseInt(env.TRACK_LOOKBACK_HOURS, 10) || 12;
-    const startedAt = startRecord?.startedAt ?? closedAt - lookbackHours * MS_PER_HOUR;
+    if (!startRecord) {
+      log({
+        event: "track_stop_no_active_session",
+        level: "warn",
+        imei: event.imei,
+        idemKey,
+        closedAt,
+      });
+      await sendReply(
+        event.imei,
+        ["Track ended; no active session — press Start before tracking next time."],
+        env,
+      );
+      return { skipped: "no_active_session" };
+    }
+    const startedAt = startRecord.startedAt;
     log({
       event: "track_session_window",
       level: "info",
       imei: event.imei,
-      source: startRecord ? "start_record" : "lookback",
       startedAt,
       closedAt,
     });

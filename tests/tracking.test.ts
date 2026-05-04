@@ -249,27 +249,27 @@ describe("session start window (#175 follow-up)", () => {
     expect(callArgs[2]).toBe(closedAt);
   });
 
-  test("Stop Track without a recorded start falls back to TRACK_LOOKBACK_HOURS", async () => {
-    const env = makeTestEnv({ TRACK_LOOKBACK_HOURS: "6" });
-    const fetchMock = vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
-    vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
-      title: "x", haiku: "a\nb\nc", body: "y",
-      usage: { prompt_tokens: 1, completion_tokens: 1 },
-    });
-    vi.spyOn(publishMod, "publishTrackPost").mockResolvedValue({
-      url: "https://x", path: "p", sha: "s",
-    });
+  test("Stop Track without a recorded start refuses to publish (no lookback fallback)", async () => {
+    vi.mocked(sendReply).mockClear();
+    const env = makeTestEnv();
+    const mapshareSpy = vi.spyOn(mapshareMod, "fetchMapShareKml");
+    const narrativeSpy = vi.spyOn(narrativeMod, "generateTrackNarrative");
+    const publishSpy = vi.spyOn(publishMod, "publishTrackPost");
 
-    const closedAt = Date.parse("2026-05-04T22:05:00Z");
+    const closedAt = Date.parse("2026-05-04T22:43:45Z");
     await handleStopTrack(
       { imei: "300052030374220", messageCode: 12, timeStamp: closedAt },
       env,
-      "idem-fallback-1",
+      "idem-no-start",
     );
 
-    const callArgs = fetchMock.mock.calls[0];
-    expect(callArgs[1]).toBe(closedAt - 6 * 60 * 60 * 1000);
-    expect(callArgs[2]).toBe(closedAt);
+    // None of the publish-pipeline side effects should fire.
+    expect(mapshareSpy).not.toHaveBeenCalled();
+    expect(narrativeSpy).not.toHaveBeenCalled();
+    expect(publishSpy).not.toHaveBeenCalled();
+    // Operator gets the no-active-session SMS reply.
+    expect(sendReply).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendReply).mock.calls[0][1][0]).toContain("no active session");
   });
 
   test("Stop Track clears the start record so the next Stop without a fresh Start uses fallback", async () => {
@@ -305,8 +305,17 @@ describe("handleStopTrack — end to end", () => {
     vi.mocked(sendReply).mockResolvedValue({ count: 1 });
   });
 
+  // Helper: seed a fresh mc 10 (Start Track) record before each handleStopTrack
+  // invocation, since the production path always requires this — there is no
+  // longer a lookback fallback (#175 fix).
+  async function seedSessionStart(env: ReturnType<typeof makeTestEnv>, imei: string, atMs: number) {
+    const { recordSessionStart } = await import("../src/core/tracking.js");
+    await recordSessionStart(env, imei, atMs);
+  }
+
   test("fetches KML, generates narrative, publishes, replies, persists record", async () => {
     const env = makeTestEnv();
+    await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
     vi.spyOn(geocodeMod, "reverseGeocode")
       .mockResolvedValueOnce("Malibu, CA")  // start
@@ -359,11 +368,13 @@ describe("handleStopTrack — end to end", () => {
 
   test("empty KML: logs warning, sends 'no breadcrumbs' reply, no publish", async () => {
     const env = makeTestEnv();
+    const closedAt = Date.now();
+    await seedSessionStart(env, "300052030374220", closedAt - 5 * 60 * 1000);
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue("<kml/>");
     const publishSpy = vi.spyOn(publishMod, "publishTrackPost");
 
     await handleStopTrack(
-      { imei: "300052030374220", messageCode: 12, timeStamp: Date.now() },
+      { imei: "300052030374220", messageCode: 12, timeStamp: closedAt },
       env,
       "idem-key-2",
     );
@@ -375,6 +386,7 @@ describe("handleStopTrack — end to end", () => {
 
   test("inner-LLM checkpoint: narrative cached when publish fails, re-run avoids fresh LLM call (#172)", async () => {
     const env = makeTestEnv();
+    await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
     vi.spyOn(geocodeMod, "reverseGeocode")
       .mockResolvedValue("Malibu, CA");
@@ -416,6 +428,7 @@ describe("handleStopTrack — end to end", () => {
 
   test("idempotent on replay: second handleStopTrack call short-circuits", async () => {
     const env = makeTestEnv();
+    await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
     vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
       title: "x", haiku: "a\nb\nc", body: "y",

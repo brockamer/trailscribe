@@ -55,6 +55,7 @@ export interface Env {
   ADDRESS_BOOK_JSON: string;
   IMAGE_API_KEY: string;
   MAPSHARE_KEY: string;
+  MAPSHARE_PASSWORD: string;
 }
 
 /**
@@ -134,6 +135,11 @@ export const EnvSchema = z.object({
   }),
   IMAGE_API_KEY: z.string().min(8),
   MAPSHARE_KEY: z.string().min(1),
+  // MapShare access code (Basic Auth password). Empty string allowed for
+  // unprotected feeds; non-empty value triggers `Authorization: Basic` header
+  // construction in fetchMapShareKml. Set via Garmin Explore portal → MapShare
+  // → Access Code.
+  MAPSHARE_PASSWORD: z.string(),
 });
 
 /**

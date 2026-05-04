@@ -130,4 +130,29 @@ describe("fetchMapShareKml", () => {
       expect((e as MapShareError).status).toBe(503);
     }
   });
+
+  test("MAPSHARE_PASSWORD empty: no Authorization header sent", async () => {
+    const env = makeTestEnv({ MAPSHARE_PASSWORD: "" });
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("<kml/>", { status: 200 }));
+    await fetchMapShareKml(env, 0, 1);
+    const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as
+      | Record<string, string>
+      | undefined;
+    expect(headers?.Authorization).toBeUndefined();
+    expect(headers?.Accept).toBe("application/vnd.google-earth.kml+xml");
+  });
+
+  test("MAPSHARE_PASSWORD set: sends Basic Auth with empty user + password (#175)", async () => {
+    const env = makeTestEnv({ MAPSHARE_PASSWORD: "headquarters" });
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("<kml/>", { status: 200 }));
+    await fetchMapShareKml(env, 0, 1);
+    const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as
+      Record<string, string>;
+    // Basic <base64(":headquarters")> = Basic OmhlYWRxdWFydGVycw==
+    expect(headers.Authorization).toBe(`Basic ${btoa(":headquarters")}`);
+  });
 });

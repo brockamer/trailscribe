@@ -101,6 +101,7 @@ export function makeTestEnv(overrides: Partial<Env> = {}): Env {
     ADDRESS_BOOK_JSON: "",
     IMAGE_API_KEY: "test-image-api-key",
     MAPSHARE_KEY: "trailscribe",
+    MAPSHARE_PASSWORD: "",
   };
   return { ...base, ...overrides };
 }

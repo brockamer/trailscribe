@@ -10,9 +10,15 @@ vi.mock("../src/adapters/outbound/garmin-ipc-inbound.js", () => ({
   sendReply: vi.fn().mockResolvedValue({ count: 1 }),
 }));
 
-vi.mock("../src/core/tracking.js", () => ({
-  handleStopTrack: vi.fn().mockResolvedValue(undefined),
-}));
+vi.mock("../src/core/tracking.js", async () => {
+  const actual = await vi.importActual<typeof import("../src/core/tracking.js")>(
+    "../src/core/tracking.js",
+  );
+  return {
+    ...actual,
+    handleStopTrack: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 const sendReplyMock = vi.mocked(sendReply);
 
@@ -340,10 +346,25 @@ describe("Worker sanity routes", () => {
 });
 
 describe("Worker /garmin/ipc — Stop Track routing", () => {
+  let consoleError: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     vi.mocked(handleStopTrack).mockReset();
     vi.mocked(handleStopTrack).mockResolvedValue(undefined);
+    consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
+
+  function stopTrackErrorLog(): Record<string, unknown> | undefined {
+    return consoleError.mock.calls
+      .map((args) => {
+        try {
+          return JSON.parse(String(args[0])) as Record<string, unknown>;
+        } catch {
+          return null;
+        }
+      })
+      .find((entry): entry is Record<string, unknown> => entry?.event === "stop_track_handler_error");
+  }
 
   test("messageCode 12 invokes handleStopTrack", async () => {
     const stopEvent = {
@@ -377,5 +398,25 @@ describe("Worker /garmin/ipc — Stop Track routing", () => {
     const res = await postIpc(startEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
     expect(res.status).toBe(200);
     expect(handleStopTrack).not.toHaveBeenCalled();
+  });
+
+  test("messageCode 12: handleStopTrack throw is logged and webhook still returns 200", async () => {
+    vi.mocked(handleStopTrack).mockRejectedValueOnce(new Error("mapshare 503"));
+    const stopEvent = {
+      Version: "4.0",
+      Events: [{
+        imei: "123456789012345",
+        messageCode: 12,
+        timeStamp: Date.parse("2026-05-02T16:24:30Z"),
+        point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
+        status: { autonomous: 0, lowBattery: 0, intervalChange: 0, resetDetected: 0 },
+      }],
+    };
+    const res = await postIpc(stopEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(res.status).toBe(200);
+    const errLog = stopTrackErrorLog();
+    expect(errLog).toBeDefined();
+    expect(errLog!.error).toBe("mapshare 503");
+    expect(errLog!.imei).toBe("123456789012345");
   });
 });

@@ -19,6 +19,47 @@ import { monthlyTotals } from "./core/ledger.js";
 import { handleStopTrack } from "./core/tracking.js";
 
 /**
+ * Garmin tracking event codes. mc 0 = Position Report, mc 10 = Start Track,
+ * mc 11 = Track Interval, mc 12 = Stop Track. mc 12 is routed separately
+ * through handleStopTrack above; the others currently log via non_free_text
+ * with optional payload capture for diagnostic purposes.
+ */
+const TRACK_MESSAGE_CODES: readonly number[] = [0, 10, 11, 12] as const;
+
+/**
+ * Run an orchestrator with the standard error contract: log on throw, mark the
+ * idempotency record completed/failed for observability, never propagate the
+ * error (Garmin must always receive 200; otherwise it triggers the
+ * 2/4/8/16/32/64/128s retry escalator + 12h × 5d pause cycle, PRD §5).
+ *
+ * Use this for any branch in handleEvent that invokes a side-effecting
+ * orchestrator like handleStopTrack. Extends naturally as new tracking events
+ * (Start Track, Position Report) get their own routing branches in later cuts.
+ */
+async function safeOrchestrate(
+  opLabel: string,
+  fn: () => Promise<void>,
+  env: Env,
+  key: string,
+  imei: string,
+): Promise<void> {
+  try {
+    await fn();
+    await markCompleted(env, key);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log({
+      event: `${opLabel}_error`,
+      level: "error",
+      imei,
+      error: msg,
+      key,
+    });
+    await markFailed(env, key, msg);
+  }
+}
+
+/**
  * Hono app factory. Lives in its own module so tests can call `makeApp()`
  * and drive the handler via `app.request(...)` without Miniflare.
  */
@@ -151,24 +192,9 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
     if (event.messageCode === 4) {
       log({ event: "sos_received_ignored", level: "warn", imei: event.imei, key });
     } else if (event.messageCode === 12) {
-      try {
-        await handleStopTrack(event, env, key);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        log({
-          event: "stop_track_handler_error",
-          level: "error",
-          imei: event.imei,
-          error: msg,
-          key,
-        });
-      }
+      await safeOrchestrate("stop_track_handler", () => handleStopTrack(event, env, key), env, key, event.imei);
     } else {
-      const isTrack =
-        event.messageCode === 0 ||
-        event.messageCode === 10 ||
-        event.messageCode === 11 ||
-        event.messageCode === 12; // dead reference: mc 12 is handled above; kept for intent
+      const isTrack = TRACK_MESSAGE_CODES.includes(event.messageCode);
       log({
         event: "non_free_text",
         level: "info",

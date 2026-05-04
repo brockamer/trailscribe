@@ -296,7 +296,11 @@ describe("Worker /garmin/ipc — LOG_TRACK_PAYLOADS diagnostic", () => {
     expect(logs[0].messageCode).toBe(0);
   });
 
-  test.each([0, 10, 11])(
+  // mc 10 is excluded — it now has its own dispatch branch that records the
+  // session start to TS_TRACKS KV (see "messageCode 10 records session start"
+  // test below) and emits a `track_session_start_recorded` log line, NOT a
+  // `non_free_text` line. mc 0 and mc 11 still pass through non_free_text.
+  test.each([0, 11])(
     "LOG_TRACK_PAYLOADS=true: messageCode %i carries full event payload in log",
     async (messageCode) => {
       env = makeTestEnv({ LOG_TRACK_PAYLOADS: "true" });

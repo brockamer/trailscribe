@@ -220,6 +220,84 @@ async function sessionIdFor(imei: string, closedAtMs: number): Promise<string> {
     .join("");
 }
 
+describe("session start window (#175 follow-up)", () => {
+  test("Stop Track uses recordSessionStart's timestamp as d1 instead of the 12h lookback", async () => {
+    const env = makeTestEnv();
+    const { recordSessionStart } = await import("../src/core/tracking.js");
+    const fetchMock = vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
+    vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
+      title: "x", haiku: "a\nb\nc", body: "y",
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    });
+    vi.spyOn(publishMod, "publishTrackPost").mockResolvedValue({
+      url: "https://x", path: "p", sha: "s",
+    });
+
+    const startedAt = Date.parse("2026-05-04T22:01:00Z");
+    const closedAt = Date.parse("2026-05-04T22:05:00Z");
+    await recordSessionStart(env, "300052030374220", startedAt);
+
+    await handleStopTrack(
+      { imei: "300052030374220", messageCode: 12, timeStamp: closedAt },
+      env,
+      "idem-window-1",
+    );
+
+    // fetchMapShareKml(env, startedAtMs, closedAtMs) — 4-min window, NOT a 12h lookback.
+    const callArgs = fetchMock.mock.calls[0];
+    expect(callArgs[1]).toBe(startedAt);
+    expect(callArgs[2]).toBe(closedAt);
+  });
+
+  test("Stop Track without a recorded start falls back to TRACK_LOOKBACK_HOURS", async () => {
+    const env = makeTestEnv({ TRACK_LOOKBACK_HOURS: "6" });
+    const fetchMock = vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
+    vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
+      title: "x", haiku: "a\nb\nc", body: "y",
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    });
+    vi.spyOn(publishMod, "publishTrackPost").mockResolvedValue({
+      url: "https://x", path: "p", sha: "s",
+    });
+
+    const closedAt = Date.parse("2026-05-04T22:05:00Z");
+    await handleStopTrack(
+      { imei: "300052030374220", messageCode: 12, timeStamp: closedAt },
+      env,
+      "idem-fallback-1",
+    );
+
+    const callArgs = fetchMock.mock.calls[0];
+    expect(callArgs[1]).toBe(closedAt - 6 * 60 * 60 * 1000);
+    expect(callArgs[2]).toBe(closedAt);
+  });
+
+  test("Stop Track clears the start record so the next Stop without a fresh Start uses fallback", async () => {
+    const env = makeTestEnv();
+    const { recordSessionStart, readSessionStart } = await import("../src/core/tracking.js");
+    vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
+    vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
+      title: "x", haiku: "a\nb\nc", body: "y",
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    });
+    vi.spyOn(publishMod, "publishTrackPost").mockResolvedValue({
+      url: "https://x", path: "p", sha: "s",
+    });
+
+    await recordSessionStart(env, "300052030374220", Date.parse("2026-05-04T22:00:00Z"));
+    expect(await readSessionStart(env, "300052030374220")).not.toBeNull();
+
+    await handleStopTrack(
+      { imei: "300052030374220", messageCode: 12, timeStamp: Date.parse("2026-05-04T22:05:00Z") },
+      env,
+      "idem-clear-1",
+    );
+
+    // After successful Stop Track, the start record is gone.
+    expect(await readSessionStart(env, "300052030374220")).toBeNull();
+  });
+});
+
 describe("handleStopTrack — end to end", () => {
   beforeEach(() => {
     vi.restoreAllMocks();

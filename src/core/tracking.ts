@@ -120,7 +120,7 @@ export async function handleStopTrack(
       });
       await sendReply(
         event.imei,
-        ["Track ended; no active session — press Start before tracking next time."],
+        ["Track ended; no active session was recorded — nothing to publish."],
         env,
       );
       return { skipped: "no_active_session" };

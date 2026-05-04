@@ -34,7 +34,9 @@ let errSpy: ReturnType<typeof vi.spyOn>;
 
 const LAT = 37.1682;
 const LON = -118.5891;
-const MAPSHARE = "https://share.garmin.com/MyMap";
+const MAPSHARE_HOST = "https://share.garmin.com";
+const MAPSHARE_PAGE_KEY = "MyMap";
+const MAPSHARE = `${MAPSHARE_HOST}/${MAPSHARE_PAGE_KEY}`;
 
 function jsonResponse(obj: unknown, status = 200): Response {
   return new Response(JSON.stringify(obj), {
@@ -96,7 +98,7 @@ function makeFetchRouter(
 
 beforeEach(() => {
   app = makeApp();
-  env = makeTestEnv({ MAPSHARE_BASE: MAPSHARE });
+  env = makeTestEnv({ MAPSHARE_BASE: MAPSHARE_HOST, MAPSHARE_KEY: MAPSHARE_PAGE_KEY });
   sendReplyMock.mockReset();
   sendReplyMock.mockResolvedValue({ count: 1 });
   logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);

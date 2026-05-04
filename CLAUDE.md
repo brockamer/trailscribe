@@ -128,7 +128,8 @@ plans/                          # per-milestone sprint plans (active: phase-2-ex
 
 **Vars (non-secret):**
 - `TRAILSCRIBE_ENV` — dev/staging/production
-- `GOOGLE_MAPS_BASE`, `MAPSHARE_BASE` — link prefixes
+- `GOOGLE_MAPS_BASE` — link prefix for Google Maps URLs
+- `MAPSHARE_BASE` — Garmin MapShare host root (e.g. `https://share.garmin.com`); per-tenant slug lives in `MAPSHARE_KEY` and is appended at use sites (`${MAPSHARE_BASE}/${MAPSHARE_KEY}` for page URLs, `${MAPSHARE_BASE}/Feed/Share/${MAPSHARE_KEY}` for the KML feed). Empty `MAPSHARE_BASE` disables MapShare links in `!where` / `!share` / `!blast`.
 - `LLM_BASE_URL` — `https://openrouter.ai/api/v1` (override for direct-provider routing)
 - `LLM_MODEL` — `anthropic/claude-sonnet-4-6` (OpenRouter format `<provider>/<model>`)
 - `LLM_INPUT_COST_PER_1K` / `LLM_OUTPUT_COST_PER_1K` — ledger pricing; set from the chosen model provider's pricing page

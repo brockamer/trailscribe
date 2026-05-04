@@ -122,7 +122,10 @@ function composeBody(
     return `${note}\n\n---\nFrom inReach — sent ${iso}`;
   }
   const mapsUrl = `${env.GOOGLE_MAPS_BASE}${lat},${lon}`;
-  const mapShareLine = env.MAPSHARE_BASE.length > 0 ? `\nMapShare: ${env.MAPSHARE_BASE}` : "";
+  const mapShareLine =
+    env.MAPSHARE_BASE.length > 0
+      ? `\nMapShare: ${env.MAPSHARE_BASE}/${env.MAPSHARE_KEY}`
+      : "";
   return [
     note,
     "",

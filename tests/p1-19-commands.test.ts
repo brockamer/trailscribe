@@ -29,7 +29,7 @@ let errSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   app = makeApp();
-  env = makeTestEnv({ MAPSHARE_BASE: "https://share.garmin.com/MyMap" });
+  env = makeTestEnv({ MAPSHARE_BASE: "https://share.garmin.com" });
   sendReplyMock.mockReset();
   sendReplyMock.mockResolvedValue({ count: 1 });
   logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);

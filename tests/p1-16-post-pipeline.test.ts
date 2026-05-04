@@ -117,7 +117,7 @@ const PUBLISH_RESPONSE = {
 beforeEach(() => {
   app = makeApp();
   env = makeTestEnv({
-    MAPSHARE_BASE: "https://share.garmin.com/MyMap",
+    MAPSHARE_BASE: "https://share.garmin.com",
     GITHUB_JOURNAL_REPO: "brockamer/trailscribe-journal",
     GITHUB_JOURNAL_BRANCH: "main",
     JOURNAL_URL_TEMPLATE: "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html",

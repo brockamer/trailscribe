@@ -99,8 +99,11 @@ function readNumberField(block: string, name: string): number | null {
 /**
  * GET the operator's MapShare KML feed for a session window.
  *
- * URL composes from MAPSHARE_BASE (e.g. https://share.garmin.com/trailscribe)
- * + the standard /Feed/Share/<key> suffix + d1/d2 ISO 8601 query params.
+ * URL composes from MAPSHARE_BASE (the Garmin host root, e.g.
+ * https://share.garmin.com — must NOT include the per-tenant slug) +
+ * /Feed/Share/<MAPSHARE_KEY> + d1/d2 ISO 8601 query params. The same
+ * MAPSHARE_BASE is used by link builders (where/share/blast) which compose
+ * the public page URL as `${MAPSHARE_BASE}/${MAPSHARE_KEY}`.
  * d1/d2 are inclusive bounds in UTC.
  *
  * No retry — Garmin's share endpoint is fast and the caller (handleStopTrack)

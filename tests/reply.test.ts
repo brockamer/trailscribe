@@ -58,7 +58,7 @@ describe("buildReply — no map links on device", () => {
   test("never emits MapShare URL even when MAPSHARE_BASE is set", () => {
     const out = buildReply({
       body: "ok",
-      env: envWith({ MAPSHARE_BASE: "https://share.garmin.com/MyMap" }),
+      env: envWith({ MAPSHARE_BASE: "https://share.garmin.com" }),
     });
     expect(out.join(" ")).not.toContain("share.garmin.com");
   });

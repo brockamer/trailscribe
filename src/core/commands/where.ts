@@ -34,7 +34,8 @@ export async function handleWhere(
 
   const placeName = await reverseGeocode(lat, lon, env);
   const mapsUrl = `${env.GOOGLE_MAPS_BASE}${lat},${lon}`;
-  const mapShareUrl = env.MAPSHARE_BASE;
+  const mapShareUrl =
+    env.MAPSHARE_BASE.length > 0 ? `${env.MAPSHARE_BASE}/${env.MAPSHARE_KEY}` : "";
   const links = mapShareUrl ? `${mapsUrl} ${mapShareUrl}` : mapsUrl;
   const body = capReply(`${placeName}. ${links}`);
 

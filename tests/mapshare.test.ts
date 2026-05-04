@@ -89,8 +89,12 @@ describe("fetchMapShareKml", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const calledUrl = fetchMock.mock.calls[0][0] as string;
     expect(calledUrl).toBe(
-      "https://share.garmin.com/trailscribe/Feed/Share/trailscribe?d1=2026-05-02T15:00:00.000Z&d2=2026-05-02T17:00:00.000Z",
+      "https://share.garmin.com/Feed/Share/trailscribe?d1=2026-05-02T15:00:00.000Z&d2=2026-05-02T17:00:00.000Z",
     );
+    // Regression for #177: MAPSHARE_BASE must not include the per-tenant slug.
+    // PR #167 set it to "share.garmin.com/trailscribe" which produced
+    // ".../trailscribe/Feed/Share/trailscribe" — Garmin returned 404.
+    expect(calledUrl).not.toMatch(/\/trailscribe\/Feed\/Share\/trailscribe/);
   });
 
   test("returns the response body on 200", async () => {

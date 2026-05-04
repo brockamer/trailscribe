@@ -64,7 +64,7 @@ export function makeTestEnv(overrides: Partial<Env> = {}): Env {
 
     TRAILSCRIBE_ENV: "test",
     GOOGLE_MAPS_BASE: "https://www.google.com/maps/search/?api=1&query=",
-    MAPSHARE_BASE: "https://share.garmin.com/trailscribe",
+    MAPSHARE_BASE: "https://share.garmin.com",
     TRACK_LOOKBACK_HOURS: "12",
     TRACK_NARRATIVE_BODY_MAX: "1200",
     LLM_BASE_URL: "https://openrouter.ai/api/v1",

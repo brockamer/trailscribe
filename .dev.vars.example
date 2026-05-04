@@ -53,3 +53,14 @@ ADDRESS_BOOK_JSON=
 # Same `echo -n "<token>" | wrangler secret put IMAGE_API_KEY --env <env>` rule
 # as other secrets — strip trailing newlines.
 IMAGE_API_KEY=
+
+# ---- MapShare KML feed (tracking session artifacts) ----
+# Per-tenant Garmin MapShare slug; the path component appended to MAPSHARE_BASE.
+# Find at explore.garmin.com → MapShare → Page name.
+MAPSHARE_KEY=trailscribe
+
+# Access code that protects the MapShare KML feed (HTTP Basic Auth password;
+# username is ignored). Set in explore.garmin.com → MapShare → Access Code.
+# Empty string = unprotected feed (no auth header sent). Pipe with echo -n
+# to strip trailing newlines: `echo -n "<code>" | wrangler secret put MAPSHARE_PASSWORD --env <env>`.
+MAPSHARE_PASSWORD=

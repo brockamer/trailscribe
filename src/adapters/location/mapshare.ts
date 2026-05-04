@@ -118,9 +118,17 @@ export async function fetchMapShareKml(
   const d1 = new Date(startedAtMs).toISOString();
   const d2 = new Date(closedAtMs).toISOString();
   const url = `${env.MAPSHARE_BASE}/Feed/Share/${env.MAPSHARE_KEY}?d1=${d1}&d2=${d2}`;
-  const res = await fetch(url, {
-    headers: { Accept: "application/vnd.google-earth.kml+xml" },
-  });
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.google-earth.kml+xml",
+  };
+  if (env.MAPSHARE_PASSWORD.length > 0) {
+    // Garmin MapShare access codes use HTTP Basic Auth with the access code as
+    // the password — username is ignored (empty works). Verified 2026-05-04
+    // against the production trailscribe MapShare with access code set:
+    // `curl -u ":<code>"` returns 200 + KML; no auth returns 401.
+    headers.Authorization = `Basic ${btoa(`:${env.MAPSHARE_PASSWORD}`)}`;
+  }
+  const res = await fetch(url, { headers });
   if (!res.ok) {
     log({
       event: "mapshare_fetch_failed",

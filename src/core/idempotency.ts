@@ -53,7 +53,8 @@ export type OpName =
   | "share"
   | "blast"
   | "image"
-  | "publish_track";
+  | "publish_track"
+  | "track_narrative";
 
 /**
  * Message-lifecycle record stored under `idem:<key>` (PRD §5).

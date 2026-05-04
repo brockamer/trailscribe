@@ -295,6 +295,47 @@ describe("handleStopTrack — end to end", () => {
     expect(vi.mocked(sendReply).mock.calls[0][1][0]).toContain("no breadcrumbs");
   });
 
+  test("inner-LLM checkpoint: narrative cached when publish fails, re-run avoids fresh LLM call (#172)", async () => {
+    const env = makeTestEnv();
+    vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
+    vi.spyOn(geocodeMod, "reverseGeocode")
+      .mockResolvedValue("Malibu, CA");
+    vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Sunny, 18°C");
+    const narrativeSpy = vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
+      title: "PCH and back",
+      haiku: "a\nb\nc",
+      body: "Run + beach + return.",
+      usage: { prompt_tokens: 100, completion_tokens: 50 },
+    });
+    // First publish call throws (e.g. journal PAT expired); second succeeds.
+    const publishSpy = vi.spyOn(publishMod, "publishTrackPost")
+      .mockRejectedValueOnce(new Error("403 Bad credentials"))
+      .mockResolvedValueOnce({
+        url: "https://brockamer.github.io/trailscribe-journal/2026/05/02/pch.html",
+        path: "_posts/2026-05-02-pch.md",
+        sha: "abc",
+      });
+
+    const stopEvent: GarminEvent = {
+      imei: "300052030374220",
+      messageCode: 12,
+      timeStamp: Date.parse("2026-05-02T16:24:30Z"),
+    };
+
+    // First call: narrative succeeds, publish throws → outer checkpoint
+    // doesn't cache `publish_track`, but inner `track_narrative` IS cached.
+    await expect(handleStopTrack(stopEvent, env, "idem-cost-bound")).rejects.toThrow(/Bad credentials/);
+    expect(narrativeSpy).toHaveBeenCalledTimes(1);
+    expect(publishSpy).toHaveBeenCalledTimes(1);
+
+    // Second call (Garmin retry): narrative cache hit → LLM NOT re-called;
+    // publish runs again and succeeds this time.
+    await handleStopTrack(stopEvent, env, "idem-cost-bound");
+    expect(narrativeSpy).toHaveBeenCalledTimes(1); // <-- the bound: still 1, not 2
+    expect(publishSpy).toHaveBeenCalledTimes(2);
+    expect(sendReply).toHaveBeenCalledTimes(1);
+  });
+
   test("idempotent on replay: second handleStopTrack call short-circuits", async () => {
     const env = makeTestEnv();
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);

@@ -54,10 +54,12 @@ export async function handleStopTrack(
   env: Env,
   idemKey: string,
 ): Promise<void> {
-  // Single coarse checkpoint per spec §6.1 — trades partial-failure granularity
-  // (we re-run the LLM if anything after publishTrackPost fails) for simpler
-  // reasoning about publish_track being all-or-nothing. See commands/post.ts for
-  // the per-op pattern used by !post; the divergence is intentional, not drift.
+  // Outer `publish_track` checkpoint owns the all-or-nothing publish lifecycle
+  // (publish + store + reply) per spec §6.1. Inner `track_narrative` checkpoint
+  // (added per #172) bounds LLM cost on deterministic-failure retries: after a
+  // successful narrative call, a downstream publish/reply failure won't burn
+  // another Sonnet call when Garmin retries the webhook (2/4/8/16/32/64/128s
+  // then 12h × 5d). Mirrors the per-op pattern in commands/post.ts.
   await withCheckpoint(env, idemKey, "publish_track", async () => {
     const closedAt = event.timeStamp;
     const lookbackHours = Number.parseInt(env.TRACK_LOOKBACK_HOURS, 10) || 12;
@@ -102,13 +104,15 @@ export async function handleStopTrack(
       log({ event: "track_enrichment_failed", level: "warn", kind: "weather", imei: event.imei, error: String(weatherSettled.reason) });
     }
 
-    const narrative = await generateTrackNarrative({
-      metrics,
-      startPlace: typeof startPlace === "string" ? startPlace : undefined,
-      endPlace: typeof endPlace === "string" ? endPlace : undefined,
-      weatherSummary: typeof weather === "string" ? weather : undefined,
-      env,
-    });
+    const narrative = await withCheckpoint(env, idemKey, "track_narrative", () =>
+      generateTrackNarrative({
+        metrics,
+        startPlace: typeof startPlace === "string" ? startPlace : undefined,
+        endPlace: typeof endPlace === "string" ? endPlace : undefined,
+        weatherSummary: typeof weather === "string" ? weather : undefined,
+        env,
+      }),
+    );
 
     await recordTransaction({
       command: "post",

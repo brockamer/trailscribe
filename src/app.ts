@@ -16,7 +16,7 @@ import { orchestrate } from "./core/orchestrator.js";
 import { sendReply } from "./adapters/outbound/garmin-ipc-inbound.js";
 import { buildReply } from "./core/reply.js";
 import { monthlyTotals } from "./core/ledger.js";
-import { handleStopTrack } from "./core/tracking.js";
+import { handleStopTrack, recordSessionStart } from "./core/tracking.js";
 
 /**
  * Garmin tracking event codes. mc 0 = Position Report, mc 10 = Start Track,
@@ -193,6 +193,27 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
       log({ event: "sos_received_ignored", level: "warn", imei: event.imei, key });
     } else if (event.messageCode === 12) {
       await safeOrchestrate("stop_track_handler", () => handleStopTrack(event, env, key), env, key, event.imei);
+    } else if (event.messageCode === 10) {
+      // Start Track — record the session's start timestamp so the next mc 12
+      // (Stop Track) for this IMEI uses it as the MapShare KML query's d1
+      // lower bound. Without this, closely-spaced sessions conflate.
+      try {
+        await recordSessionStart(env, event.imei, event.timeStamp);
+        log({
+          event: "track_session_start_recorded",
+          level: "info",
+          imei: event.imei,
+          startedAt: event.timeStamp,
+          key,
+        });
+      } catch (err) {
+        log({
+          event: "track_session_start_record_failed",
+          level: "warn",
+          imei: event.imei,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     } else {
       const isTrack = TRACK_MESSAGE_CODES.includes(event.messageCode);
       log({

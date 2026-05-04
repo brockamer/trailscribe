@@ -1,5 +1,5 @@
 import type { Env } from "../env.js";
-import { putJSON } from "../adapters/storage/kv.js";
+import { getJSON, putJSON } from "../adapters/storage/kv.js";
 import type { GarminEvent } from "./types.js";
 import type { TrackMetrics } from "./track-metrics.js";
 import { withCheckpoint, sha256Hex } from "./idempotency.js";
@@ -14,7 +14,50 @@ import { reverseGeocode } from "../adapters/location/geocode.js";
 import { currentWeather } from "../adapters/location/weather.js";
 
 const TRACK_RECORD_TTL_SECONDS = 60 * 60 * 24 * 365;
+const TRACK_START_TTL_SECONDS = 60 * 60 * 24;
 const MS_PER_HOUR = 60 * 60 * 1000;
+
+interface TrackStartRecord {
+  startedAt: number;
+}
+
+const trackStartKey = (imei: string): string => `track_start:${imei}`;
+
+/**
+ * Record an open tracking session's start timestamp (from a Garmin mc 10
+ * "Start Track" event). The companion mc 12 "Stop Track" handler reads this
+ * to set the MapShare KML query's `d1` lower bound, so each closed session
+ * pulls only its own breadcrumbs instead of an ambiguous lookback window.
+ *
+ * 24h TTL covers any reasonable session length while ensuring stale starts
+ * (e.g. battery died mid-session, never sent mc 12) don't bleed into the
+ * next session.
+ */
+export async function recordSessionStart(
+  env: Env,
+  imei: string,
+  startedAt: number,
+): Promise<void> {
+  await putJSON(env.TS_TRACKS, trackStartKey(imei), { startedAt }, {
+    expirationTtl: TRACK_START_TTL_SECONDS,
+  });
+}
+
+/** Read the current open-session start timestamp for an IMEI, or null. */
+export async function readSessionStart(
+  env: Env,
+  imei: string,
+): Promise<TrackStartRecord | null> {
+  return getJSON<TrackStartRecord>(env.TS_TRACKS, trackStartKey(imei));
+}
+
+/**
+ * Delete the open-session start record after a successful Stop Track flow.
+ * Idempotent — KV.delete is a no-op on missing keys.
+ */
+export async function clearSessionStart(env: Env, imei: string): Promise<void> {
+  await env.TS_TRACKS.delete(trackStartKey(imei));
+}
 
 export interface TrackSessionRecord {
   sessionId: string;
@@ -62,8 +105,20 @@ export async function handleStopTrack(
   // then 12h × 5d). Mirrors the per-op pattern in commands/post.ts.
   await withCheckpoint(env, idemKey, "publish_track", async () => {
     const closedAt = event.timeStamp;
+    // Prefer the recorded mc 10 start over the lookback heuristic — without
+    // this, closely-spaced Stop Tracks all query overlapping 12h windows and
+    // pull the same breadcrumbs, producing duplicate/conflated narratives.
+    const startRecord = await readSessionStart(env, event.imei);
     const lookbackHours = Number.parseInt(env.TRACK_LOOKBACK_HOURS, 10) || 12;
-    const startedAt = closedAt - lookbackHours * MS_PER_HOUR;
+    const startedAt = startRecord?.startedAt ?? closedAt - lookbackHours * MS_PER_HOUR;
+    log({
+      event: "track_session_window",
+      level: "info",
+      imei: event.imei,
+      source: startRecord ? "start_record" : "lookback",
+      startedAt,
+      closedAt,
+    });
     const sessionId = await sha256Hex(`${event.imei}:${closedAt}`);
 
     const rawKml = await fetchMapShareKml(env, startedAt, closedAt);
@@ -148,6 +203,9 @@ export async function handleStopTrack(
     });
 
     await sendReply(event.imei, [formatTrackReply(metrics, result.url)], env);
+    // Clear the start marker so the next Stop Track without a fresh mc 10
+    // falls back to the lookback heuristic rather than re-using this session.
+    await clearSessionStart(env, event.imei);
     return { sessionId, journalUrl: result.url };
   });
 }

@@ -12,6 +12,8 @@ import { sendReply } from "../src/adapters/outbound/garmin-ipc-inbound.js";
 import * as mapshareMod from "../src/adapters/location/mapshare.js";
 import * as narrativeMod from "../src/core/narrative.js";
 import * as publishMod from "../src/adapters/publish/github-pages.js";
+import * as geocodeMod from "../src/adapters/location/geocode.js";
+import * as weatherMod from "../src/adapters/location/weather.js";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { GarminEvent } from "../src/core/types.js";
@@ -186,6 +188,7 @@ describe("publishTrackPost", () => {
       },
       endLat: 34.0269,
       endLon: -118.7603,
+      startPlace: "Malibu, CA",
       endPlace: "Malibu, CA",
       env,
     });
@@ -199,6 +202,8 @@ describe("publishTrackPost", () => {
     expect(decoded).toContain("type: track");
     expect(decoded).toContain("distance_km: 2.5");
     expect(decoded).toContain("route_shape: out-and-back");
+    expect(decoded).toContain("start_place: \"Malibu, CA\"");
+    expect(decoded).toContain("end_place: \"Malibu, CA\"");
   });
 });
 
@@ -225,7 +230,11 @@ describe("handleStopTrack — end to end", () => {
   test("fetches KML, generates narrative, publishes, replies, persists record", async () => {
     const env = makeTestEnv();
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
-    vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
+    vi.spyOn(geocodeMod, "reverseGeocode")
+      .mockResolvedValueOnce("Malibu, CA")  // start
+      .mockResolvedValueOnce("Malibu, CA"); // end
+    vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Sunny, 18°C");
+    const narrativeSpy = vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
       title: "PCH and back",
       haiku: "a\nb\nc",
       body: "Run + beach + return.",
@@ -251,6 +260,17 @@ describe("handleStopTrack — end to end", () => {
     expect(replyArgs[0]).toBe("300052030374220");
     expect(replyArgs[1][0]).toContain("Track posted");
     expect(replyArgs[1][0]).toContain("trailscribe-journal");
+
+    // F2: assert enrichment values flowed through to narrative
+    const narrativeArgs = narrativeSpy.mock.calls[0][0];
+    expect(narrativeArgs.startPlace).toBe("Malibu, CA");
+    expect(narrativeArgs.endPlace).toBe("Malibu, CA");
+    expect(narrativeArgs.weatherSummary).toBe("Sunny, 18°C");
+
+    // F2: assert enrichment values flowed through to publish (F1)
+    const publishArgs = publishSpy.mock.calls[0][0];
+    expect(publishArgs.startPlace).toBe("Malibu, CA");
+    expect(publishArgs.endPlace).toBe("Malibu, CA");
 
     const sessionId = await sessionIdFor("300052030374220", stopEvent.timeStamp);
     const stored = await env.TS_TRACKS.get(`track:300052030374220:${sessionId}`, "json") as TrackSessionRecord;

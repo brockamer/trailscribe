@@ -524,6 +524,7 @@ export interface PublishTrackPostArgs {
   metrics: TrackMetrics;
   endLat: number;
   endLon: number;
+  startPlace?: string;
   endPlace?: string;
   weather?: string;
   env: Env;
@@ -539,7 +540,7 @@ export interface PublishTrackPostArgs {
  * dated path uses the session's closedAt timestamp.
  */
 export async function publishTrackPost(args: PublishTrackPostArgs): Promise<PublishPostResult> {
-  const { title, haiku, body, metrics, endLat, endLon, endPlace, weather, env } = args;
+  const { title, haiku, body, metrics, endLat, endLon, startPlace, endPlace, weather, env } = args;
   const now = (args.now ?? (() => new Date(metrics.closedAt)))();
   const delay = args.delay ?? defaultDelay;
 
@@ -562,6 +563,7 @@ export async function publishTrackPost(args: PublishTrackPostArgs): Promise<Publ
     metrics,
     endLat,
     endLon,
+    startPlace,
     endPlace,
     weather,
   });
@@ -578,6 +580,7 @@ function renderTrackMarkdown(a: {
   metrics: TrackMetrics;
   endLat: number;
   endLon: number;
+  startPlace?: string;
   endPlace?: string;
   weather?: string;
 }): string {
@@ -593,6 +596,12 @@ function renderTrackMarkdown(a: {
   lines.push(`  elevation_gain_m: ${Math.round(m.elevation.gainM)}`);
   lines.push(`  activity_hint: ${m.activityHint}`);
   lines.push(`  route_shape: ${m.routeShape}`);
+  if (a.startPlace !== undefined && a.startPlace !== "") {
+    lines.push(`  start_place: ${quoteYaml(a.startPlace)}`);
+  }
+  if (a.endPlace !== undefined && a.endPlace !== "") {
+    lines.push(`  end_place: ${quoteYaml(a.endPlace)}`);
+  }
   lines.push(`  pings: ${m.pingCount}`);
   lines.push(`  close_reason: stop`);
   const place = a.endPlace !== undefined ? `, place: ${quoteYaml(a.endPlace)}` : "";

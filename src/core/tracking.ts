@@ -54,6 +54,10 @@ export async function handleStopTrack(
   env: Env,
   idemKey: string,
 ): Promise<void> {
+  // Single coarse checkpoint per spec §6.1 — trades partial-failure granularity
+  // (we re-run the LLM if anything after publishTrackPost fails) for simpler
+  // reasoning about publish_track being all-or-nothing. See commands/post.ts for
+  // the per-op pattern used by !post; the divergence is intentional, not drift.
   await withCheckpoint(env, idemKey, "publish_track", async () => {
     const closedAt = event.timeStamp;
     const lookbackHours = Number.parseInt(env.TRACK_LOOKBACK_HOURS, 10) || 12;
@@ -78,11 +82,25 @@ export async function handleStopTrack(
     const endPing = pings[pings.length - 1];
     const midPing = pings[Math.floor(pings.length / 2)];
 
-    const [startPlace, endPlace, weather] = await Promise.all([
-      reverseGeocode(startPing.lat, startPing.lon, env).catch(() => undefined),
-      reverseGeocode(endPing.lat, endPing.lon, env).catch(() => undefined),
-      currentWeather(midPing.lat, midPing.lon, env).catch(() => undefined),
+    const [startSettled, endSettled, weatherSettled] = await Promise.allSettled([
+      reverseGeocode(startPing.lat, startPing.lon, env),
+      reverseGeocode(endPing.lat, endPing.lon, env),
+      currentWeather(midPing.lat, midPing.lon, env),
     ]);
+
+    const startPlace = startSettled.status === "fulfilled" ? startSettled.value : undefined;
+    const endPlace = endSettled.status === "fulfilled" ? endSettled.value : undefined;
+    const weather = weatherSettled.status === "fulfilled" ? weatherSettled.value : undefined;
+
+    if (startSettled.status === "rejected") {
+      log({ event: "track_enrichment_failed", level: "warn", kind: "geocode_start", imei: event.imei, error: String(startSettled.reason) });
+    }
+    if (endSettled.status === "rejected") {
+      log({ event: "track_enrichment_failed", level: "warn", kind: "geocode_end", imei: event.imei, error: String(endSettled.reason) });
+    }
+    if (weatherSettled.status === "rejected") {
+      log({ event: "track_enrichment_failed", level: "warn", kind: "weather", imei: event.imei, error: String(weatherSettled.reason) });
+    }
 
     const narrative = await generateTrackNarrative({
       metrics,
@@ -105,6 +123,7 @@ export async function handleStopTrack(
       metrics,
       endLat: endPing.lat,
       endLon: endPing.lon,
+      startPlace: typeof startPlace === "string" ? startPlace : undefined,
       endPlace: typeof endPlace === "string" ? endPlace : undefined,
       weather: typeof weather === "string" ? weather : undefined,
       env,

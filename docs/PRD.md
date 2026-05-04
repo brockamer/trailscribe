@@ -1,9 +1,9 @@
 # TrailScribe — Product Requirements Document
 
-**Status:** Signed off 2026-04-22. Phase 0 (scaffolding) shipped 2026-04-24. Phase 1 (α-MVP, six commands end-to-end on production) shipped 2026-04-26 with the prod-traffic close gate (#111) verified 2026-04-27. **Currently:** Phase 2 — extended commands. Plan: `plans/phase-2-extended-commands.md`.
+**Status:** Signed off 2026-04-22. Phase 0 (scaffolding) shipped 2026-04-24. Phase 1 (α-MVP, six commands end-to-end on production) shipped 2026-04-26 with the prod-traffic close gate (#111) verified 2026-04-27. Phase 2 (eight extended commands + `!postimg`) shipped 2026-04-29. **Tracking session artifacts (Mode B — auto-publish on Stop Track)** shipped 2026-05-03; canonical design at `docs/superpowers/specs/2026-05-01-tracking-session-artifacts-design.md`, plan archived at `docs/superpowers/plans/archived/2026-05/2026-05-03-tracking-session-artifacts.md`. **Currently:** no active phase; Phase 3 (DO + D1, epic #99) is the next promotion candidate.
 **Owner:** Brock Amer
-**Updated:** 2026-04-28
-**Scope:** α-MVP (Phase 1) is the canonical scope of this document. Phase 2 (the eight deferred commands) is detailed in `plans/phase-2-extended-commands.md`; Phase 3+ referenced here for alignment, not specified in full.
+**Updated:** 2026-05-03
+**Scope:** α-MVP (Phase 1) is the canonical scope of this document. Phase 2 (the eight deferred commands) is detailed in `plans/archived/2026-04/phase-2-extended-commands.md`; tracking session artifacts is a non-grammar feature (no `!command`; webhook-triggered) detailed in its own spec. Phase 3+ referenced here for alignment, not specified in full.
 
 ---
 

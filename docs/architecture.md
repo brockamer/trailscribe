@@ -68,6 +68,9 @@ design rationale and phased-evolution detail.
 | `src/core/ledger.ts` | Monthly rollup in `TS_LEDGER` using real OpenAI usage (Phase 1) |
 | `src/core/commands.ts` | Thin per-command handler registry (Phase 1) |
 | `src/core/links.ts` | Google Maps + MapShare link builders |
+| `src/core/tracking.ts` | `handleStopTrack` orchestrator (mc 12) + `storeTrackRecord` KV writer + `TrackSessionRecord` |
+| `src/core/track-metrics.ts` | Pure functions: `haversineKm`, `totalDistanceKm`, `elevationProfile` (5pt median smoothing), `paceStats`, `routeShape`, `activityHint`, `computeMetrics` aggregator |
+| `src/adapters/location/mapshare.ts` | `fetchMapShareKml` + `parsePings` — KML breadcrumb feed for closed tracking sessions (Mode B) |
 | `src/adapters/inbound/…` | (reserved — single Hono route today; keep for multi-gateway future) |
 | `src/adapters/outbound/garmin-ipc-inbound.ts` | `sendReply(imei, msg, env)` — POST /Messaging/Message (Phase 1) |
 | `src/adapters/mail/resend.ts` | `sendEmail()` — Resend transactional API (Phase 1) |

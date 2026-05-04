@@ -226,7 +226,7 @@ const TRACK_NARRATIVE_SCHEMA = {
     properties: {
       title: { type: "string", maxLength: 60 },
       haiku: { type: "string", maxLength: 110 },
-      body: { type: "string", maxLength: 1200 },
+      body: { type: "string", maxLength: 3000 },
     },
     required: ["title", "haiku", "body"],
     additionalProperties: false,
@@ -236,13 +236,13 @@ const TRACK_NARRATIVE_SCHEMA = {
 const TrackContentSchema = z.object({
   title: z.string().min(1).max(60),
   haiku: z.string().min(1).max(110),
-  body: z.string().min(1).max(1200),
+  body: z.string().min(1).max(3000),
 });
 
 /**
  * Third system-prompt variant alongside SYSTEM_PROMPT_WITH_NOTE and
  * SYSTEM_PROMPT_NO_NOTE. Used for closed Garmin tracking sessions.
- * Body cap is 1200 chars (vs 500 for !post). Explicitly forbids inventing
+ * Body cap is 3000 chars (vs 500 for !post). Explicitly forbids inventing
  * specifics not present in metrics or place names.
  */
 const SYSTEM_PROMPT_TRACK = [
@@ -251,7 +251,7 @@ const SYSTEM_PROMPT_TRACK = [
   "Constraints:",
   '- "title": ≤60 characters, evocative, anchored to place + activity. No clickbait, no emoji.',
   '- "haiku": exactly three lines separated by newlines, in 5/7/5 syllables, ≤110 characters total. Plain English, observational.',
-  '- "body": ≤1200 characters. Describe the route, place, conditions, and pace. Use long stops as paragraph breaks. Do not invent companions, motivations, or destinations not present in the metrics or place names.',
+  '- "body": ≤3000 characters. Describe the route, place, conditions, and pace. Use long stops as paragraph breaks. Do not invent companions, motivations, or destinations not present in the metrics or place names.',
 ].join("\n");
 
 /**

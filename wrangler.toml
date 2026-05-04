@@ -16,6 +16,8 @@ compatibility_flags = ["nodejs_compat"]
 TRAILSCRIBE_ENV = "development"
 GOOGLE_MAPS_BASE = "https://www.google.com/maps/search/?api=1&query="
 MAPSHARE_BASE = "https://share.garmin.com/trailscribe"
+TRACK_LOOKBACK_HOURS = "12"
+TRACK_NARRATIVE_BODY_MAX = "1200"
 LLM_BASE_URL = "https://openrouter.ai/api/v1"
 LLM_MODEL = "anthropic/claude-sonnet-4-6"
 LLM_INPUT_COST_PER_1K = "0.003"
@@ -65,6 +67,11 @@ binding = "TS_CACHE"
 id = "78ac7fd25f4e4850b7bb29b666a24286"
 preview_id = "dd4bbcafe4974a65b3f554566c1e2a59"
 
+[[kv_namespaces]]
+binding = "TS_TRACKS"
+id = "c19e26e15cef4f78941e8be96c3ce59c"
+preview_id = "1360f18e57d541cca9d5ad3628486024"
+
 # Required Wrangler Secrets (run `wrangler secret put <NAME>` per env):
 #   GARMIN_INBOUND_TOKEN          — static bearer for Garmin IPC Outbound webhook
 #   GARMIN_IPC_INBOUND_API_KEY    — X-API-Key for POST /api/Messaging/Message
@@ -90,6 +97,8 @@ name = "trailscribe-staging"
 TRAILSCRIBE_ENV = "staging"
 GOOGLE_MAPS_BASE = "https://www.google.com/maps/search/?api=1&query="
 MAPSHARE_BASE = "https://share.garmin.com/trailscribe"
+TRACK_LOOKBACK_HOURS = "12"
+TRACK_NARRATIVE_BODY_MAX = "1200"
 LLM_BASE_URL = "https://openrouter.ai/api/v1"
 LLM_MODEL = "anthropic/claude-sonnet-4-6"
 LLM_INPUT_COST_PER_1K = "0.003"
@@ -131,6 +140,10 @@ id = "e0e010f099554885b9fb621e90e6ec42"
 binding = "TS_CACHE"
 id = "bc1d8155c3f8414d95a94b664c4b892a"
 
+[[env.staging.kv_namespaces]]
+binding = "TS_TRACKS"
+id = "3adba6aecadc4a999cfcc2477c03b64a"
+
 # -----------------------------------------------------------------------------
 # Production environment (auto-deployed by .github/workflows/deploy-cloudflare.yml
 # on push to main; see P0-16).
@@ -143,6 +156,8 @@ name = "trailscribe"
 TRAILSCRIBE_ENV = "production"
 GOOGLE_MAPS_BASE = "https://www.google.com/maps/search/?api=1&query="
 MAPSHARE_BASE = "https://share.garmin.com/trailscribe"
+TRACK_LOOKBACK_HOURS = "12"
+TRACK_NARRATIVE_BODY_MAX = "1200"
 LLM_BASE_URL = "https://openrouter.ai/api/v1"
 LLM_MODEL = "anthropic/claude-sonnet-4-6"
 LLM_INPUT_COST_PER_1K = "0.003"
@@ -180,6 +195,10 @@ id = "cf9b3ca56ff44b12aa89ea412b890366"
 [[env.production.kv_namespaces]]
 binding = "TS_CACHE"
 id = "5733216e963345178a070755ca908473"
+
+[[env.production.kv_namespaces]]
+binding = "TS_TRACKS"
+id = "4b81a282e191454ca01dc7406bfd4f78"
 
 # -----------------------------------------------------------------------------
 # Observability — Workers Logs (free tier, structured log tail via `wrangler tail`)

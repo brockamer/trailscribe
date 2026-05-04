@@ -1,4 +1,5 @@
 import type { Env } from "../../env.js";
+import type { TrackMetrics } from "../../core/track-metrics.js";
 
 const RETRY_DELAYS_MS = [1000, 4000, 16000] as const;
 const MAX_SLUG_COLLISION_ATTEMPTS = 10;
@@ -514,6 +515,104 @@ async function readErrorMessage(res: Response): Promise<string> {
   } catch {
     return `HTTP ${res.status}`;
   }
+}
+
+export interface PublishTrackPostArgs {
+  title: string;
+  haiku: string;
+  body: string;
+  metrics: TrackMetrics;
+  endLat: number;
+  endLon: number;
+  startPlace?: string;
+  endPlace?: string;
+  weather?: string;
+  env: Env;
+  /** Injectable for tests; defaults to setTimeout. */
+  delay?: (ms: number) => Promise<void>;
+  /** Injectable for tests; defaults to `new Date(metrics.closedAt)`. */
+  now?: () => Date;
+}
+
+/**
+ * Track-flavored publish. Same Contents API PUT path as publishPost, but the
+ * frontmatter is the track shape (type: track + nested track block) and the
+ * dated path uses the session's closedAt timestamp.
+ */
+export async function publishTrackPost(args: PublishTrackPostArgs): Promise<PublishPostResult> {
+  const { title, haiku, body, metrics, endLat, endLon, startPlace, endPlace, weather, env } = args;
+  const now = (args.now ?? (() => new Date(metrics.closedAt)))();
+  const delay = args.delay ?? defaultDelay;
+
+  const yyyy = String(now.getUTCFullYear());
+  const mm = pad2(now.getUTCMonth() + 1);
+  const dd = pad2(now.getUTCDate());
+
+  const baseSlug = slugify(title, now);
+  const { path, slug: finalSlug } = await findFreePath(env, env.JOURNAL_POST_PATH_TEMPLATE, {
+    yyyy,
+    mm,
+    dd,
+    baseSlug,
+  });
+
+  const markdown = renderTrackMarkdown({
+    title,
+    haiku,
+    body,
+    metrics,
+    endLat,
+    endLon,
+    startPlace,
+    endPlace,
+    weather,
+  });
+
+  const putResp = await putContents(env, path, markdown, title, delay);
+  const url = renderUrl(env.JOURNAL_URL_TEMPLATE, { yyyy, mm, dd, slug: finalSlug });
+  return { url, path, sha: putResp.commit.sha };
+}
+
+function renderTrackMarkdown(a: {
+  title: string;
+  haiku: string;
+  body: string;
+  metrics: TrackMetrics;
+  endLat: number;
+  endLon: number;
+  startPlace?: string;
+  endPlace?: string;
+  weather?: string;
+}): string {
+  const m = a.metrics;
+  const lines: string[] = ["---"];
+  lines.push(`title: ${quoteYaml(a.title)}`);
+  lines.push(`date: ${new Date(m.closedAt).toISOString()}`);
+  lines.push(`type: track`);
+  lines.push(`track:`);
+  lines.push(`  started_at: ${new Date(m.startedAt).toISOString()}`);
+  lines.push(`  duration_seconds: ${m.durationSeconds}`);
+  lines.push(`  distance_km: ${m.distanceKm.toFixed(2)}`);
+  lines.push(`  elevation_gain_m: ${Math.round(m.elevation.gainM)}`);
+  lines.push(`  activity_hint: ${m.activityHint}`);
+  lines.push(`  route_shape: ${m.routeShape}`);
+  if (a.startPlace !== undefined && a.startPlace !== "") {
+    lines.push(`  start_place: ${quoteYaml(a.startPlace)}`);
+  }
+  if (a.endPlace !== undefined && a.endPlace !== "") {
+    lines.push(`  end_place: ${quoteYaml(a.endPlace)}`);
+  }
+  lines.push(`  pings: ${m.pingCount}`);
+  lines.push(`  close_reason: stop`);
+  const place = a.endPlace !== undefined ? `, place: ${quoteYaml(a.endPlace)}` : "";
+  lines.push(`location: { lat: ${a.endLat}, lon: ${a.endLon}${place} }`);
+  if (a.weather !== undefined) lines.push(`weather: ${quoteYaml(a.weather)}`);
+  lines.push(`tags: [trailscribe, track]`);
+  lines.push("---");
+  lines.push(a.haiku);
+  lines.push("");
+  lines.push(a.body);
+  return lines.join("\n");
 }
 
 function pad2(n: number): string {

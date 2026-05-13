@@ -92,10 +92,7 @@ export async function sendEmail(args: SendEmailArgs): Promise<{ id: string }> {
     lastErr = err;
   }
 
-  throw (
-    lastErr ??
-    new ResendError({ status: 0, message: "send failed without a captured error" })
-  );
+  throw lastErr ?? new ResendError({ status: 0, message: "send failed without a captured error" });
 }
 
 async function readErrorBody(res: Response): Promise<ResendErrorBody> {

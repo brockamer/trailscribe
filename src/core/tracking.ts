@@ -32,21 +32,19 @@ const trackStartKey = (imei: string): string => `track_start:${imei}`;
  * (e.g. battery died mid-session, never sent mc 12) don't bleed into the
  * next session.
  */
-export async function recordSessionStart(
-  env: Env,
-  imei: string,
-  startedAt: number,
-): Promise<void> {
-  await putJSON(env.TS_TRACKS, trackStartKey(imei), { startedAt }, {
-    expirationTtl: TRACK_START_TTL_SECONDS,
-  });
+export async function recordSessionStart(env: Env, imei: string, startedAt: number): Promise<void> {
+  await putJSON(
+    env.TS_TRACKS,
+    trackStartKey(imei),
+    { startedAt },
+    {
+      expirationTtl: TRACK_START_TTL_SECONDS,
+    },
+  );
 }
 
 /** Read the current open-session start timestamp for an IMEI, or null. */
-export async function readSessionStart(
-  env: Env,
-  imei: string,
-): Promise<TrackStartRecord | null> {
+export async function readSessionStart(env: Env, imei: string): Promise<TrackStartRecord | null> {
   return getJSON<TrackStartRecord>(env.TS_TRACKS, trackStartKey(imei));
 }
 
@@ -73,10 +71,7 @@ export interface TrackSessionRecord {
 }
 
 /** Persist a closed track session to TS_TRACKS KV. */
-export async function storeTrackRecord(
-  env: Env,
-  record: TrackSessionRecord,
-): Promise<void> {
+export async function storeTrackRecord(env: Env, record: TrackSessionRecord): Promise<void> {
   const key = `track:${record.imei}:${record.sessionId}`;
   await putJSON(env.TS_TRACKS, key, record, {
     expirationTtl: TRACK_RECORD_TTL_SECONDS,
@@ -164,13 +159,31 @@ export async function handleStopTrack(
     const weather = weatherSettled.status === "fulfilled" ? weatherSettled.value : undefined;
 
     if (startSettled.status === "rejected") {
-      log({ event: "track_enrichment_failed", level: "warn", kind: "geocode_start", imei: event.imei, error: String(startSettled.reason) });
+      log({
+        event: "track_enrichment_failed",
+        level: "warn",
+        kind: "geocode_start",
+        imei: event.imei,
+        error: String(startSettled.reason),
+      });
     }
     if (endSettled.status === "rejected") {
-      log({ event: "track_enrichment_failed", level: "warn", kind: "geocode_end", imei: event.imei, error: String(endSettled.reason) });
+      log({
+        event: "track_enrichment_failed",
+        level: "warn",
+        kind: "geocode_end",
+        imei: event.imei,
+        error: String(endSettled.reason),
+      });
     }
     if (weatherSettled.status === "rejected") {
-      log({ event: "track_enrichment_failed", level: "warn", kind: "weather", imei: event.imei, error: String(weatherSettled.reason) });
+      log({
+        event: "track_enrichment_failed",
+        level: "warn",
+        kind: "weather",
+        imei: event.imei,
+        error: String(weatherSettled.reason),
+      });
     }
 
     const narrative = await withCheckpoint(env, idemKey, "track_narrative", () =>
@@ -228,9 +241,6 @@ function formatTrackReply(metrics: TrackMetrics, url: string): string {
   const km = metrics.distanceKm.toFixed(1);
   const gainM = Math.round(metrics.elevation.gainM);
   const minutes = Math.round(metrics.durationSeconds / 60);
-  const duration =
-    minutes >= 60
-      ? `${Math.floor(minutes / 60)}h${minutes % 60}m`
-      : `${minutes}min`;
+  const duration = minutes >= 60 ? `${Math.floor(minutes / 60)}h${minutes % 60}m` : `${minutes}min`;
   return `Track posted: ${km}km, ${gainM}m gain, ${duration}\n${url}`;
 }

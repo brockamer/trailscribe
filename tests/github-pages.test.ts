@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import {
-  publishPost,
-  PublishError,
-  slugify,
-} from "../src/adapters/publish/github-pages.js";
+import { publishPost, PublishError, slugify } from "../src/adapters/publish/github-pages.js";
 import type { Env } from "../src/env.js";
 import { makeTestEnv } from "./helpers/env.js";
 
@@ -33,7 +29,8 @@ beforeEach(() => {
     GITHUB_JOURNAL_BRANCH: "main",
     GITHUB_JOURNAL_TOKEN: "ghp_test_token_xyz123",
     JOURNAL_POST_PATH_TEMPLATE: "_posts/{yyyy}-{mm}-{dd}-{slug}.md",
-    JOURNAL_URL_TEMPLATE: "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html",
+    JOURNAL_URL_TEMPLATE:
+      "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html",
   });
   fetchSpy = vi.fn();
   globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
@@ -100,14 +97,12 @@ describe("publishPost — happy path", () => {
   });
 
   test("PUT request carries auth, user-agent, and api-version headers", async () => {
-    fetchSpy
-      .mockResolvedValueOnce(new Response(null, { status: 404 }))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          content: { sha: "blob-sha", path: "p", html_url: "x" },
-          commit: { sha: "csh" },
-        }),
-      );
+    fetchSpy.mockResolvedValueOnce(new Response(null, { status: 404 })).mockResolvedValueOnce(
+      jsonResponse({
+        content: { sha: "blob-sha", path: "p", html_url: "x" },
+        commit: { sha: "csh" },
+      }),
+    );
 
     await publishPost({
       title: "Test",
@@ -128,14 +123,12 @@ describe("publishPost — happy path", () => {
   });
 
   test("PUT body is base64'd markdown with frontmatter and branch field", async () => {
-    fetchSpy
-      .mockResolvedValueOnce(new Response(null, { status: 404 }))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          content: { sha: "blob-sha", path: "p", html_url: "x" },
-          commit: { sha: "csh" },
-        }),
-      );
+    fetchSpy.mockResolvedValueOnce(new Response(null, { status: 404 })).mockResolvedValueOnce(
+      jsonResponse({
+        content: { sha: "blob-sha", path: "p", html_url: "x" },
+        commit: { sha: "csh" },
+      }),
+    );
 
     await publishPost({
       title: "Lake Sabrina",
@@ -162,7 +155,7 @@ describe("publishPost — happy path", () => {
     expect(decoded).toContain("---");
     expect(decoded).toContain('title: "Lake Sabrina"');
     expect(decoded).toContain("date: 2026-04-25T17:30:00.000Z");
-    expect(decoded).toContain("location: { lat: 37.1682, lon: -118.5891, place: \"Lake Sabrina\" }");
+    expect(decoded).toContain('location: { lat: 37.1682, lon: -118.5891, place: "Lake Sabrina" }');
     expect(decoded).toContain('weather: "Clear · 8C"');
     expect(decoded).toContain("tags: [trailscribe]");
     expect(decoded).toContain("Granite glow\nCold cirque wind\nDay turns");
@@ -172,14 +165,12 @@ describe("publishPost — happy path", () => {
 
 describe("publishPost — frontmatter conditional keys", () => {
   test("no GPS → location and weather keys OMITTED entirely", async () => {
-    fetchSpy
-      .mockResolvedValueOnce(new Response(null, { status: 404 }))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          content: { sha: "blob-sha", path: "p", html_url: "x" },
-          commit: { sha: "csh" },
-        }),
-      );
+    fetchSpy.mockResolvedValueOnce(new Response(null, { status: 404 })).mockResolvedValueOnce(
+      jsonResponse({
+        content: { sha: "blob-sha", path: "p", html_url: "x" },
+        commit: { sha: "csh" },
+      }),
+    );
 
     await publishPost({
       title: "No GPS Post",
@@ -200,14 +191,12 @@ describe("publishPost — frontmatter conditional keys", () => {
   });
 
   test("GPS but no placeName → location includes lat/lon, omits place key", async () => {
-    fetchSpy
-      .mockResolvedValueOnce(new Response(null, { status: 404 }))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          content: { sha: "blob-sha", path: "p", html_url: "x" },
-          commit: { sha: "csh" },
-        }),
-      );
+    fetchSpy.mockResolvedValueOnce(new Response(null, { status: 404 })).mockResolvedValueOnce(
+      jsonResponse({
+        content: { sha: "blob-sha", path: "p", html_url: "x" },
+        commit: { sha: "csh" },
+      }),
+    );
 
     await publishPost({
       title: "Coords only",
@@ -301,14 +290,12 @@ describe("publishPost — error paths", () => {
 describe("publishPost — URL template substitution", () => {
   test("substitutes {yyyy}/{mm}/{dd}/{slug} per JOURNAL_URL_TEMPLATE", async () => {
     env.JOURNAL_URL_TEMPLATE = "https://example.com/blog/{yyyy}/{mm}/{slug}/";
-    fetchSpy
-      .mockResolvedValueOnce(new Response(null, { status: 404 }))
-      .mockResolvedValueOnce(
-        jsonResponse({
-          content: { sha: "b", path: "p", html_url: "x" },
-          commit: { sha: "c" },
-        }),
-      );
+    fetchSpy.mockResolvedValueOnce(new Response(null, { status: 404 })).mockResolvedValueOnce(
+      jsonResponse({
+        content: { sha: "b", path: "p", html_url: "x" },
+        commit: { sha: "c" },
+      }),
+    );
 
     const result = await publishPost({
       title: "Hello World",

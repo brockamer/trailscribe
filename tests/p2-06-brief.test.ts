@@ -47,7 +47,11 @@ function chatCompletionResponse(content: string, prompt = 100, completion = 150)
   return {
     id: "chatcmpl-test",
     choices: [{ message: { role: "assistant", content }, finish_reason: "stop" }],
-    usage: { prompt_tokens: prompt, completion_tokens: completion, total_tokens: prompt + completion },
+    usage: {
+      prompt_tokens: prompt,
+      completion_tokens: completion,
+      total_tokens: prompt + completion,
+    },
   };
 }
 

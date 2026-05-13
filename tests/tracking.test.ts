@@ -36,15 +36,11 @@ describe("storeTrackRecord", () => {
       distanceKm: 2.5,
       elevationGainM: 40,
       durationSeconds: 3600,
-      journalUrl:
-        "https://brockamer.github.io/trailscribe-journal/2026/05/02/x.html",
+      journalUrl: "https://brockamer.github.io/trailscribe-journal/2026/05/02/x.html",
       rawKml: "<kml/>",
     };
     await storeTrackRecord(env, record);
-    const raw = await env.TS_TRACKS.get(
-      "track:300052030374220:deadbeef",
-      "json",
-    );
+    const raw = await env.TS_TRACKS.get("track:300052030374220:deadbeef", "json");
     expect(raw).toEqual(record);
   });
 });
@@ -72,14 +68,19 @@ describe("generateTrackNarrative", () => {
     const env = makeTestEnv();
     vi.mocked(chatCompletion).mockResolvedValue({
       id: "x",
-      choices: [{
-        message: { role: "assistant", content: JSON.stringify({
-          title: "PCH and back",
-          haiku: "Sand under wet shoes\nWaves take the line we ran past\nBack uphill, sun high",
-          body: "A short out-and-back along PCH and the beach.",
-        }) },
-        finish_reason: "stop",
-      }],
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: JSON.stringify({
+              title: "PCH and back",
+              haiku: "Sand under wet shoes\nWaves take the line we ran past\nBack uphill, sun high",
+              body: "A short out-and-back along PCH and the beach.",
+            }),
+          },
+          finish_reason: "stop",
+        },
+      ],
       usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
     });
 
@@ -103,10 +104,12 @@ describe("generateTrackNarrative", () => {
     const env = makeTestEnv();
     vi.mocked(chatCompletion).mockResolvedValue({
       id: "x",
-      choices: [{
-        message: { role: "assistant", content: "" },
-        finish_reason: "stop",
-      }],
+      choices: [
+        {
+          message: { role: "assistant", content: "" },
+          finish_reason: "stop",
+        },
+      ],
       usage: { prompt_tokens: 10, completion_tokens: 0, total_tokens: 10 },
     });
 
@@ -122,10 +125,12 @@ describe("generateTrackNarrative", () => {
     const env = makeTestEnv();
     vi.mocked(chatCompletion).mockResolvedValue({
       id: "x",
-      choices: [{
-        message: { role: "assistant", content: "not json at all" },
-        finish_reason: "stop",
-      }],
+      choices: [
+        {
+          message: { role: "assistant", content: "not json at all" },
+          finish_reason: "stop",
+        },
+      ],
       usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
     });
 
@@ -141,14 +146,19 @@ describe("generateTrackNarrative", () => {
     const env = makeTestEnv();
     vi.mocked(chatCompletion).mockResolvedValue({
       id: "x",
-      choices: [{
-        message: { role: "assistant", content: JSON.stringify({
-          title: "Just a title",
-          haiku: "Lines one\nLines two\nLines three",
-          // body missing
-        }) },
-        finish_reason: "stop",
-      }],
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: JSON.stringify({
+              title: "Just a title",
+              haiku: "Lines one\nLines two\nLines three",
+              // body missing
+            }),
+          },
+          finish_reason: "stop",
+        },
+      ],
       usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
     });
 
@@ -164,12 +174,18 @@ describe("generateTrackNarrative", () => {
 describe("publishTrackPost", () => {
   test("commits markdown with type:track frontmatter via existing publishPost path", async () => {
     const env = makeTestEnv();
-    const fetchMock = vi.spyOn(globalThis, "fetch")
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response("not found", { status: 404 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        content: { sha: "abc", path: "_posts/2026-05-02-pch.md", html_url: "x" },
-        commit: { sha: "deadbeef" },
-      }), { status: 200 }));
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            content: { sha: "abc", path: "_posts/2026-05-02-pch.md", html_url: "x" },
+            commit: { sha: "deadbeef" },
+          }),
+          { status: 200 },
+        ),
+      );
 
     const result = await publishTrackPost({
       title: "PCH and back",
@@ -202,8 +218,8 @@ describe("publishTrackPost", () => {
     expect(decoded).toContain("type: track");
     expect(decoded).toContain("distance_km: 2.5");
     expect(decoded).toContain("route_shape: out-and-back");
-    expect(decoded).toContain("start_place: \"Malibu, CA\"");
-    expect(decoded).toContain("end_place: \"Malibu, CA\"");
+    expect(decoded).toContain('start_place: "Malibu, CA"');
+    expect(decoded).toContain('end_place: "Malibu, CA"');
   });
 });
 
@@ -226,11 +242,15 @@ describe("session start window (#175 follow-up)", () => {
     const { recordSessionStart } = await import("../src/core/tracking.js");
     const fetchMock = vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
     vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
-      title: "x", haiku: "a\nb\nc", body: "y",
+      title: "x",
+      haiku: "a\nb\nc",
+      body: "y",
       usage: { prompt_tokens: 1, completion_tokens: 1 },
     });
     vi.spyOn(publishMod, "publishTrackPost").mockResolvedValue({
-      url: "https://x", path: "p", sha: "s",
+      url: "https://x",
+      path: "p",
+      sha: "s",
     });
 
     const startedAt = Date.parse("2026-05-04T22:01:00Z");
@@ -277,11 +297,15 @@ describe("session start window (#175 follow-up)", () => {
     const { recordSessionStart, readSessionStart } = await import("../src/core/tracking.js");
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
     vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
-      title: "x", haiku: "a\nb\nc", body: "y",
+      title: "x",
+      haiku: "a\nb\nc",
+      body: "y",
       usage: { prompt_tokens: 1, completion_tokens: 1 },
     });
     vi.spyOn(publishMod, "publishTrackPost").mockResolvedValue({
-      url: "https://x", path: "p", sha: "s",
+      url: "https://x",
+      path: "p",
+      sha: "s",
     });
 
     await recordSessionStart(env, "300052030374220", Date.parse("2026-05-04T22:00:00Z"));
@@ -318,7 +342,7 @@ describe("handleStopTrack — end to end", () => {
     await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
     vi.spyOn(geocodeMod, "reverseGeocode")
-      .mockResolvedValueOnce("Malibu, CA")  // start
+      .mockResolvedValueOnce("Malibu, CA") // start
       .mockResolvedValueOnce("Malibu, CA"); // end
     vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Sunny, 18°C");
     const narrativeSpy = vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
@@ -360,10 +384,15 @@ describe("handleStopTrack — end to end", () => {
     expect(publishArgs.endPlace).toBe("Malibu, CA");
 
     const sessionId = await sessionIdFor("300052030374220", stopEvent.timeStamp);
-    const stored = await env.TS_TRACKS.get(`track:300052030374220:${sessionId}`, "json") as TrackSessionRecord;
+    const stored = (await env.TS_TRACKS.get(
+      `track:300052030374220:${sessionId}`,
+      "json",
+    )) as TrackSessionRecord;
     expect(stored).not.toBeNull();
     expect(stored.pingCount).toBe(14);
-    expect(stored.journalUrl).toBe("https://brockamer.github.io/trailscribe-journal/2026/05/02/pch.html");
+    expect(stored.journalUrl).toBe(
+      "https://brockamer.github.io/trailscribe-journal/2026/05/02/pch.html",
+    );
   });
 
   test("empty KML: logs warning, sends 'no breadcrumbs' reply, no publish", async () => {
@@ -388,8 +417,7 @@ describe("handleStopTrack — end to end", () => {
     const env = makeTestEnv();
     await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
-    vi.spyOn(geocodeMod, "reverseGeocode")
-      .mockResolvedValue("Malibu, CA");
+    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Malibu, CA");
     vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Sunny, 18°C");
     const narrativeSpy = vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
       title: "PCH and back",
@@ -398,7 +426,8 @@ describe("handleStopTrack — end to end", () => {
       usage: { prompt_tokens: 100, completion_tokens: 50 },
     });
     // First publish call throws (e.g. journal PAT expired); second succeeds.
-    const publishSpy = vi.spyOn(publishMod, "publishTrackPost")
+    const publishSpy = vi
+      .spyOn(publishMod, "publishTrackPost")
       .mockRejectedValueOnce(new Error("403 Bad credentials"))
       .mockResolvedValueOnce({
         url: "https://brockamer.github.io/trailscribe-journal/2026/05/02/pch.html",
@@ -414,7 +443,9 @@ describe("handleStopTrack — end to end", () => {
 
     // First call: narrative succeeds, publish throws → outer checkpoint
     // doesn't cache `publish_track`, but inner `track_narrative` IS cached.
-    await expect(handleStopTrack(stopEvent, env, "idem-cost-bound")).rejects.toThrow(/Bad credentials/);
+    await expect(handleStopTrack(stopEvent, env, "idem-cost-bound")).rejects.toThrow(
+      /Bad credentials/,
+    );
     expect(narrativeSpy).toHaveBeenCalledTimes(1);
     expect(publishSpy).toHaveBeenCalledTimes(1);
 
@@ -431,11 +462,15 @@ describe("handleStopTrack — end to end", () => {
     await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
     vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
-      title: "x", haiku: "a\nb\nc", body: "y",
+      title: "x",
+      haiku: "a\nb\nc",
+      body: "y",
       usage: { prompt_tokens: 1, completion_tokens: 1 },
     });
     const publishSpy = vi.spyOn(publishMod, "publishTrackPost").mockResolvedValue({
-      url: "https://x", path: "p", sha: "s",
+      url: "https://x",
+      path: "p",
+      sha: "s",
     });
 
     const event: GarminEvent = {

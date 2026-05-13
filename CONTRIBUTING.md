@@ -58,9 +58,10 @@ bootstrapped for this repo — planned post-Phase-0.
 ## Scope discipline
 
 Do NOT:
+
 - Add a new dependency without PRD justification.
 - Add a new env var / secret without updating `src/env.ts` + `.dev.vars.example`
-  + `wrangler.toml` atomically.
+  - `wrangler.toml` atomically.
 - Bring back Pipedream / n8n integrations (archived as historical paths).
 - Add command verbs outside the α-MVP set (`!ping`, `!help`, `!cost`, `!post`,
   `!mail`, `!todo`) without updating the PRD. Phase 2+ commands are already

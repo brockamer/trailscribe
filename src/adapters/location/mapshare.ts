@@ -80,9 +80,7 @@ export function parsePings(kml: string): KmlPing[] {
 }
 
 function readStringField(block: string, name: string): string | null {
-  const re = new RegExp(
-    `<Data name="${name}">\\s*<value>([\\s\\S]*?)<\\/value>\\s*<\\/Data>`,
-  );
+  const re = new RegExp(`<Data name="${name}">\\s*<value>([\\s\\S]*?)<\\/value>\\s*<\\/Data>`);
   const m = re.exec(block);
   return m ? m[1].trim() : null;
 }

@@ -15,6 +15,7 @@ If you prefer to keep everything under your control, you can run TrailScribe on 
    sudo apt install -y docker.io docker-compose
    sudo usermod -aG docker $USER
    ```
+
    Log out and back in to apply the group change.
 
 3. Clone the TrailScribe repository onto the VM or upload the `n8n-docker-compose.yml` file.
@@ -35,28 +36,43 @@ If you prefer to keep everything under your control, you can run TrailScribe on 
 2. Add a **Function** node. Use JavaScript to replicate the parsing and orchestrator logic. You can copy the code from `examples/pipedream-steps.md` and adapt it to n8n’s syntax:
 
    ```js
-   const { parseCommand } = require('../src/agent/grammar');
-   const { orchestrate } = require('../src/agent/orchestrator');
-   const { isDuplicate, markProcessed } = require('../src/runtime/idempotency');
-   const { Ledger } = require('../src/runtime/ledger');
-   const { loadConfig } = require('../src/config/env');
-   const { sendEmail } = require('../src/tools/emailGmail');
+   const { parseCommand } = require("../src/agent/grammar");
+   const { orchestrate } = require("../src/agent/orchestrator");
+   const { isDuplicate, markProcessed } = require("../src/runtime/idempotency");
+   const { Ledger } = require("../src/runtime/ledger");
+   const { loadConfig } = require("../src/config/env");
+   const { sendEmail } = require("../src/tools/emailGmail");
 
    const payload = $json;
    const config = loadConfig();
    const ledger = new Ledger(config);
    if (payload.msgId && isDuplicate(payload.msgId)) {
-     return { status: 'duplicate' };
+     return { status: "duplicate" };
    }
    if (payload.msgId) markProcessed(payload.msgId);
-   const parsed = parseCommand((payload.message || '').trim());
+   const parsed = parseCommand((payload.message || "").trim());
    if (!parsed) {
-     await sendEmail({ to: payload.sender || config.GMAIL_SENDER, subject: 'TrailScribe Reply', body: 'Unknown command.', config });
-     return { status: 'unknown' };
+     await sendEmail({
+       to: payload.sender || config.GMAIL_SENDER,
+       subject: "TrailScribe Reply",
+       body: "Unknown command.",
+       config,
+     });
+     return { status: "unknown" };
    }
-   const result = await orchestrate(parsed, { lat: payload.latitude, lon: payload.longitude, config, ledger });
-   await sendEmail({ to: payload.sender || config.GMAIL_SENDER, subject: 'TrailScribe Reply', body: result.body, config });
-   return { status: 'ok', body: result.body };
+   const result = await orchestrate(parsed, {
+     lat: payload.latitude,
+     lon: payload.longitude,
+     config,
+     ledger,
+   });
+   await sendEmail({
+     to: payload.sender || config.GMAIL_SENDER,
+     subject: "TrailScribe Reply",
+     body: result.body,
+     config,
+   });
+   return { status: "ok", body: result.body };
    ```
 
 3. Add **Gmail** and **Todoist** nodes if you prefer to use n8n’s built‑in integrations instead of the stubbed `sendEmail`/`addTask` functions. You can map the outputs of the Function node to these nodes’ inputs.

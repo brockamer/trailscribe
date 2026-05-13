@@ -42,12 +42,7 @@ describe("haversineKm", () => {
   });
 
   test("known PCH-fixture leg: ping 1 to ping 2 ~ 0.16 km", () => {
-    const km = haversineKm(
-      34.026825,
-      -118.760255,
-      34.02644,
-      -118.76182,
-    );
+    const km = haversineKm(34.026825, -118.760255, 34.02644, -118.76182);
     expect(km).toBeGreaterThan(0.13);
     expect(km).toBeLessThan(0.18);
   });
@@ -82,9 +77,7 @@ describe("elevationProfile", () => {
   });
 
   test("monotonic-up sequence: positive gain, zero loss", () => {
-    const pings = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110].map(
-      (alt, i) => makePing(i, alt),
-    );
+    const pings = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110].map((alt, i) => makePing(i, alt));
     const profile = elevationProfile(pings);
     expect(profile.gainM).toBeGreaterThan(50);
     expect(profile.lossM).toBe(0);

@@ -1,6 +1,6 @@
 # P1-22 — Idempotency Replay Verification
 
-Manual procedure to verify that re-delivering the same Garmin webhook payload to staging produces no duplicate side-effects. Closes the PRD success criterion *"0 duplicate side-effects across 10 manual replays."*
+Manual procedure to verify that re-delivering the same Garmin webhook payload to staging produces no duplicate side-effects. Closes the PRD success criterion _"0 duplicate side-effects across 10 manual replays."_
 
 ## What replay safety means here
 
@@ -38,12 +38,15 @@ The verification runs three times — once each for `!post`, `!mail`, `!todo`. O
    - For `mail-replay.json`: set the `to:` recipient in `freeText` to a held-out email you can monitor (don't use a real user's address).
 
 2. Open a second terminal:
+
    ```bash
    wrangler tail --env staging
    ```
+
    Leave it running so you can watch logs in real time.
 
 3. Run the driver:
+
    ```bash
    ./scripts/replay-test.sh post 10
    # or: ./scripts/replay-test.sh mail 10
@@ -57,6 +60,7 @@ The verification runs three times — once each for `!post`, `!mail`, `!todo`. O
 #### Log assertions (from `wrangler tail`)
 
 In a clean replay run you should see:
+
 - **Exactly 1** first-delivery log line — the `event:"orchestrate_ok"` entry with `cmd:"<post|mail|todo>"`.
 - **Exactly 9** `event:"idempotent_replay"` log lines (for N=10).
 - **Zero** `event:"orchestrate_error"` or `event:"reply_send_failed"` lines.
@@ -103,6 +107,7 @@ wrangler kv:key get --binding=TS_LEDGER --env staging "ledger:$(date -u +%Y-%m)"
 ```
 
 Expected:
+
 ```json
 {
   "post": { "requests": 1, "usd_cost": <real-cost-from-LLM> },
@@ -130,7 +135,7 @@ The `status` + `completedOps` + `opResults` fields reveal where the pipeline got
 
 If `status === "completed"` but a side-effect still duplicated, the bug is in `app.ts` — the replay short-circuit isn't firing before the dispatch.
 
-If `status` is `"processing"` or `"failed"` *and* a side-effect duplicated, the `withCheckpoint` itself isn't reading the cached `opResults` — most likely a serialization issue or a renamed `opName`.
+If `status` is `"processing"` or `"failed"` _and_ a side-effect duplicated, the `withCheckpoint` itself isn't reading the cached `opResults` — most likely a serialization issue or a renamed `opName`.
 
 ## Story completion note (paste-in template)
 

@@ -1,5 +1,9 @@
 import { describe, test, expect, beforeEach } from "vitest";
-import { checkBudget, BUDGET_REJECTION_MESSAGE, ESTIMATED_POST_TOKENS } from "../src/core/budget.js";
+import {
+  checkBudget,
+  BUDGET_REJECTION_MESSAGE,
+  ESTIMATED_POST_TOKENS,
+} from "../src/core/budget.js";
 import { recordTransaction } from "../src/core/ledger.js";
 import { makeTestEnv } from "./helpers/env.js";
 import type { Env } from "../src/env.js";

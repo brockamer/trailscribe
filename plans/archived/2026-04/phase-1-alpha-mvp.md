@@ -20,8 +20,8 @@ Phase 1 is the first time the codebase touches third-party APIs in production. Q
 - **KV (Key-Value store)** — Cloudflare's globally-replicated key/value DB. Workers have no local disk and no persistent process memory, so every piece of state — idempotency records, ledger, cache — lives in KV. **Eventually consistent**: a write is visible at the writing edge immediately but may take seconds to propagate worldwide. There are four KV bindings: `TS_IDEMPOTENCY`, `TS_LEDGER`, `TS_CONTEXT`, `TS_CACHE`.
 - **Wrangler** — the Cloudflare CLI. `wrangler dev` runs the Worker locally with mock KV; `wrangler deploy --env staging` ships to the staging URL; `wrangler secret put KEY --env staging` is the equivalent of putting a value in `/etc/secrets/KEY` for that environment.
 - **Hono** — a tiny HTTP routing library (10 KB) designed for Workers. Like Express, but Worker-native. Already wired in `src/app.ts`.
-- **Garmin IPC Outbound** — Garmin's webhook to *us*: when the device sends a message, Garmin POSTs the event to `/garmin/ipc`. We must respond `200` or Garmin retries.
-- **Garmin IPC Inbound** — *Our* call to Garmin to deliver a reply: `POST {base}/api/Messaging/Message` with `X-API-Key`. Body limit is **160 chars per message** (Iridium hard cap; 422 on overage). Two messages = 320-char reply budget.
+- **Garmin IPC Outbound** — Garmin's webhook to _us_: when the device sends a message, Garmin POSTs the event to `/garmin/ipc`. We must respond `200` or Garmin retries.
+- **Garmin IPC Inbound** — _Our_ call to Garmin to deliver a reply: `POST {base}/api/Messaging/Message` with `X-API-Key`. Body limit is **160 chars per message** (Iridium hard cap; 422 on overage). Two messages = 320-char reply budget.
 - **Idempotency** — making sure the same Garmin webhook delivered twice only acts once. Garmin retries failed deliveries every 2/4/8/16/32/64/128 s, then 12 h pauses × 5 d. We dedupe by computing `sha256(imei + timestamp + messageCode + content_hash)` and storing it in `TS_IDEMPOTENCY` for 48 h.
 - **OpenRouter** — a single HTTP API that proxies to many LLM providers (OpenAI, Anthropic, Google, etc.) behind one auth key. Lets us swap models without code changes. Calls look like OpenAI's chat-completions API; just a different base URL and key.
 - **Resend** — transactional email API (think SendGrid/Postmark). API key auth, JSON body, no SMTP/OAuth dance.
@@ -66,15 +66,15 @@ Stories are sized **S** (≤2 h), **M** (≤half-day), **L** (≤day). Dependenc
 
 The work splits into seven themes. Themes can be parallelized; dependencies inside a theme are noted.
 
-| Theme | Stories | Why grouped |
-|---|---|---|
-| A — Reply pipeline (foundation) | P1-01, P1-02 | Wire orchestrator → IPC Inbound. Must land before any command can talk back to the device. Includes the messageCode + GPS-fix guards. |
-| B — AI provider (OpenRouter) | P1-03, P1-04, P1-05 | Replace `openai.ts` adapter, rename env vars, build narrative module. |
-| C — External adapters | P1-06, P1-07, P1-08, P1-09, P1-10 | Real implementations of mail, tasks, blog publish, geocode, weather. |
-| D — Core supporting modules | P1-11, P1-12, P1-13, P1-14 | Ledger, context window, op-level idempotency checkpoints, daily budget gate. |
-| E — Reply formatter | P1-15 | Single module that takes `CommandResult` → ≤320-char paged reply with optional cost suffix. |
-| F — Command handlers | P1-16, P1-17, P1-18, P1-19 | Per-command pipelines that compose the adapters. |
-| G — End-to-end verification | P1-20, P1-21, P1-22, P1-23 | Journal repo bootstrap, staging burn-in, prod cutover gate. |
+| Theme                           | Stories                           | Why grouped                                                                                                                           |
+| ------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| A — Reply pipeline (foundation) | P1-01, P1-02                      | Wire orchestrator → IPC Inbound. Must land before any command can talk back to the device. Includes the messageCode + GPS-fix guards. |
+| B — AI provider (OpenRouter)    | P1-03, P1-04, P1-05               | Replace `openai.ts` adapter, rename env vars, build narrative module.                                                                 |
+| C — External adapters           | P1-06, P1-07, P1-08, P1-09, P1-10 | Real implementations of mail, tasks, blog publish, geocode, weather.                                                                  |
+| D — Core supporting modules     | P1-11, P1-12, P1-13, P1-14        | Ledger, context window, op-level idempotency checkpoints, daily budget gate.                                                          |
+| E — Reply formatter             | P1-15                             | Single module that takes `CommandResult` → ≤320-char paged reply with optional cost suffix.                                           |
+| F — Command handlers            | P1-16, P1-17, P1-18, P1-19        | Per-command pipelines that compose the adapters.                                                                                      |
+| G — End-to-end verification     | P1-20, P1-21, P1-22, P1-23        | Journal repo bootstrap, staging burn-in, prod cutover gate.                                                                           |
 
 ---
 
@@ -87,6 +87,7 @@ The work splits into seven themes. Themes can be parallelized; dependencies insi
 **Context.** `src/app.ts` currently logs `event_received` and stops; the comment says `// TODO: dispatch to orchestrator in Phase 1`. We need to call `orchestrate()` on each event, capture the `CommandResult`, and forward it to the reply path (P1-02) — but **only** for `messageCode === 3` events with valid `freeText` starting with `!`. See "Critical event-handling guards" callout above.
 
 **Acceptance criteria:**
+
 - [ ] `handleEvent` writes the idempotency record for every event regardless of messageCode (replay protection is universal).
 - [ ] **Guard 1 (messageCode):** if `event.messageCode !== 3`, log `event: "non_free_text"` with the `messageCode` field, write the idempotency record, return without dispatching. SOS (`messageCode=4`) gets a separate `event: "sos_received_ignored"` log line for visibility.
 - [ ] **Guard 2 (GPS fix):** compute `hasFix = event.point.gpsFix !== 0 && !(event.point.latitude === 0 && event.point.longitude === 0)`. Pass `lat`/`lon` to `OrchestratorContext` only when `hasFix`; otherwise pass `undefined`.
@@ -113,17 +114,22 @@ The work splits into seven themes. Themes can be parallelized; dependencies insi
 **Context.** `src/adapters/outbound/garmin-ipc-inbound.ts` is a stub that throws. Real impl per `materials/Garmin IPC Inbound.txt`: POST `{GARMIN_IPC_INBOUND_BASE_URL}/api/Messaging/Message` with `X-API-Key` header and a body shaped:
 
 ```json
-{ "Messages": [{
-  "Recipients": ["<imei>"],
-  "Sender": "<env.IPC_INBOUND_SENDER>",
-  "Timestamp": "/Date(<ms>)/",
-  "Message": "<≤160 chars>"
-}]}
+{
+  "Messages": [
+    {
+      "Recipients": ["<imei>"],
+      "Sender": "<env.IPC_INBOUND_SENDER>",
+      "Timestamp": "/Date(<ms>)/",
+      "Message": "<≤160 chars>"
+    }
+  ]
+}
 ```
 
 Reply budget is 320 chars (two SMS). Each `Message` field is hard-capped at 160 by Iridium; we send up to two requests per reply. P1-15 owns the page-splitting logic and feeds 1–2 message strings to `sendReply`.
 
 **Acceptance criteria:**
+
 - [ ] `sendReply(imei: string, messages: string[], env: Env): Promise<{ count: number }>`.
 - [ ] Validates each message ≤ 160 chars; throws a typed error if longer (caller's bug).
 - [ ] Sends one HTTP request per message (Garmin's API supports an array but the IDs are simpler if we send sequentially).
@@ -148,6 +154,7 @@ Reply budget is 320 chars (two SMS). Each `Message` field is hard-capped at 160 
 **Context.** PRD §6 locked `gpt-5-mini` direct via OpenAI. Issue #31 supersedes that — Phase 1 routes through **OpenRouter**, a service that exposes one HTTPS API (`https://openrouter.ai/api/v1/chat/completions`) and one API key while letting us pick any model from many providers. Wire change: same OpenAI-style request shape, different base URL, different auth header (`Authorization: Bearer <key>`), plus an `HTTP-Referer` and `X-Title` header for OpenRouter analytics.
 
 **Acceptance criteria:**
+
 - [ ] `src/adapters/ai/openrouter.ts` exists; old `openai.ts` deleted.
 - [ ] Function signature stays — but the existing `NarrativeInput`/`NarrativeOutput` types **move out** of the adapter file and into `src/core/narrative.ts` (P1-05). The adapter becomes a thin HTTP wrapper that takes a typed prompt config and returns the raw model response.
 - [ ] `pnpm typecheck` + `pnpm test` green after the rename (no real impl yet — still a stub that throws).
@@ -163,18 +170,21 @@ Reply budget is 320 chars (two SMS). Each `Message` field is hard-capped at 160 
 **Context.** Per #31 + the auto-memory note, the env schema should be provider-neutral. This story bundles three correlated env changes that all touch `wrangler.toml`, `src/env.ts`, `.dev.vars.example`, `docs/setup-cloudflare.md`, and `CLAUDE.md`.
 
 **Renames:**
+
 - `OPENAI_API_KEY` → `LLM_API_KEY`
 - `OPENAI_MODEL` → `LLM_MODEL`
 - `OPENAI_INPUT_COST_PER_1K` → `LLM_INPUT_COST_PER_1K`
 - `OPENAI_OUTPUT_COST_PER_1K` → `LLM_OUTPUT_COST_PER_1K`
 
 **New vars:**
+
 - `LLM_BASE_URL` — default `https://openrouter.ai/api/v1`.
 - `LLM_PROVIDER_HEADERS_JSON` — optional JSON blob for OpenRouter `HTTP-Referer` + `X-Title`. Ignored when unset.
 - `IPC_INBOUND_SENDER` — `Sender` field for outbound IPC messages (the on-device "From" string). Default value in `wrangler.toml` matches `RESEND_FROM_EMAIL` for now; decoupled so it can evolve independently.
 - `JOURNAL_URL_TEMPLATE` — public URL pattern for committed posts (e.g. Jekyll: `https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html`). Lets us swap themes without changing code. P1-08 reads this; P1-20 fixes the actual value.
 
 **Acceptance criteria:**
+
 - [ ] `src/env.ts` `Env` interface + zod schema updated; old names removed.
 - [ ] `wrangler.toml` `[vars]` block updated; staging + production env overrides updated.
 - [ ] `.dev.vars.example` updated.
@@ -196,6 +206,7 @@ Reply budget is 320 chars (two SMS). Each `Message` field is hard-capped at 160 
 **Type ownership.** `NarrativeInput` and `NarrativeOutput` types live in `src/core/narrative.ts` (moved out of the adapter in P1-03). The adapter `src/adapters/ai/openrouter.ts` deals only in raw chat-completion request/response shapes — it's a thin HTTP wrapper. The adapter knows nothing about narratives; the core module knows nothing about OpenRouter's wire format.
 
 **Acceptance criteria:**
+
 - [ ] `src/core/narrative.ts` exports `generateNarrative(input: NarrativeInput): Promise<NarrativeOutput>`.
 - [ ] `NarrativeInput` accepts `lat?` / `lon?` / `placeName?` / `weather?` as optional — when no GPS fix, all four are undefined and the prompt omits position context cleanly.
 - [ ] System prompt enforces: title ≤ 60 chars; haiku exactly 5-7-5 syllables ≤ 80 chars; body ≤ 500 chars; tone matches the incoming note's voice.
@@ -221,6 +232,7 @@ Reply budget is 320 chars (two SMS). Each `Message` field is hard-capped at 160 
 **Context.** `src/adapters/mail/resend.ts` is a stub. Resend's API: `POST https://api.resend.com/emails` with `Authorization: Bearer <RESEND_API_KEY>` and a JSON body `{ from, to, subject, html | text }`. Returns `{ id: <message-id> }` on 200.
 
 **Acceptance criteria:**
+
 - [ ] `sendEmail({ to, subject, body, env }): Promise<{ id: string }>`.
 - [ ] `from` field combines `RESEND_FROM_NAME` + `RESEND_FROM_EMAIL`: `"TrailScribe <trailscribe@resend.dev>"`.
 - [ ] Body sent as plain text (`text` field), not HTML — α-MVP doesn't render markdown.
@@ -240,6 +252,7 @@ Reply budget is 320 chars (two SMS). Each `Message` field is hard-capped at 160 
 **Context.** `src/adapters/tasks/todoist.ts` is a stub. Todoist REST API: `POST https://api.todoist.com/rest/v2/tasks` with `Authorization: Bearer <TODOIST_API_TOKEN>` and a JSON body `{ content, description, due_string }`. Returns `{ id, content, ... }` on 200.
 
 **Acceptance criteria:**
+
 - [ ] `addTask({ task, lat?, lon?, timestamp, env }): Promise<{ id: string, url: string }>`.
 - [ ] `content` = task text from `!todo <task>`.
 - [ ] `description` = formatted location + timestamp: `"From inReach: <lat,lon> @ <ISO>"` when lat/lon both present; else just `"From inReach: <ISO>"`.
@@ -262,6 +275,7 @@ Path template comes from `JOURNAL_POST_PATH_TEMPLATE`, default `_posts/{yyyy}-{m
 The slug is derived from the narrative title (lowercase, alphanumerics + hyphens, ≤ 50 chars).
 
 Markdown frontmatter (used by Jekyll/Hugo themes):
+
 ```yaml
 ---
 title: "<title>"
@@ -278,6 +292,7 @@ tags: [trailscribe]
 The `location:` and `weather:` frontmatter keys are omitted when no GPS fix.
 
 **Acceptance criteria:**
+
 - [ ] `publishPost({ title, haiku, body, lat?, lon?, placeName?, weather?, env }): Promise<{ url: string, path: string, sha: string }>`.
 - [ ] Slug derivation handles unicode (drop non-ASCII), collapses whitespace, fallback to `untitled-<HHMMSS>` if title is empty after stripping.
 - [ ] If a file at the same path already exists (rare — same minute), append `-2`, `-3`, … to the slug until unique. Use the GitHub Contents API GET to check; on 404 the path is free.
@@ -301,6 +316,7 @@ The `location:` and `weather:` frontmatter keys are omitted when no GPS fix.
 We cache aggressively in `TS_CACHE` because positions don't move much within a short walk and Garmin's GPS is precise to ~5 m. Key: `geo:<lat-rounded-4>:<lon-rounded-4>` (≈11 m grid). TTL 24 h.
 
 **Acceptance criteria:**
+
 - [ ] `reverseGeocode(lat: number, lon: number, env: Env): Promise<string>` returns a short place name suitable for embedding in a reply (e.g. `"Palisade Glacier, Inyo Co., CA"`, ≤ 60 chars).
 - [ ] Function is **never called** when lat/lon are undefined or both zero — that's caller responsibility (orchestrator strips them in P1-01). Story does not need to defensively check.
 - [ ] Cache check first (`TS_CACHE` `geo:<key>`); on hit, return immediately.
@@ -324,6 +340,7 @@ We cache aggressively in `TS_CACHE` because positions don't move much within a s
 Cache key: `wx:<lat-rounded-2>:<lon-rounded-2>` (≈1 km grid). TTL 3600 s.
 
 **Acceptance criteria:**
+
 - [ ] `currentWeather(lat: number, lon: number, env: Env): Promise<string>` returns a ≤ 30-char human string like `"42°F, 8mph W, clear"`.
 - [ ] Like P1-09: never called when lat/lon undefined; orchestrator guards in P1-01.
 - [ ] Cache check first; on hit, return.
@@ -345,6 +362,7 @@ Cache key: `wx:<lat-rounded-2>:<lon-rounded-2>` (≈1 km grid). TTL 3600 s.
 **Context.** `src/core/ledger.ts` doesn't exist. It tracks every command transaction with cost data so `!cost` can answer accurately and the daily-budget gate (P1-14) has data to read.
 
 **KV layout (in `TS_LEDGER`):**
+
 - `ledger:<YYYY-MM>` — single JSON object per month with running totals (no TTL — kept indefinitely).
 - `ledger:<YYYY-MM-DD>` — single JSON object per day with running totals (TTL 8 d — covers the budget-gate window with margin).
 - Shape (both keys): `{ period, requests, prompt_tokens, completion_tokens, usd_cost, by_command, last_update_ms }`.
@@ -352,6 +370,7 @@ Cache key: `wx:<lat-rounded-2>:<lon-rounded-2>` (≈1 km grid). TTL 3600 s.
 Reads + writes are read-modify-write — KV is eventually consistent, so concurrent writes can lose updates. Acceptable at α volume (< 1 msg/sec). Phase 3 migrates to D1 (SQL) for proper transactionality.
 
 **Acceptance criteria:**
+
 - [ ] `src/core/ledger.ts` exports:
   - `recordTransaction({ command, usage, env }): Promise<{ usd_cost: number }>` — writes both `ledger:<YYYY-MM>` and `ledger:<YYYY-MM-DD>` atomically (one after the other; if the second write fails, log but don't throw).
   - `monthlyTotals(env, yyyymm?): Promise<LedgerSnapshot>`
@@ -372,6 +391,7 @@ Reads + writes are read-modify-write — KV is eventually consistent, so concurr
 **Context.** `src/core/context.ts` doesn't exist. It stores the last 5 position+message events per IMEI in `TS_CONTEXT` (`ctx:<imei>`, TTL 30 d). Phase 1 use: `!post` narrative module reads recent positions to seed the LLM prompt with movement context (e.g. "moved from glacier to camp"). Phase 2 use: `!brief` aggregates these into a daily summary.
 
 **Acceptance criteria:**
+
 - [ ] `src/core/context.ts` exports:
   - `appendEvent(imei, event, env): Promise<void>` — appends, drops oldest beyond 5.
   - `recentEvents(imei, env): Promise<Event[]>` — returns up to 5, newest-first.
@@ -389,6 +409,7 @@ Reads + writes are read-modify-write — KV is eventually consistent, so concurr
 **Context.** PRD §5 specifies that the idempotency record evolves as sub-ops complete. The current `src/core/idempotency.ts` only handles the receipt phase (`status: "received"`). Phase 1 needs to append per-op checkpoints so a replayed webhook skips already-done expensive ops (LLM call, blog commit, email send, task create, reply send).
 
 **Record shape extension:**
+
 ```typescript
 { status: "received" | "processing" | "completed" | "failed",
   receivedAt: number,
@@ -408,6 +429,7 @@ withCheckpoint<T>(env, idemKey, opName, fn: () => Promise<T>): Promise<T>
 If `opName` is already in `completedOps`, returns the cached result from `opResults[opName]` without invoking `fn`. Otherwise calls `fn`, stores the result in `opResults[opName]`, appends `opName` to `completedOps`, and returns the result. Read-modify-write per call. This keeps replay logic identical across commands.
 
 **Acceptance criteria:**
+
 - [ ] `src/core/idempotency.ts` extends record shape as above (zod-validated on read).
 - [ ] Exports `withCheckpoint(env, idemKey, opName, fn)` — wraps fn with read-cached-result-or-call-and-store semantics.
 - [ ] Exports `markFailed(env, idemKey, error)` — sets `status="failed"`, `failedAt`, `error`.
@@ -417,7 +439,7 @@ If `opName` is already in `completedOps`, returns the cached result from `opResu
 - [ ] Vitest: `withCheckpoint` first-call invokes fn and stores result; replay returns cached result without invoking fn; failed op (fn throws) does not store in `completedOps`.
 - [ ] Vitest: mock a `!post` that succeeds at narrative + publish but fails at reply; replay; assert narrative + publish are not re-called and only reply is retried.
 
-**Plain-language note.** "Replay" here means Garmin re-sends the *same webhook payload* (same `idempotency_key`) because we 200'd late, the device retransmitted, or the user manually retried. We can detect this by KV lookup. Without checkpoints we'd duplicate the OpenRouter call (\$0.03 wasted) and republish the blog post.
+**Plain-language note.** "Replay" here means Garmin re-sends the _same webhook payload_ (same `idempotency_key`) because we 200'd late, the device retransmitted, or the user manually retried. We can detect this by KV lookup. Without checkpoints we'd duplicate the OpenRouter call (\$0.03 wasted) and republish the blog post.
 
 **Size:** M.
 **Depends on:** none.
@@ -429,6 +451,7 @@ If `opName` is already in `completedOps`, returns the cached result from `opResu
 **Context.** PRD §6 D4: `DAILY_TOKEN_BUDGET=50000` tokens/day. Before `!post` calls OpenRouter, check today's running total in the ledger. If `tokens_today + estimated_prompt_tokens > budget`, return the canned message and don't call.
 
 **Acceptance criteria:**
+
 - [ ] `src/core/budget.ts` exports `checkBudget(env, estimated): Promise<{ allowed: boolean, remaining: number }>`.
 - [ ] Reads today's tokens via `dailyTotals(env)` (P1-11).
 - [ ] `estimated_prompt_tokens` is a fixed constant for now (`ESTIMATED_POST_TOKENS = 400`); P3 will measure historical p95.
@@ -445,11 +468,12 @@ If `opName` is already in `completedOps`, returns the cached result from `opResu
 
 #### P1-15 — Reply builder: 320-char budget, two-SMS paging, optional cost suffix, link injection [M]
 
-**Context.** Multiple commands generate reply content and the device only accepts ≤ 160 chars per message. The reply builder takes a `CommandResult` (body string + optional lat/lon) and produces 1–2 strings each ≤ 160. If `APPEND_COST_SUFFIX=true`, the suffix `· $X.XX` is appended to the *last* page and counts against the budget.
+**Context.** Multiple commands generate reply content and the device only accepts ≤ 160 chars per message. The reply builder takes a `CommandResult` (body string + optional lat/lon) and produces 1–2 strings each ≤ 160. If `APPEND_COST_SUFFIX=true`, the suffix `· $X.XX` is appended to the _last_ page and counts against the budget.
 
 When lat/lon are present, the reply includes Google Maps + MapShare links (already implemented in `src/core/links.ts`), trimmed to fit. When lat/lon are absent (no GPS fix), no map links are emitted.
 
 **Acceptance criteria:**
+
 - [ ] `src/core/reply.ts` exports `buildReply({ body, lat?, lon?, costUsdMtd?, env }): string[]` returning 1 or 2 strings.
 - [ ] Each string ≤ 160 chars (asserted; throws on violation — caller bug).
 - [ ] If body + links + suffix ≤ 160: one message.
@@ -483,6 +507,7 @@ When lat/lon are present, the reply includes Google Maps + MapShare links (alrea
 Every side-effecting step (4, 5, 8) goes through `withCheckpoint` (P1-13) so replay skips already-done ops automatically.
 
 **Acceptance criteria:**
+
 - [ ] `src/core/commands/post.ts` exports `handlePost(cmd, ctx): Promise<CommandResult>`.
 - [ ] Budget gate (P1-14) check before step 4; on rejection, return canned message and skip narrative+publish.
 - [ ] Steps 3 and the reply's map link skipped cleanly when `ctx.lat`/`ctx.lon` undefined; no errors, no "unknown location" in narrative when GPS is absent (narrative module accepts undefined).
@@ -510,6 +535,7 @@ Every side-effecting step (4, 5, 8) goes through `withCheckpoint` (P1-13) so rep
 7. Build reply: `"Sent to <to>"` + map link if lat/lon present. `withCheckpoint(...,"reply")`.
 
 **Acceptance criteria:**
+
 - [ ] `src/core/commands/mail.ts` exports `handleMail(cmd, ctx): Promise<CommandResult>`.
 - [ ] Validate `to` is a syntactically valid email (zod or simple regex); reject early with `"Bad to: <to>"`.
 - [ ] Replay: skips Resend send if `mail` op complete (via `withCheckpoint`).
@@ -534,6 +560,7 @@ Every side-effecting step (4, 5, 8) goes through `withCheckpoint` (P1-13) so rep
 5. Build reply: `"Task added · <url>"`. `withCheckpoint(...,"reply")`.
 
 **Acceptance criteria:**
+
 - [ ] `src/core/commands/todo.ts` exports `handleTodo(cmd, ctx): Promise<CommandResult>`.
 - [ ] Replay: skips Todoist create if `todo` op complete.
 - [ ] On Todoist 4xx: return `"Todo failed: <code/msg>"`.
@@ -550,6 +577,7 @@ Every side-effecting step (4, 5, 8) goes through `withCheckpoint` (P1-13) so rep
 **Context.** Existing orchestrator returns canned strings for these. P1-01 wired the orchestrator to the request path; this story finishes the loop by sending the reply via `sendReply` (P1-02) and, for `!cost`, reading real ledger data (P1-11).
 
 **Acceptance criteria:**
+
 - [ ] `!ping` → `pong` delivered via IPC Inbound; ledger gets a 0-cost transaction.
 - [ ] `!help` → reply equals current `helpText()` output; budget-builder pages it (it's ≈ 100 chars; one message).
 - [ ] `!cost` → reads `monthlyTotals(env)`, formats `"<requests> req · <tokens>k tok · $<cost> (since <YYYY-MM-01>)"` (≤ 80 chars).
@@ -568,12 +596,13 @@ Every side-effecting step (4, 5, 8) goes through `withCheckpoint` (P1-13) so rep
 **Context.** P1-08 commits markdown to `GITHUB_JOURNAL_REPO`; that repo must exist with a working theme before `!post` can produce a viewable blog. This story also pins `JOURNAL_URL_TEMPLATE` to whatever URL pattern the chosen theme produces, so reply links don't 404.
 
 **Acceptance criteria:**
+
 - [ ] Repo `brockamer/trailscribe-journal` (or whatever the user picks) created, public.
 - [ ] GitHub Pages enabled, source = `main` branch, `/` root.
 - [ ] Theme picked: Jekyll `minima` (recommended — zero-config, GitHub builds automatically) or Hugo `terminal`-style (needs an Action). Theme committed.
 - [ ] `_posts/2026-04-26-hello.md` placeholder committed with the same frontmatter shape P1-08 emits; visible at the public Pages URL.
 - [ ] **Pin `JOURNAL_URL_TEMPLATE`** in `wrangler.toml` to match the theme's actual URL pattern (Jekyll default: `{owner}.github.io/{repo}/{yyyy}/{mm}/{dd}/{slug}.html`). Verify by clicking the placeholder post's URL.
-- [ ] Fine-grained PAT with `contents:write` scoped to *only* this repo generated; stored as `GITHUB_JOURNAL_TOKEN` secret in staging + production via `wrangler secret put`.
+- [ ] Fine-grained PAT with `contents:write` scoped to _only_ this repo generated; stored as `GITHUB_JOURNAL_TOKEN` secret in staging + production via `wrangler secret put`.
 - [ ] `docs/setup-cloudflare.md` updated with the journal-repo setup steps (theme choice, Pages config, PAT scoping, URL template).
 
 **Size:** S.
@@ -586,6 +615,7 @@ Every side-effecting step (4, 5, 8) goes through `withCheckpoint` (P1-13) so rep
 **Context.** Final integration check before prod. Every command exercised against real third-party APIs from the staging Worker, with logs captured and ledger inspected.
 
 **Acceptance criteria:**
+
 - [ ] Tested from device or fixture: `!ping`, `!help`, `!cost`, `!post`, `!mail`, `!todo` each round-trip successfully.
 - [ ] `wrangler tail --env staging` log capture pasted into the story completion note showing one full transaction per command.
 - [ ] Ledger inspected via `wrangler kv key get "ledger:2026-MM" --binding TS_LEDGER --env staging` — totals match the count of transactions performed.
@@ -603,6 +633,7 @@ Every side-effecting step (4, 5, 8) goes through `withCheckpoint` (P1-13) so rep
 **Context.** PRD success criterion: 0 duplicate side-effects across 10 manual replays.
 
 **Acceptance criteria:**
+
 - [ ] Test plan documented: 10 `curl` invocations replaying the same webhook payload to staging with the same bearer token. Mix of `!post`, `!mail`, `!todo` (the side-effecting commands).
 - [ ] After each replay: assert journal repo did not get a new commit; Resend dashboard shows 1 email (not 11); Todoist shows 1 task; `wrangler tail` shows `idempotent_replay` log entries; only one ledger transaction recorded.
 - [ ] Story completion note: paste the assertion outputs.
@@ -617,6 +648,7 @@ Every side-effecting step (4, 5, 8) goes through `withCheckpoint` (P1-13) so rep
 **Context.** PRD success criterion: per-tx cost ≤ \$0.05 measured across 20 transactions.
 
 **Acceptance criteria:**
+
 - [ ] 20 real `!post` transactions executed (can be from the device or via curl-fixture; LLM cost is what matters).
 - [ ] Ledger inspected; per-transaction USD cost computed (`usd_cost / requests` for `post`-type only).
 - [ ] Mean ≤ \$0.05; max ≤ \$0.05 (hard ceiling \$0.08 per PRD §7).
@@ -633,10 +665,10 @@ Every side-effecting step (4, 5, 8) goes through `withCheckpoint` (P1-13) so rep
 ## Sizing summary
 
 | Size | Count |
-|---|---|
-| S | 12 |
-| M | 10 |
-| L | 1 |
+| ---- | ----- |
+| S    | 12    |
+| M    | 10    |
+| L    | 1     |
 
 **Rough total:** ~5–7 focused days of work. Real-API integration is more involved than scaffolding; budgeting for one full day on `!post` (P1-16) alone, plus ~half-day per other adapter.
 
@@ -645,11 +677,13 @@ Every side-effecting step (4, 5, 8) goes through `withCheckpoint` (P1-13) so rep
 **Critical path:** P1-04 → P1-03 → P1-05 (LLM stack) and P1-02 (reply send) and P1-11 (ledger) before P1-16 (`!post` is the most complex command). Then P1-21 → P1-22 → P1-23 to close.
 
 **Parallel tracks (any order, once unblocked):**
+
 - Adapters: P1-06, P1-07, P1-08, P1-09, P1-10 — independent; can land concurrently.
 - Core supporting: P1-12, P1-13, P1-14 — can land alongside adapters.
 - P1-20 (journal-repo bootstrap) is user-performed setup; should happen early so P1-08 has the URL template to validate against.
 
 **Suggested sprint shape (2-week sprint):**
+
 - Days 1–2: P1-01 (with guards), P1-02, P1-03, P1-04 (orchestrator + LLM rename — clears the foundation).
 - Days 3–4: P1-05, P1-06, P1-07, P1-09, P1-10 (LLM real call + simple adapters).
 - Day 5: P1-08 (GH Pages — meatiest adapter), P1-20 (journal repo, in parallel).
@@ -659,18 +693,18 @@ Every side-effecting step (4, 5, 8) goes through `withCheckpoint` (P1-13) so rep
 
 ## Risk register
 
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| OpenRouter rate-limits or model availability changes | M | Block `!post` | Default to a widely-available model (`openai/gpt-5-mini`); env var lets us swap in seconds. Alert on 429 spike. |
-| GitHub fine-grained PAT setup blocks P1-20 | M | Block `!post` end-to-end | P1-20 is intentionally early in the sprint; PAT scoping doc steps in `docs/setup-cloudflare.md`. |
-| `JOURNAL_URL_TEMPLATE` mismatch with chosen theme | L | Reply links 404 | P1-20 verifies the placeholder post URL before pinning the template. |
-| Resend free-tier limits (3000/mo, 100/day) | L | `!mail` failures during burn-in | Sufficient for α volume; track in ledger; upgrade if needed. |
-| Nominatim rate-limits or User-Agent banning | L | `!post` enrichment fallback to "unknown" | Cache aggressively (24 h, ~11 m grid); identify in `User-Agent`. Worst case: returns "unknown location" — non-fatal. |
-| KV concurrent-write races on ledger | L | Lost transaction | Read-modify-write with one retry; log when retry fails. Single-operator α volume makes this rare. |
-| Cost drifts above \$0.05/tx with `gpt-5-mini` | L–M | Fails P1-23 | Tune prompt length (≤ 300 tokens output); fall back to `openai/gpt-4o-mini` or similar. PRD allows hard ceiling \$0.08. |
-| 160-char Iridium cap rejects edge-case replies | L | 422 from IPC Inbound | P1-15 asserts ≤ 160 per page in code; CI test forces violation and asserts the throw. |
-| Garmin tenant credentials drift between staging and prod | L | Prod webhook auth fails | Each env has its own `GARMIN_INBOUND_TOKEN` and `GARMIN_IPC_INBOUND_API_KEY` secrets; staging proves the path before prod cutover. |
-| Breadcrumb spam if guard 1 regresses | L | UX fail + cost | P1-01 Vitest case for messageCode=0 — regression-locked. |
+| Risk                                                     | Likelihood | Impact                                   | Mitigation                                                                                                                         |
+| -------------------------------------------------------- | ---------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| OpenRouter rate-limits or model availability changes     | M          | Block `!post`                            | Default to a widely-available model (`openai/gpt-5-mini`); env var lets us swap in seconds. Alert on 429 spike.                    |
+| GitHub fine-grained PAT setup blocks P1-20               | M          | Block `!post` end-to-end                 | P1-20 is intentionally early in the sprint; PAT scoping doc steps in `docs/setup-cloudflare.md`.                                   |
+| `JOURNAL_URL_TEMPLATE` mismatch with chosen theme        | L          | Reply links 404                          | P1-20 verifies the placeholder post URL before pinning the template.                                                               |
+| Resend free-tier limits (3000/mo, 100/day)               | L          | `!mail` failures during burn-in          | Sufficient for α volume; track in ledger; upgrade if needed.                                                                       |
+| Nominatim rate-limits or User-Agent banning              | L          | `!post` enrichment fallback to "unknown" | Cache aggressively (24 h, ~11 m grid); identify in `User-Agent`. Worst case: returns "unknown location" — non-fatal.               |
+| KV concurrent-write races on ledger                      | L          | Lost transaction                         | Read-modify-write with one retry; log when retry fails. Single-operator α volume makes this rare.                                  |
+| Cost drifts above \$0.05/tx with `gpt-5-mini`            | L–M        | Fails P1-23                              | Tune prompt length (≤ 300 tokens output); fall back to `openai/gpt-4o-mini` or similar. PRD allows hard ceiling \$0.08.            |
+| 160-char Iridium cap rejects edge-case replies           | L          | 422 from IPC Inbound                     | P1-15 asserts ≤ 160 per page in code; CI test forces violation and asserts the throw.                                              |
+| Garmin tenant credentials drift between staging and prod | L          | Prod webhook auth fails                  | Each env has its own `GARMIN_INBOUND_TOKEN` and `GARMIN_IPC_INBOUND_API_KEY` secrets; staging proves the path before prod cutover. |
+| Breadcrumb spam if guard 1 regresses                     | L          | UX fail + cost                           | P1-01 Vitest case for messageCode=0 — regression-locked.                                                                           |
 
 ---
 

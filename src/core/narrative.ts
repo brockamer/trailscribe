@@ -159,7 +159,9 @@ export async function generateNarrative(input: NarrativeInput): Promise<Narrativ
 
   const validated = NarrativeContentSchema.safeParse(parsed);
   if (!validated.success) {
-    const issues = validated.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+    const issues = validated.error.issues
+      .map((i) => `${i.path.join(".")}: ${i.message}`)
+      .join("; ");
     throw new NarrativeError(`LLM output failed schema: ${issues}`);
   }
 
@@ -190,11 +192,7 @@ function buildUserPrompt(input: NarrativeInput): string {
     lines.push(`Note: ${input.note}`);
   }
 
-  if (
-    input.placeName !== undefined &&
-    input.lat !== undefined &&
-    input.lon !== undefined
-  ) {
+  if (input.placeName !== undefined && input.lat !== undefined && input.lon !== undefined) {
     lines.push(`Location: ${input.placeName} (${input.lat.toFixed(4)}, ${input.lon.toFixed(4)})`);
   }
 
@@ -259,9 +257,7 @@ const SYSTEM_PROMPT_TRACK = [
  * Returns the same `NarrativeOutput` shape as `generateNarrative` so the
  * publish layer can treat all three variants uniformly.
  */
-export async function generateTrackNarrative(
-  input: TrackNarrativeInput,
-): Promise<NarrativeOutput> {
+export async function generateTrackNarrative(input: TrackNarrativeInput): Promise<NarrativeOutput> {
   const userPrompt = buildTrackPrompt(input);
   const model = input.env.LLM_MODEL || "anthropic/claude-sonnet-4-6";
 
@@ -307,7 +303,9 @@ export async function generateTrackNarrative(
   }
   const validated = TrackContentSchema.safeParse(parsed);
   if (!validated.success) {
-    const issues = validated.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+    const issues = validated.error.issues
+      .map((i) => `${i.path.join(".")}: ${i.message}`)
+      .join("; ");
     throw new NarrativeError(`Track narrative failed schema: ${issues}`);
   }
   return {
@@ -329,7 +327,9 @@ function buildTrackPrompt(input: TrackNarrativeInput): string {
   lines.push(`- Duration: ${(m.durationSeconds / 60).toFixed(0)} minutes`);
   lines.push(`- Elevation gain: ${m.elevation.gainM.toFixed(0)} m`);
   lines.push(`- Activity: ${m.activityHint}, route shape: ${m.routeShape}`);
-  lines.push(`- Average speed: ${m.pace.avgKmh.toFixed(1)} km/h, p95: ${m.pace.p95Kmh.toFixed(1)} km/h`);
+  lines.push(
+    `- Average speed: ${m.pace.avgKmh.toFixed(1)} km/h, p95: ${m.pace.p95Kmh.toFixed(1)} km/h`,
+  );
   if (input.startPlace) lines.push(`Start: ${input.startPlace}`);
   if (input.endPlace) lines.push(`End: ${input.endPlace}`);
   if (input.midpointPlace) lines.push(`Midpoint: ${input.midpointPlace}`);

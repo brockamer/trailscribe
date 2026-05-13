@@ -1,11 +1,7 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import {
-  parsePings,
-  fetchMapShareKml,
-  MapShareError,
-} from "../src/adapters/location/mapshare.js";
+import { parsePings, fetchMapShareKml, MapShareError } from "../src/adapters/location/mapshare.js";
 import { makeTestEnv } from "./helpers/env.js";
 
 const FIXTURE_PATH = resolve(__dirname, "fixtures/mapshare/pch-2026-05-02.kml");
@@ -100,28 +96,20 @@ describe("fetchMapShareKml", () => {
   test("returns the response body on 200", async () => {
     const env = makeTestEnv();
     const expectedBody = "<kml>payload</kml>";
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(expectedBody, { status: 200 }),
-    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(expectedBody, { status: 200 }));
     const body = await fetchMapShareKml(env, 0, 1);
     expect(body).toBe(expectedBody);
   });
 
   test("throws MapShareError on non-200 status", async () => {
     const env = makeTestEnv();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response("not found", { status: 404 }),
-    );
-    await expect(fetchMapShareKml(env, 0, 1)).rejects.toBeInstanceOf(
-      MapShareError,
-    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("not found", { status: 404 }));
+    await expect(fetchMapShareKml(env, 0, 1)).rejects.toBeInstanceOf(MapShareError);
   });
 
   test("MapShareError exposes status code", async () => {
     const env = makeTestEnv();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response("server error", { status: 503 }),
-    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("server error", { status: 503 }));
     try {
       await fetchMapShareKml(env, 0, 1);
       expect.fail("should have thrown");
@@ -150,8 +138,7 @@ describe("fetchMapShareKml", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response("<kml/>", { status: 200 }));
     await fetchMapShareKml(env, 0, 1);
-    const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as
-      Record<string, string>;
+    const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
     // Basic <base64(":headquarters")> = Basic OmhlYWRxdWFydGVycw==
     expect(headers.Authorization).toBe(`Basic ${btoa(":headquarters")}`);
   });

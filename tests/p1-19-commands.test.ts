@@ -41,7 +41,10 @@ afterEach(() => {
   errSpy.mockRestore();
 });
 
-function envelope(freeText: string, opts: { ts?: number; gps?: { lat: number; lon: number } } = {}) {
+function envelope(
+  freeText: string,
+  opts: { ts?: number; gps?: { lat: number; lon: number } } = {},
+) {
   const point = opts.gps
     ? { latitude: opts.gps.lat, longitude: opts.gps.lon, altitude: 1000, gpsFix: 2 }
     : { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0 };
@@ -86,9 +89,7 @@ describe("P1-19 — !ping", () => {
   });
 
   test("with GPS fix → reply is just 'pong' (no map links on device)", async () => {
-    const res = await postIpc(
-      envelope("!ping", { gps: { lat: 37.1682, lon: -118.5891 } }),
-    );
+    const res = await postIpc(envelope("!ping", { gps: { lat: 37.1682, lon: -118.5891 } }));
     expect(res.status).toBe(200);
 
     const [, messages] = sendReplyMock.mock.calls[0];

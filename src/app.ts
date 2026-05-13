@@ -131,9 +131,10 @@ export function makeApp() {
       event: "ipc_received",
       level: "info",
       bodyBytes: rawBody.length,
-      version: typeof (body as { Version?: unknown })?.Version === "string"
-        ? (body as { Version: string }).Version
-        : null,
+      version:
+        typeof (body as { Version?: unknown })?.Version === "string"
+          ? (body as { Version: string }).Version
+          : null,
       topLevelKeys:
         body && typeof body === "object" && !Array.isArray(body)
           ? Object.keys(body as Record<string, unknown>)
@@ -192,7 +193,13 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
     if (event.messageCode === 4) {
       log({ event: "sos_received_ignored", level: "warn", imei: event.imei, key });
     } else if (event.messageCode === 12) {
-      await safeOrchestrate("stop_track_handler", () => handleStopTrack(event, env, key), env, key, event.imei);
+      await safeOrchestrate(
+        "stop_track_handler",
+        () => handleStopTrack(event, env, key),
+        env,
+        key,
+        event.imei,
+      );
     } else if (event.messageCode === 10) {
       // Start Track — record the session's start timestamp so the next mc 12
       // (Stop Track) for this IMEI uses it as the MapShare KML query's d1
@@ -232,10 +239,7 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
   }
 
   const point = event.point;
-  const hasFix =
-    !!point &&
-    point.gpsFix !== 0 &&
-    !(point.latitude === 0 && point.longitude === 0);
+  const hasFix = !!point && point.gpsFix !== 0 && !(point.latitude === 0 && point.longitude === 0);
   const lat = hasFix ? point.latitude : undefined;
   const lon = hasFix ? point.longitude : undefined;
 
@@ -303,9 +307,7 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
   // The cost suffix is opt-in; only read the ledger when the flag is on, to
   // save the KV round-trip on every reply. The orchestrator already updated
   // the ledger for !ping et al, so this read sees the just-written total.
-  const costUsdMtd = appendCostSuffix(env)
-    ? (await monthlyTotals(env)).usd_cost
-    : undefined;
+  const costUsdMtd = appendCostSuffix(env) ? (await monthlyTotals(env)).usd_cost : undefined;
 
   const messages = buildReply({
     body: result.body,

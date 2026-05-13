@@ -188,7 +188,8 @@ describe("P2-18 !postimg — happy path", () => {
 
     // The createCommit mutation carries TWO additions in a single request.
     const commitCall = fetchCalls.find(
-      (c) => c.url.includes("api.github.com/graphql") &&
+      (c) =>
+        c.url.includes("api.github.com/graphql") &&
         typeof c.init?.body === "string" &&
         c.init.body.includes("createCommitOnBranch"),
     );

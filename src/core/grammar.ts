@@ -51,9 +51,7 @@ export function parseCommand(message: string): ParsedCommand | undefined {
       // - Keys may be mixed within one message (e.g. `t:x@y.com subj:hi b:msg`).
       // - Order is fixed (to → subj → body); subj and body are independently optional.
       // - Default subject is supplied downstream by handleMail (see commands/mail.ts).
-      const match = rest.match(
-        /^(?:to|t):(\S+)(?:\s+(?:subj|s):(.+?))?(?:\s+(?:body|b):(.+))?$/i,
-      );
+      const match = rest.match(/^(?:to|t):(\S+)(?:\s+(?:subj|s):(.+?))?(?:\s+(?:body|b):(.+))?$/i);
       if (!match) return undefined;
       const [, to, subj, body] = match;
       return {

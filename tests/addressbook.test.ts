@@ -1,9 +1,5 @@
 import { describe, test, expect } from "vitest";
-import {
-  parseAddressBookJson,
-  resolve,
-  isValidEmail,
-} from "../src/core/addressbook.js";
+import { parseAddressBookJson, resolve, isValidEmail } from "../src/core/addressbook.js";
 import { parseEnv } from "../src/env.js";
 import { makeTestEnv } from "./helpers/env.js";
 
@@ -70,27 +66,23 @@ describe("parseAddressBookJson — rejection paths", () => {
   });
 
   test("alias value is non-string", () => {
-    expect(() =>
-      parseAddressBookJson('{"aliases":{"home":42}}'),
-    ).toThrow(/alias 'home'/);
+    expect(() => parseAddressBookJson('{"aliases":{"home":42}}')).toThrow(/alias 'home'/);
   });
 
   test("alias value is empty string", () => {
-    expect(() =>
-      parseAddressBookJson('{"aliases":{"home":""}}'),
-    ).toThrow(/alias 'home'/);
+    expect(() => parseAddressBookJson('{"aliases":{"home":""}}')).toThrow(/alias 'home'/);
   });
 
   test("alias value contains an invalid email", () => {
-    expect(() =>
-      parseAddressBookJson('{"aliases":{"home":"not-an-email"}}'),
-    ).toThrow(/invalid email/);
+    expect(() => parseAddressBookJson('{"aliases":{"home":"not-an-email"}}')).toThrow(
+      /invalid email/,
+    );
   });
 
   test("comma-list with one bad email rejects the whole alias", () => {
-    expect(() =>
-      parseAddressBookJson('{"aliases":{"all":"a@x.com,bad,c@z.com"}}'),
-    ).toThrow(/invalid email/);
+    expect(() => parseAddressBookJson('{"aliases":{"all":"a@x.com,bad,c@z.com"}}')).toThrow(
+      /invalid email/,
+    );
   });
 });
 

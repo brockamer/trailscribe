@@ -99,6 +99,7 @@ openssl rand -hex 32
 ```
 
 Use the same value in:
+
 1. Cloudflare Secret (above)
 2. Garmin Portal Connect → IPC Outbound → Static Token field
 
@@ -135,7 +136,7 @@ title: TrailScribe Journal
 description: Field notes from off-grid trips, posted via Garmin inReach.
 remote_theme: "mmistakes/minimal-mistakes@4.28.0"
 minimal_mistakes_skin: "dirt"
-permalink: /:year/:month/:day/:title.html   # MUST match JOURNAL_URL_TEMPLATE
+permalink: /:year/:month/:day/:title.html # MUST match JOURNAL_URL_TEMPLATE
 plugins:
   - jekyll-feed
   - jekyll-include-cache
@@ -321,7 +322,7 @@ Two ways to enable it:
    catch it).
 
 2. **CLI override (faster).** `pnpm exec wrangler deploy --env staging
-   --var IPC_INBOUND_DRY_RUN:true` — applies just for that deploy. Re-run the
+--var IPC_INBOUND_DRY_RUN:true` — applies just for that deploy. Re-run the
    normal `pnpm deploy:staging` to revert.
 
 When ON, `sendReply` short-circuits the Garmin POST and emits a structured

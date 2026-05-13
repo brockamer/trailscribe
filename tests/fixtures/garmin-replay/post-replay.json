@@ -6,9 +6,7 @@
       "messageCode": 3,
       "freeText": "!post replay-test alpenglow at sunset",
       "timeStamp": 1745596800000,
-      "addresses": [
-        { "address": "trailscribe@resend.dev" }
-      ],
+      "addresses": [{ "address": "trailscribe@resend.dev" }],
       "point": {
         "latitude": 37.1682,
         "longitude": -118.5891,

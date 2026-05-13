@@ -113,6 +113,7 @@ plans/                          # per-milestone sprint plans (active: phase-2-ex
 ## External services
 
 **Secrets (Wrangler Secrets):**
+
 - `GARMIN_INBOUND_TOKEN` — static token; verify `X-Outbound-Auth-Token: <token>` on Outbound webhooks (Garmin sends raw token in custom header, not standard `Authorization: Bearer`)
 - `GARMIN_IPC_INBOUND_API_KEY` — `X-API-Key` for Garmin IPC Inbound
 - `GARMIN_IPC_INBOUND_BASE_URL` — per-tenant; **host only, no path** (e.g. `https://ipcinbound.inreachapp.com`). Code appends `/api/Messaging/Message`. Found in Garmin Explore → IPC → Inbound Settings → "Inbound URL".
@@ -129,6 +130,7 @@ plans/                          # per-milestone sprint plans (active: phase-2-ex
 - `MAPSHARE_PASSWORD` — MapShare access code (Basic Auth password; empty user). Set in Garmin Explore → MapShare → Access Code. Empty string = unprotected feed (no auth header).
 
 **Vars (non-secret):**
+
 - `TRAILSCRIBE_ENV` — dev/staging/production
 - `GOOGLE_MAPS_BASE` — link prefix for Google Maps URLs
 - `MAPSHARE_BASE` — Garmin MapShare host root (e.g. `https://share.garmin.com`); per-tenant slug lives in `MAPSHARE_KEY` and is appended at use sites (`${MAPSHARE_BASE}/${MAPSHARE_KEY}` for page URLs, `${MAPSHARE_BASE}/Feed/Share/${MAPSHARE_KEY}` for the KML feed). Empty `MAPSHARE_BASE` disables MapShare links in `!where` / `!share` / `!blast`.

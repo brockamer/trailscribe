@@ -32,7 +32,10 @@ function jsonResponse(obj: unknown, status = 200): Response {
   });
 }
 
-function envelope(freeText: string, opts: { ts?: number; gps?: { lat: number; lon: number } } = {}) {
+function envelope(
+  freeText: string,
+  opts: { ts?: number; gps?: { lat: number; lon: number } } = {},
+) {
   const point = opts.gps
     ? { latitude: opts.gps.lat, longitude: opts.gps.lon, altitude: 1000, gpsFix: 2 }
     : { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0 };
@@ -66,7 +69,10 @@ async function postIpc(body: unknown): Promise<Response> {
 }
 
 function makeFetchRouter(
-  routes: Array<{ match: (url: string, init?: RequestInit) => boolean; respond: () => Response | Promise<Response> }>,
+  routes: Array<{
+    match: (url: string, init?: RequestInit) => boolean;
+    respond: () => Response | Promise<Response>;
+  }>,
 ) {
   return vi.fn(async (url: URL | RequestInfo, init?: RequestInit) => {
     const u = typeof url === "string" ? url : url.toString();
@@ -117,7 +123,11 @@ describe("P1-17 !mail — happy path with GPS", () => {
     ]);
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
 
-    await postIpc(envelope("!mail to:friend@example.com subj:hi body:from the field", { gps: { lat: LAT, lon: LON } }));
+    await postIpc(
+      envelope("!mail to:friend@example.com subj:hi body:from the field", {
+        gps: { lat: LAT, lon: LON },
+      }),
+    );
 
     const [, messages] = sendReplyMock.mock.calls[0];
     const joined = messages.join(" ");
@@ -163,7 +173,9 @@ describe("P1-17 !mail — no GPS", () => {
     expect(messages.join(" ")).not.toContain("https://www.google.com/maps");
 
     const resendCall = fetchSpy.mock.calls[0];
-    const resendBody = JSON.parse((resendCall[1] as RequestInit).body as string) as { text: string };
+    const resendBody = JSON.parse((resendCall[1] as RequestInit).body as string) as {
+      text: string;
+    };
     expect(resendBody.text).toContain("hello");
     expect(resendBody.text).toContain("From inReach — sent");
     expect(resendBody.text).not.toContain("From inReach @");

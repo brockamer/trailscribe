@@ -44,8 +44,12 @@ For Garmin IPC: [`docs/garmin-setup.md`](docs/garmin-setup.md) (requires Profess
 - **TypeScript strict mode**; tests use `.ts` as well.
 - **No `any`** — prefer `unknown` and narrow.
 - **Small exported functions**; JSDoc on every public export.
-- **Prettier** (`pnpm format`) for formatting. Lint config is deferred
-  post-Phase-0.
+- **Prettier** for formatting. `pnpm format` operates on staged files only
+  (no-op if nothing staged); pass explicit paths to override
+  (`pnpm format docs/PRD.md`). `pnpm format:all` runs a whole-repo sweep
+  when intentionally wanted. The staged-by-default behavior keeps PR
+  diffs from absorbing unrelated whitespace drift (see #191). Lint
+  config is deferred post-Phase-0.
 - **Structured logs** via `src/adapters/logging/worker-logs.ts`. No
   `console.log` scattered through the codebase.
 
@@ -58,9 +62,10 @@ bootstrapped for this repo — planned post-Phase-0.
 ## Scope discipline
 
 Do NOT:
+
 - Add a new dependency without PRD justification.
 - Add a new env var / secret without updating `src/env.ts` + `.dev.vars.example`
-  + `wrangler.toml` atomically.
+  - `wrangler.toml` atomically.
 - Bring back Pipedream / n8n integrations (archived as historical paths).
 - Add command verbs outside the α-MVP set (`!ping`, `!help`, `!cost`, `!post`,
   `!mail`, `!todo`) without updating the PRD. Phase 2+ commands are already

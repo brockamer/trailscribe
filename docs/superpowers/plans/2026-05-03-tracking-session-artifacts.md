@@ -10,6 +10,11 @@
 
 **Spec:** `docs/superpowers/specs/2026-05-01-tracking-session-artifacts-design.md`
 
+## Issue
+
+- #187 — Epic: Tracking Sessions — Mode B hardening (current follow-ups)
+- #168 — Implementation (closed 2026-05-04 — the plan this file describes)
+
 **Reference fixture (real-device, 2026-05-02 PCH session):** `tests/fixtures/mapshare/pch-2026-05-02.kml` (created in Cut 1 — see Task 1.2). 14 individual `<Placemark>` breadcrumbs + 1 trailing LineString summary. Verified live via `curl https://share.garmin.com/Feed/Share/trailscribe?d1=2026-05-02T15:00Z&d2=2026-05-02T17:00Z`.
 
 ---

@@ -3,7 +3,12 @@
 **Status:** Draft, pending review. **Mode B (MapShare pull-on-close) confirmed canonical 2026-05-03.**
 **Author:** Claude (Opus 4.7) with Brock Amer
 **Date:** 2026-05-01 (rewritten 2026-05-03 around MapShare data source — see §0, §13.7)
-**Related:** PRD §9 Roadmap, Epic #99 (Phase 3 — DO + D1, **dependency dropped**), Epic-candidate (this spec → its own new epic)
+**Related:** PRD §9 Roadmap, Epic #99 (Phase 3 — DO + D1, **dependency dropped**), Epic #187 (Tracking Sessions — Mode B hardening)
+
+## Issue
+
+- #187 — Epic: Tracking Sessions — Mode B hardening
+- #168 — Implementation (closed 2026-05-04)
 
 ---
 

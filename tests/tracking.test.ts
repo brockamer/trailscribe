@@ -201,10 +201,15 @@ describe("publishTrackPost", () => {
     const body = JSON.parse((putCall[1]?.body ?? "{}") as string);
     const decoded = atob(body.content);
     expect(decoded).toContain("type: track");
-    expect(decoded).toContain("distance_km: 2.5");
+    // 2.5 km → 1.55 mi (kmToMi(2.5) = 1.5534...); 35 m → 115 ft (mToFt(35) = 114.83...).
+    // See #195 — frontmatter renamed to imperial.
+    expect(decoded).toContain("distance_mi: 1.55");
+    expect(decoded).toContain("elevation_gain_ft: 115");
     expect(decoded).toContain("route_shape: out-and-back");
     expect(decoded).toContain("start_place: \"Malibu, CA\"");
     expect(decoded).toContain("end_place: \"Malibu, CA\"");
+    // Haiku rendered with CommonMark soft-breaks (#195).
+    expect(decoded).toContain("a  \nb  \nc");
   });
 });
 

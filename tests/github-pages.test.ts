@@ -165,7 +165,10 @@ describe("publishPost — happy path", () => {
     expect(decoded).toContain("location: { lat: 37.1682, lon: -118.5891, place: \"Lake Sabrina\" }");
     expect(decoded).toContain('weather: "Clear · 8C"');
     expect(decoded).toContain("tags: [trailscribe]");
-    expect(decoded).toContain("Granite glow\nCold cirque wind\nDay turns");
+    // Haiku rendered with CommonMark soft-breaks (two trailing spaces) so the
+    // three lines survive into the published HTML instead of collapsing into a
+    // single paragraph. See #195.
+    expect(decoded).toContain("Granite glow  \nCold cirque wind  \nDay turns");
     expect(decoded).toContain("Pink light bleeds.");
   });
 });

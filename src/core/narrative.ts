@@ -3,6 +3,7 @@ import type { Env } from "../env.js";
 import { chatCompletion } from "../adapters/ai/openrouter.js";
 import { log } from "../adapters/logging/worker-logs.js";
 import type { TrackMetrics } from "./track-metrics.js";
+import { kmhToMph, kmToMi, mToFt } from "./units.js";
 
 /**
  * Narrative module — composes a `!post` event into a structured blog post via
@@ -252,6 +253,7 @@ const SYSTEM_PROMPT_TRACK = [
   '- "title": ≤60 characters, evocative, anchored to place + activity. No clickbait, no emoji.',
   '- "haiku": exactly three lines separated by newlines, in 5/7/5 syllables, ≤110 characters total. Plain English, observational.',
   '- "body": ≤3000 characters. Describe the route, place, conditions, and pace. Use long stops as paragraph breaks. Do not invent companions, motivations, or destinations not present in the metrics or place names.',
+  "- Use US customary units exclusively in the body: miles, feet, °F, mph. Never kilometers, meters, °C, or km/h. The numbers in the input are already imperial — render them in the body using the same units shown.",
 ].join("\n");
 
 /**
@@ -325,11 +327,11 @@ function buildTrackPrompt(input: TrackNarrativeInput): string {
   const m = input.metrics;
   const lines: string[] = [];
   lines.push("Tracking session metrics:");
-  lines.push(`- Distance: ${m.distanceKm.toFixed(2)} km`);
+  lines.push(`- Distance: ${kmToMi(m.distanceKm).toFixed(2)} mi`);
   lines.push(`- Duration: ${(m.durationSeconds / 60).toFixed(0)} minutes`);
-  lines.push(`- Elevation gain: ${m.elevation.gainM.toFixed(0)} m`);
+  lines.push(`- Elevation gain: ${mToFt(m.elevation.gainM).toFixed(0)} ft`);
   lines.push(`- Activity: ${m.activityHint}, route shape: ${m.routeShape}`);
-  lines.push(`- Average speed: ${m.pace.avgKmh.toFixed(1)} km/h, p95: ${m.pace.p95Kmh.toFixed(1)} km/h`);
+  lines.push(`- Average speed: ${kmhToMph(m.pace.avgKmh).toFixed(1)} mph, p95: ${kmhToMph(m.pace.p95Kmh).toFixed(1)} mph`);
   if (input.startPlace) lines.push(`Start: ${input.startPlace}`);
   if (input.endPlace) lines.push(`End: ${input.endPlace}`);
   if (input.midpointPlace) lines.push(`Midpoint: ${input.midpointPlace}`);

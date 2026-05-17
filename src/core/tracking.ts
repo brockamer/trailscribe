@@ -12,6 +12,7 @@ import { recordTransaction } from "./ledger.js";
 import { log } from "../adapters/logging/worker-logs.js";
 import { reverseGeocode } from "../adapters/location/geocode.js";
 import { currentWeather } from "../adapters/location/weather.js";
+import { kmToMi, mToFt } from "./units.js";
 
 const TRACK_RECORD_TTL_SECONDS = 60 * 60 * 24 * 365;
 const TRACK_START_TTL_SECONDS = 60 * 60 * 24;
@@ -225,12 +226,12 @@ export async function handleStopTrack(
 }
 
 function formatTrackReply(metrics: TrackMetrics, url: string): string {
-  const km = metrics.distanceKm.toFixed(1);
-  const gainM = Math.round(metrics.elevation.gainM);
+  const mi = kmToMi(metrics.distanceKm).toFixed(1);
+  const gainFt = Math.round(mToFt(metrics.elevation.gainM));
   const minutes = Math.round(metrics.durationSeconds / 60);
   const duration =
     minutes >= 60
       ? `${Math.floor(minutes / 60)}h${minutes % 60}m`
       : `${minutes}min`;
-  return `Track posted: ${km}km, ${gainM}m gain, ${duration}\n${url}`;
+  return `Track posted: ${mi}mi, ${gainFt}ft gain, ${duration}\n${url}`;
 }

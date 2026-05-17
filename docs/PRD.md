@@ -329,7 +329,9 @@ If the same webhook replays after partial completion:
 - Recommended: **false** for α (saves 9 chars on every reply), add later after user feedback.
 
 ### Cost visibility
-- `!cost` reply format: `"123 req · 45.2k tok · $1.37 (since 2026-04-01)"` — 46 chars, fits in one SMS.
+- `!cost` reply format: summary line followed by an optional per-command breakdown when any command has non-zero LLM cost (#173).
+  - Summary only (no LLM cost yet): `"0 req · 0.0k tok · $0.00 (since 2026-04-01)"`.
+  - With breakdown: `"2 req · 3.2k tok · $0.46 (since 2026-04-01)\npost $0.30 · track $0.16"` — second line is alphabetical by command, $0-cost commands filtered out. Both lines fit comfortably inside the 320-char reply budget.
 - Monthly budget alerts: Phase 3 feature (needs D1 for historical views).
 
 ---

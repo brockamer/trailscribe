@@ -9,6 +9,7 @@ import { chatCompletion } from "../src/adapters/ai/openrouter.js";
 import { makeTestEnv } from "./helpers/env.js";
 import { publishTrackPost } from "../src/adapters/publish/github-pages.js";
 import { sendReply } from "../src/adapters/outbound/garmin-ipc-inbound.js";
+import { monthlyTotals } from "../src/core/ledger.js";
 import * as mapshareMod from "../src/adapters/location/mapshare.js";
 import * as narrativeMod from "../src/core/narrative.js";
 import * as publishMod from "../src/adapters/publish/github-pages.js";
@@ -364,6 +365,12 @@ describe("handleStopTrack — end to end", () => {
     expect(stored).not.toBeNull();
     expect(stored.pingCount).toBe(14);
     expect(stored.journalUrl).toBe("https://brockamer.github.io/trailscribe-journal/2026/05/02/pch.html");
+
+    // #173: LLM cost records under by_command.track (not .post) so !cost can
+    // disaggregate publish-class commands.
+    const ledger = await monthlyTotals(env);
+    expect(ledger.by_command.track).toMatchObject({ requests: 1 });
+    expect(ledger.by_command.post).toBeUndefined();
   });
 
   test("empty KML: logs warning, sends 'no breadcrumbs' reply, no publish", async () => {

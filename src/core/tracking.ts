@@ -184,7 +184,7 @@ export async function handleStopTrack(
     );
 
     await recordTransaction({
-      command: "post",
+      command: "track",
       usage: narrative.usage,
       env,
     });

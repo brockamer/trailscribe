@@ -340,9 +340,14 @@ describe("P2-18 — !cost breakout", () => {
     await postIpc(envelope("!cost"));
 
     const [, messages] = sendReplyMock.mock.calls[0];
-    expect(messages[0]).toMatch(
+    // Two-line render (#173): summary then per-command breakdown.
+    const [summary, breakdown] = messages[0].split("\n");
+    expect(summary).toMatch(
       /^1 req · 1\.5k tok · \$0\.25 \+ \$0\.03 img \(since \d{4}-\d{2}-01\)$/,
     );
+    // recordImageTransaction doesn't touch by_command, so only the post entry
+    // appears in the breakdown.
+    expect(breakdown).toBe("post $0.25");
   });
 
   test("no image entries → !cost reply preserves Phase 1 format", async () => {

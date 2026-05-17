@@ -161,7 +161,69 @@ describe("P1-19 — !cost", () => {
 
     const [, messages] = sendReplyMock.mock.calls[0];
     // 2000 tokens total → "2.0k tok"; 1500*0.0001 + 500*0.0003 = 0.15 + 0.15 = $0.30
-    expect(messages[0]).toMatch(/^1 req · 2\.0k tok · \$0\.30 \(since \d{4}-\d{2}-01\)$/);
+    // Two-line render (#173): summary then per-command breakdown.
+    const [summary, breakdown] = messages[0].split("\n");
+    expect(summary).toMatch(/^1 req · 2\.0k tok · \$0\.30 \(since \d{4}-\d{2}-01\)$/);
+    expect(breakdown).toBe("post $0.30");
+  });
+
+  test("multi-command ledger → breakdown lists post + track alphabetically (#173)", async () => {
+    const seedEnv = makeTestEnv({
+      ...env,
+      LLM_INPUT_COST_PER_1K: "0.10",
+      LLM_OUTPUT_COST_PER_1K: "0.30",
+    });
+    await recordTransaction({
+      command: "post",
+      usage: { prompt_tokens: 1500, completion_tokens: 500 },
+      env: seedEnv,
+    });
+    await recordTransaction({
+      command: "track",
+      usage: { prompt_tokens: 1000, completion_tokens: 200 },
+      env: seedEnv,
+    });
+    Object.assign(env, {
+      LLM_INPUT_COST_PER_1K: "0.10",
+      LLM_OUTPUT_COST_PER_1K: "0.30",
+    });
+
+    const res = await postIpc(envelope("!cost"));
+    expect(res.status).toBe(200);
+
+    const [, messages] = sendReplyMock.mock.calls[0];
+    const [summary, breakdown] = messages[0].split("\n");
+    // post: 0.15 + 0.15 = $0.30; track: 0.10 + 0.06 = $0.16; total $0.46.
+    expect(summary).toMatch(/^2 req · 3\.2k tok · \$0\.46 \(since \d{4}-\d{2}-01\)$/);
+    // Alphabetical: post before track.
+    expect(breakdown).toBe("post $0.30 · track $0.16");
+  });
+
+  test("breakdown filters $0-cost commands (ping/help/cost stay invisible) (#173)", async () => {
+    const seedEnv = makeTestEnv({
+      ...env,
+      LLM_INPUT_COST_PER_1K: "0.10",
+      LLM_OUTPUT_COST_PER_1K: "0.30",
+    });
+    await recordTransaction({
+      command: "ping",
+      usage: { prompt_tokens: 0, completion_tokens: 0 },
+      env: seedEnv,
+    });
+    await recordTransaction({
+      command: "track",
+      usage: { prompt_tokens: 1000, completion_tokens: 200 },
+      env: seedEnv,
+    });
+    Object.assign(env, {
+      LLM_INPUT_COST_PER_1K: "0.10",
+      LLM_OUTPUT_COST_PER_1K: "0.30",
+    });
+
+    await postIpc(envelope("!cost"));
+    const [, messages] = sendReplyMock.mock.calls[0];
+    const [, breakdown] = messages[0].split("\n");
+    expect(breakdown).toBe("track $0.16");
   });
 
   test("does not record a ledger transaction itself (would skew its own output)", async () => {

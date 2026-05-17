@@ -95,10 +95,14 @@ function helpText(): string {
 }
 
 /**
- * Format the `!cost` reply body. Per plan P1-19:
+ * Format the `!cost` reply body. Summary line follows plan P1-19:
  *   "<requests> req · <tokens>k tok · $<cost> (since <YYYY-MM-01>)"
- * Tokens are summed (prompt + completion) and rendered in thousands with one
- * decimal. Total width capped at ~52 chars in realistic ranges.
+ * When the ledger has any commands with non-zero LLM cost, a second line
+ * renders the per-command breakdown alphabetically:
+ *   "post $0.85 · track $0.38"
+ * Free commands (ping/help/cost/etc.) have $0 and are filtered out so they
+ * don't pollute the breakdown. Two-line composition (not branching returns)
+ * keeps the image-cost variant from drifting from the bare variant. Per #173.
  */
 function formatCostBody(snap: LedgerSnapshot): string {
   const totalTokens = snap.prompt_tokens + snap.completion_tokens;
@@ -106,8 +110,17 @@ function formatCostBody(snap: LedgerSnapshot): string {
   const textCost = snap.usd_cost.toFixed(2);
   const sinceDate = `${snap.period}-01`;
   const imageCost = snap.image_usd_cost ?? 0;
-  if (imageCost > 0) {
-    return `${snap.requests} req · ${tokensK}k tok · $${textCost} + $${imageCost.toFixed(2)} img (since ${sinceDate})`;
-  }
-  return `${snap.requests} req · ${tokensK}k tok · $${textCost} (since ${sinceDate})`;
+
+  const summary =
+    imageCost > 0
+      ? `${snap.requests} req · ${tokensK}k tok · $${textCost} + $${imageCost.toFixed(2)} img (since ${sinceDate})`
+      : `${snap.requests} req · ${tokensK}k tok · $${textCost} (since ${sinceDate})`;
+
+  const breakdown = Object.entries(snap.by_command)
+    .filter(([, v]) => v.usd_cost > 0)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([cmd, v]) => `${cmd} $${v.usd_cost.toFixed(2)}`)
+    .join(" · ");
+
+  return breakdown ? `${summary}\n${breakdown}` : summary;
 }

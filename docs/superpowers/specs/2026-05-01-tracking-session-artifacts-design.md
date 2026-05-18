@@ -2,13 +2,14 @@
 
 **Status:** Draft, pending review. **Mode B (MapShare pull-on-close) confirmed canonical 2026-05-03.**
 **Author:** Claude (Opus 4.7) with Brock Amer
-**Date:** 2026-05-01 (rewritten 2026-05-03 around MapShare data source — see §0, §13.7)
+**Date:** 2026-05-01 (rewritten 2026-05-03 around MapShare data source — see §0, §13.7; amended 2026-05-17 — see §0.1)
 **Related:** PRD §9 Roadmap, Epic #99 (Phase 3 — DO + D1, **dependency dropped**), Epic #187 (Tracking Sessions — Mode B hardening)
 
 ## Issue
 
 - #187 — Epic: Tracking Sessions — Mode B hardening
 - #168 — Implementation (closed 2026-05-04)
+- #194 — 2026-05-17 empirical update (see §0.1): mc=0 events DO flow on Satellite transport
 
 ---
 
@@ -47,6 +48,57 @@ The **2026-05-02 PCH/Malibu session** (~50 min, real movement: 0.25mi run + beac
 External research (2026-05-03 via Perplexity) confirmed: production integrations (CalTopo, GSatTrack, NCAR's `inreach-nodeorm`, j-arens' `garmin-ipc`) DO receive tracking positions via IPC Outbound somehow — but none publicly document the exact mechanism, and the official IPC_Outbound.pdf v2.0.8 documents *no* tenant-level toggle for `messageCode: 0` enablement. The MapShare KML/JSON feed at `share.garmin.com/<key>` is a documented alternative tracking-data surface used by many integrations.
 
 **Resolution (2026-05-03):** validated MapShare KML returns the full breadcrumb stream — see §13.7 for the verified 14-Placemark dump from the 2026-05-02 PCH session. **The spec now uses MapShare as the canonical tracking-data source** (Mode B). The Stop Track event from IPC remains the trigger; the breadcrumb data comes from the KML feed. See §5 / §6 for the (much simpler) implementation.
+
+---
+
+## 0.1 Amendment — 2026-05-17 empirical update (mc=0 IS flowing)
+
+> **§0 has been partially refuted by new evidence.** On 2026-05-17, during the #175 close-gate (611 km Pinal County → Redlands drive over ~8h37m, 205 MapShare breadcrumbs), `wrangler tail` captured a single `messageCode: 0` (Position Report) event with `transportMode: "Satellite"`, arriving ~20 s before the `mc=12` Stop Track. §0 is retained as historical record — it explains *why* Mode B was chosen — but its specific empirical claims are corrected below. Investigation: #194.
+
+**Captured event** (2026-05-17T23:23:28Z UTC):
+
+```json
+{
+  "event": "ipc_received",
+  "version": "4.0",
+  "rawBody": {
+    "Events": [{
+      "transportMode": "Satellite",
+      "imei": "300052030374220",
+      "messageCode": 0,
+      "timeStamp": 1779060150000,
+      "point": {"latitude": 34.0456223487854, "longitude": -117.15710878372192, "altitude": 489.23477, "gpsFix": 2, "course": 337.5, "speed": 107.994},
+      "status": {"autonomous": 0, "lowBattery": 0, "intervalChange": 0, "resetDetected": 0}
+    }]
+  }
+}
+```
+
+**§0 claims refuted by this event:**
+
+- **§0 hypothesis #1** (`transportMode: "Internet"` phone-paired routing bypasses IPC entirely) — **refuted.** The 2026-05-17 mc=0 arrived on `transportMode: "Satellite"`, proving Iridium-routed Position Reports CAN reach the Worker.
+- **§0 hypothesis #3** (Position Reports simply aren't part of IPC Outbound for Mini 3 Plus + V4 under any configuration) — **refuted.** mc=0 IS part of IPC Outbound for this device + tenant.
+- **§4.3 first bullet** ("IPC Outbound mc 0 is empirically absent for our tenant") — **superseded.** Was true as of 2026-05-03; refuted 2026-05-17. Bullet softened in place to acknowledge the amendment.
+- **§5.1 Mode A bullet** ("Mode A — empirically not viable: mc 0 events don't reach our Worker") — **superseded.** Mode A is empirically *possible* on Satellite transport; remains *deferred* on independent grounds (below).
+
+**What §0 still gets right:** the 2026-05-02 PCH session (§0 table, §13.1) produced 0 Position Reports — that snapshot is historically accurate and unedited. Whether mc=0 was always flowing and the May-3 capture windows just missed active sessions, or whether something changed between 2026-05-03 and 2026-05-17 (tenant flip, firmware update, account tier change), cannot be disambiguated from one event. Mode B is architecturally unaffected either way.
+
+**Worker behavior is unchanged.** `src/app.ts:217` continues to silent-drop mc=0 via the `non_free_text` log path — the correct behavior for Mode B. mc=0 carries no session-aggregate metadata that MapShare KML doesn't already provide better (no per-point GPS-fix flag, no units, no LineString, no operator/device metadata — see §4.2 and §13.7). Persisting mc=0 events live would require either (a) full Mode A re-architecture, or (b) a parallel breadcrumb buffer that duplicates MapShare; neither is justified by one data point.
+
+**Mode A viability — deferred.** mc=0 is empirically *possible* on Satellite transport (the §0 blocker is gone), but Mode B remains canonical for three independent reasons that hold regardless of mc=0 enablement:
+
+1. **Architectural simplicity.** Pull-on-close (one HTTP fetch at session end) avoids the per-IMEI live-state problem that Mode A's `parsePings()`-equivalent ingestion implies.
+2. **Schema richness.** MapShare KML's named fields, explicit units, `Valid GPS Fix` flag, and pre-computed LineString are not derivable from IPC mc=0 alone (§4.3, §13.7).
+3. **Reliability is unestablished.** One observed mc=0 is not a basis for re-architecture. §0's historical capture suggests mc=0 was effectively absent for at least 5 days in early May 2026; a single mid-May event doesn't establish "reliable stream."
+
+**Reopen criteria for Mode A:**
+
+- (a) Operator needs lower-latency post-session feedback than Mode B's wait-for-Stop-Track-then-KML-pull cycle provides.
+- (b) Multiple tracking sessions confirm mc=0 reliability across transport modes (~95th-percentile coverage of expected pings).
+
+If either is met, Mode A swaps in behind the existing `parsePings()`-equivalent abstraction (§5.1 line 133, §13.7) with no downstream changes.
+
+**Garmin Pro Support** (§13.5): no reply as of 2026-05-18 (15 days after the email). Closing #170 as answered-by-empirical-evidence rather than awaiting confirmation. The 2026-05-17 observation answers #170's "is mc=0 currently configured?" question more authoritatively than Garmin's own confirmation would have.
 
 ---
 
@@ -113,7 +165,7 @@ Per-event envelope shape (V4): `{Version: "4.0", Events: [<event>]}` where each 
 
 ### 4.3 Why MapShare is the canonical data source
 
-- **It actually contains the data.** IPC Outbound mc 0 is empirically absent for our tenant.
+- **It actually contains the data.** As of 2026-05-03 IPC Outbound mc 0 was empirically absent for our tenant. A single mc=0 + Satellite event was later observed on 2026-05-17 (§0.1), but reliability is unestablished; Mode B remains canonical on architectural and schema grounds regardless.
 - **The schema is richer than IPC mc 0 would have been.** MapShare provides explicit `Valid GPS Fix` per point, units on every numeric field, a pre-computed LineString, and operator/device metadata baked in.
 - **Pull-on-close is architecturally simpler** than live ingestion. Single HTTP fetch at session end instead of per-IMEI Durable Object holding live session state.
 - **Decouples this spec from Phase 3** (DO + D1 storage migration). Mode B doesn't need a per-IMEI DO; the existing KV stores are sufficient.
@@ -124,7 +176,7 @@ Per-event envelope shape (V4): `{Version: "4.0", Events: [<event>]}` where each 
 
 The original spec considered three modes:
 
-- **Mode A — IPC ping stream (live ingestion).** Empirically not viable: mc 0 events don't reach our Worker (§0).
+- **Mode A — IPC ping stream (live ingestion).** As of 2026-05-03 empirically not viable: mc 0 events did not reach our Worker (§0). One mc=0 + Satellite event observed 2026-05-17 (§0.1); reliability unestablished, and the Mode B-vs-Mode-A trade-off is unchanged. Deferred — see §0.1 for reopen criteria.
 - **Mode B — MapShare pull-on-close.** Verified working 2026-05-03 (§13.7). **Selected.**
 - **Mode C — Bookend-only (start/end/duration only).** Degraded fallback. No longer needed.
 
@@ -441,7 +493,7 @@ Cuts 1 and 2 are independent (can parallelize). Cut 3 depends on both.
 
 ## 11. Open questions for review
 
-- **Garmin Pro Support response (informational).** Email sent 2026-05-03 (see §13.5). With Mode B confirmed, this is no longer a blocker — but a positive reply ("yes, mc 0 enabled") would let us swap the data source from MapShare to live IPC events behind the same `parsePings()`-equivalent abstraction with no downstream changes. Not load-bearing for v1.
+- **Garmin Pro Support response (informational).** Email sent 2026-05-03 (see §13.5). With Mode B confirmed this was never a blocker; a positive reply was anticipated to enable a future Mode A swap. The empirical question was answered directly by #194 on 2026-05-17 (§0.1): mc=0 events DO reach the Worker, at least on Satellite transport. #170 closed 2026-05-18 as answered-by-evidence; Mode A swap evaluation deferred — see §0.1 reopen criteria.
 - **Should this spec become its own epic, or fold into Phase 3 (#99)?** With Mode B canonical, Phase 3 dependency is gone. **Recommendation: file as its own epic** ("Phase 3.5 — Tracking session artifacts" or similar), independent of Phase 3 timing.
 - **Map render in v1?** Spec says no — frontmatter has a MapShare deep-link, that's enough. Static map image rendering (Mapbox/Stadia/Maptiler) is a clean v2 add.
 - **MapShare privacy.** Operator should password-protect their MapShare to keep position history private. Worker fetches with the password baked into `MAPSHARE_KEY` env (or as a separate `MAPSHARE_PASSWORD` secret if Garmin requires basic auth on protected feeds). Verify the auth shape during Cut 1.
@@ -457,6 +509,7 @@ Cuts 1 and 2 are independent (can parallelize). Cut 3 depends on both.
 - 2026-05-03 — **Empirical reality discovered (§0):** Position Reports (mc 0) do not flow over IPC Outbound for our tenant. Spec now branches across Modes A / B / C in §5.0. Garmin Pro Support email sent. PR #163 (`LOG_TRACK_PAYLOADS`) and PR #166 (`ipc_received` envelope diagnostic) shipped during this investigation.
 - 2026-05-03 — **Mode B confirmed canonical (§13.7):** MapShare KML at `share.garmin.com/trailscribe` returns the full 14-Placemark breadcrumb stream for the 2026-05-02 PCH session, with richer schema than IPC mc 0 would have provided. Spec rewritten — §5/§6 now describe MapShare pull-on-close as the only design. Mode A retained as a future swap target (the abstraction allows it). Mode C dropped (no longer needed). PR #167 set `MAPSHARE_BASE = "https://share.garmin.com/trailscribe"` across envs.
 - 2026-05-03 — **Phase 3 dependency dropped:** Mode B's pull-on-close architecture eliminates the need for a per-IMEI Durable Object. This spec is now independent of Phase 3 (#99) — both can ship in any order.
+- 2026-05-17 — **mc=0 IS flowing on Satellite transport (§0.1):** During the #175 close-gate (611 km Pinal County → Redlands drive), `wrangler tail` captured a single `messageCode: 0` event with `transportMode: "Satellite"` ~20 s before the `mc=12` Stop Track. Refutes §0 hypothesis #1 ("Internet transport bypasses IPC") and hypothesis #3 ("Position Reports simply aren't part of IPC Outbound for Mini 3 Plus + V4"). Mode B is architecturally unaffected (`src/app.ts:217` silent-drops mc=0 — correct behavior; KML pull at session close provides richer schema per §4.2 / §13.7). Mode A swap evaluation deferred (single observation, reliability unestablished); reopen criteria recorded in §0.1. #170 (Garmin Pro Support reply pin) closed 2026-05-18 as answered-by-evidence.
 
 ---
 

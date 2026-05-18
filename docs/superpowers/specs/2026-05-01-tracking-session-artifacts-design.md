@@ -77,6 +77,7 @@ External research (2026-05-03 via Perplexity) confirmed: production integrations
 **§0 claims refuted by this event:**
 
 - **§0 hypothesis #1** (`transportMode: "Internet"` phone-paired routing bypasses IPC entirely) — **refuted.** The 2026-05-17 mc=0 arrived on `transportMode: "Satellite"`, proving Iridium-routed Position Reports CAN reach the Worker.
+- **§0 hypothesis #2** (per-tenant configuration gate not exposed in the Portal Connect UI) — **neither refuted nor confirmed.** This remains the most plausible explanation for the 2026-05-03 → 2026-05-17 state change (a silent tenant flip, possibly in response to the Pro Support email even without a written reply) but cannot be verified without Garmin's cooperation.
 - **§0 hypothesis #3** (Position Reports simply aren't part of IPC Outbound for Mini 3 Plus + V4 under any configuration) — **refuted.** mc=0 IS part of IPC Outbound for this device + tenant.
 - **§4.3 first bullet** ("IPC Outbound mc 0 is empirically absent for our tenant") — **superseded.** Was true as of 2026-05-03; refuted 2026-05-17. Bullet softened in place to acknowledge the amendment.
 - **§5.1 Mode A bullet** ("Mode A — empirically not viable: mc 0 events don't reach our Worker") — **superseded.** Mode A is empirically *possible* on Satellite transport; remains *deferred* on independent grounds (below).

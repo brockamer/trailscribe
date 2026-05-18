@@ -47,7 +47,7 @@ export interface NarrativeOutput {
 }
 
 /** JSON-schema enforced by the LLM provider's structured-output mode. */
-const NARRATIVE_SCHEMA = {
+const POST_NARRATIVE_SCHEMA = {
   name: "narrative",
   strict: true,
   schema: {
@@ -62,7 +62,7 @@ const NARRATIVE_SCHEMA = {
   },
 } as const;
 
-const NarrativeContentSchema = z.object({
+const PostContentSchema = z.object({
   title: z.string().min(1).max(60),
   haiku: z.string().min(1).max(110),
   body: z.string().min(1).max(500),
@@ -73,7 +73,7 @@ const NarrativeContentSchema = z.object({
  * length caps server-side; the prompt is what makes the model actually *try*
  * to stay within them and to match the user's voice.
  */
-const SYSTEM_PROMPT_WITH_NOTE = [
+const SYSTEM_PROMPT_POST_WITH_NOTE = [
   "You write short field-journal entries from a backcountry traveller's brief notes.",
   "Always return valid JSON matching the schema. No prose outside the JSON.",
   "Constraints:",
@@ -90,7 +90,7 @@ const SYSTEM_PROMPT_WITH_NOTE = [
  * specifics not present in the metadata — a stronger constraint than the
  * with-note prompt because there's no anchoring caption to ground it.
  */
-const SYSTEM_PROMPT_NO_NOTE = [
+const SYSTEM_PROMPT_POST_NO_NOTE = [
   "You write short field-journal entries from a backcountry traveller's location and weather snapshot. The traveller did not provide a caption — describe what is true about this position and moment, in observational third-person, from the metadata alone.",
   "Always return valid JSON matching the schema. No prose outside the JSON.",
   "Constraints:",
@@ -106,26 +106,40 @@ export class NarrativeError extends Error {
   }
 }
 
-export async function generateNarrative(input: NarrativeInput): Promise<NarrativeOutput> {
-  const userPrompt = buildUserPrompt(input);
-  const model = input.env.LLM_MODEL || "anthropic/claude-sonnet-4-6";
-  const systemPrompt =
-    input.note !== undefined && input.note.trim().length > 0
-      ? SYSTEM_PROMPT_WITH_NOTE
-      : SYSTEM_PROMPT_NO_NOTE;
+interface RunNarrativeCallOpts<T> {
+  env: Env;
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+  responseSchema: { name: string; strict: true; schema: object };
+  zodSchema: z.ZodType<T>;
+  maxTokens: number;
+  diagKind: "post" | "track";
+}
 
+/**
+ * Shared OpenRouter call + response handling for both `!post` and tracking
+ * narrative variants. Owns: chatCompletion invocation, missing-content
+ * diagnostics, JSON.parse error wrapping, zod validation, usage extraction.
+ *
+ * Callers supply variant-specific prompts, schemas, and `diagKind` literal so
+ * a failed call can be traced back to the originating pipeline in logs.
+ */
+async function runNarrativeCall<T>(
+  opts: RunNarrativeCallOpts<T>,
+): Promise<{ data: T; usage: NarrativeOutput["usage"] }> {
   const response = await chatCompletion({
     req: {
-      model,
+      model: opts.model,
       messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
+        { role: "system", content: opts.systemPrompt },
+        { role: "user", content: opts.userPrompt },
       ],
-      response_format: { type: "json_schema", json_schema: NARRATIVE_SCHEMA },
+      response_format: { type: "json_schema", json_schema: opts.responseSchema },
       temperature: 0.7,
-      max_tokens: 600,
+      max_tokens: opts.maxTokens,
     },
-    env: input.env,
+    env: opts.env,
   });
 
   const content = response.choices[0]?.message?.content;
@@ -135,8 +149,8 @@ export async function generateNarrative(input: NarrativeInput): Promise<Narrativ
       event: "narrative_diag",
       level: "warn",
       diag: {
-        kind: "post",
-        model,
+        kind: opts.diagKind,
+        model: opts.model,
         choicesLen: response.choices.length,
         finishReason: choice0?.finish_reason ?? null,
         messageKeys: choice0?.message ? Object.keys(choice0.message) : [],
@@ -146,7 +160,11 @@ export async function generateNarrative(input: NarrativeInput): Promise<Narrativ
         usage: response.usage ?? null,
       },
     });
-    throw new NarrativeError("LLM returned no content");
+    throw new NarrativeError(
+      opts.diagKind === "track"
+        ? "LLM returned no content for track narrative"
+        : "LLM returned no content",
+    );
   }
 
   let parsed: unknown;
@@ -158,21 +176,44 @@ export async function generateNarrative(input: NarrativeInput): Promise<Narrativ
     });
   }
 
-  const validated = NarrativeContentSchema.safeParse(parsed);
+  const validated = opts.zodSchema.safeParse(parsed);
   if (!validated.success) {
     const issues = validated.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
-    throw new NarrativeError(`LLM output failed schema: ${issues}`);
+    throw new NarrativeError(
+      opts.diagKind === "track"
+        ? `Track narrative failed schema: ${issues}`
+        : `LLM output failed schema: ${issues}`,
+    );
   }
 
   return {
-    title: validated.data.title,
-    haiku: validated.data.haiku,
-    body: validated.data.body,
+    data: validated.data,
     usage: {
       prompt_tokens: response.usage.prompt_tokens,
       completion_tokens: response.usage.completion_tokens,
     },
   };
+}
+
+export async function generateNarrative(input: NarrativeInput): Promise<NarrativeOutput> {
+  const userPrompt = buildUserPrompt(input);
+  const systemPrompt =
+    input.note !== undefined && input.note.trim().length > 0
+      ? SYSTEM_PROMPT_POST_WITH_NOTE
+      : SYSTEM_PROMPT_POST_NO_NOTE;
+
+  const { data, usage } = await runNarrativeCall({
+    env: input.env,
+    model: input.env.LLM_MODEL || "anthropic/claude-sonnet-4-6",
+    systemPrompt,
+    userPrompt,
+    responseSchema: POST_NARRATIVE_SCHEMA,
+    zodSchema: PostContentSchema,
+    maxTokens: 600,
+    diagKind: "post",
+  });
+
+  return { title: data.title, haiku: data.haiku, body: data.body, usage };
 }
 
 /**
@@ -241,8 +282,8 @@ const TrackContentSchema = z.object({
 });
 
 /**
- * Third system-prompt variant alongside SYSTEM_PROMPT_WITH_NOTE and
- * SYSTEM_PROMPT_NO_NOTE. Used for closed Garmin tracking sessions.
+ * Third system-prompt variant alongside SYSTEM_PROMPT_POST_WITH_NOTE and
+ * SYSTEM_PROMPT_POST_NO_NOTE. Used for closed Garmin tracking sessions.
  * Body cap is 3000 chars (vs 500 for !post). Explicitly forbids inventing
  * specifics not present in metrics or place names.
  */
@@ -264,63 +305,18 @@ const SYSTEM_PROMPT_TRACK = [
 export async function generateTrackNarrative(
   input: TrackNarrativeInput,
 ): Promise<NarrativeOutput> {
-  const userPrompt = buildTrackPrompt(input);
-  const model = input.env.LLM_MODEL || "anthropic/claude-sonnet-4-6";
-
-  const response = await chatCompletion({
-    req: {
-      model,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT_TRACK },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_schema", json_schema: TRACK_NARRATIVE_SCHEMA },
-      temperature: 0.7,
-      max_tokens: 1500,
-    },
+  const { data, usage } = await runNarrativeCall({
     env: input.env,
+    model: input.env.LLM_MODEL || "anthropic/claude-sonnet-4-6",
+    systemPrompt: SYSTEM_PROMPT_TRACK,
+    userPrompt: buildTrackPrompt(input),
+    responseSchema: TRACK_NARRATIVE_SCHEMA,
+    zodSchema: TrackContentSchema,
+    maxTokens: 1500,
+    diagKind: "track",
   });
 
-  const content = response.choices[0]?.message?.content;
-  if (typeof content !== "string" || content.length === 0) {
-    const choice0 = response.choices[0];
-    log({
-      event: "narrative_diag",
-      level: "warn",
-      diag: {
-        kind: "track",
-        model,
-        choicesLen: response.choices.length,
-        finishReason: choice0?.finish_reason ?? null,
-        messageKeys: choice0?.message ? Object.keys(choice0.message) : [],
-        contentType: typeof choice0?.message?.content,
-        contentLen:
-          typeof choice0?.message?.content === "string" ? choice0.message.content.length : 0,
-        usage: response.usage ?? null,
-      },
-    });
-    throw new NarrativeError("LLM returned no content for track narrative");
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(content);
-  } catch (e) {
-    throw new NarrativeError(`LLM returned non-JSON: ${content.slice(0, 120)}`, { cause: e });
-  }
-  const validated = TrackContentSchema.safeParse(parsed);
-  if (!validated.success) {
-    const issues = validated.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
-    throw new NarrativeError(`Track narrative failed schema: ${issues}`);
-  }
-  return {
-    title: validated.data.title,
-    haiku: validated.data.haiku,
-    body: validated.data.body,
-    usage: {
-      prompt_tokens: response.usage.prompt_tokens,
-      completion_tokens: response.usage.completion_tokens,
-    },
-  };
+  return { title: data.title, haiku: data.haiku, body: data.body, usage };
 }
 
 function buildTrackPrompt(input: TrackNarrativeInput): string {

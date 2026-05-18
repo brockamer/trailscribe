@@ -44,6 +44,70 @@ interface ContentsApiErrorBody {
   message?: string;
 }
 
+interface ResolvedPublishPath {
+  yyyy: string;
+  mm: string;
+  dd: string;
+  slug: string;
+  path: string;
+  url: string;
+}
+
+/**
+ * Derive the dated path + slug + public URL for a post. Shared across all
+ * three publish callers (publishPost, publishTrackPost, publishPostWithImage)
+ * — they differ in render shape and commit mechanism, but the slug-and-path
+ * derivation is identical.
+ *
+ * The caller resolves `now` (request time for !post / postimg; closedAt for
+ * track) before calling. Keeps this helper pure.
+ */
+async function resolvePublishPath(args: {
+  env: Env;
+  title: string;
+  now: Date;
+}): Promise<ResolvedPublishPath> {
+  const yyyy = String(args.now.getUTCFullYear());
+  const mm = pad2(args.now.getUTCMonth() + 1);
+  const dd = pad2(args.now.getUTCDate());
+
+  const baseSlug = slugify(args.title, args.now);
+  const { path, slug } = await findFreePath(args.env, args.env.JOURNAL_POST_PATH_TEMPLATE, {
+    yyyy,
+    mm,
+    dd,
+    baseSlug,
+  });
+
+  const url = renderUrl(args.env.JOURNAL_URL_TEMPLATE, { yyyy, mm, dd, slug });
+  return { yyyy, mm, dd, slug, path, url };
+}
+
+/**
+ * Contents-API PUT publish path shared by `publishPost` and `publishTrackPost`.
+ * Resolves the path, calls `renderFn` to produce the markdown (variant-specific
+ * frontmatter), commits via Contents API PUT (with retry on 5xx).
+ *
+ * `publishPostWithImage` uses a different commit mechanism (atomic GraphQL
+ * `createCommitOnBranch`) and shares only `resolvePublishPath`.
+ *
+ * Auth: fine-grained PAT in `GITHUB_JOURNAL_TOKEN` scoped to exactly the
+ * journal repo (`contents:write`). 4xx surfaces immediately (auth/perm bug —
+ * retrying won't help). 5xx retries 1 s / 4 s / 16 s.
+ */
+async function publishMarkdown(args: {
+  env: Env;
+  title: string;
+  now: Date;
+  delay: (ms: number) => Promise<void>;
+  renderFn: (resolved: ResolvedPublishPath) => string;
+}): Promise<PublishPostResult> {
+  const resolved = await resolvePublishPath({ env: args.env, title: args.title, now: args.now });
+  const markdown = args.renderFn(resolved);
+  const putResp = await putContents(args.env, resolved.path, markdown, args.title, args.delay);
+  return { url: resolved.url, path: resolved.path, sha: putResp.commit.sha };
+}
+
 /**
  * Commit one markdown file per `!post` to the dedicated journal repo via the
  * GitHub Contents API. Public URL is derived from `JOURNAL_URL_TEMPLATE`
@@ -53,10 +117,6 @@ interface ContentsApiErrorBody {
  * plus hyphens, ≤ 50 chars). On the rare same-minute collision we GET the
  * candidate path; on 200 we increment a `-2`, `-3`, … suffix until 404.
  *
- * Auth: fine-grained PAT in `GITHUB_JOURNAL_TOKEN` scoped to exactly the
- * journal repo (`contents:write`). 4xx surfaces immediately (auth/perm bug
- * — retrying won't help). 5xx retries 1 s / 4 s / 16 s.
- *
  * Frontmatter shape (Jekyll/Hugo compatible). `location:` and `weather:`
  * keys are omitted when their inputs are absent — no `(0, 0)` placeholders.
  */
@@ -65,33 +125,23 @@ export async function publishPost(args: PublishPostArgs): Promise<PublishPostRes
   const now = (args.now ?? (() => new Date()))();
   const delay = args.delay ?? defaultDelay;
 
-  const yyyy = String(now.getUTCFullYear());
-  const mm = pad2(now.getUTCMonth() + 1);
-  const dd = pad2(now.getUTCDate());
-
-  const baseSlug = slugify(title, now);
-  const { path, slug: finalSlug } = await findFreePath(env, args.env.JOURNAL_POST_PATH_TEMPLATE, {
-    yyyy,
-    mm,
-    dd,
-    baseSlug,
-  });
-
-  const markdown = renderMarkdown({
+  return publishMarkdown({
+    env,
     title,
-    haiku,
-    body,
-    date: now.toISOString(),
-    lat,
-    lon,
-    placeName,
-    weather,
+    now,
+    delay,
+    renderFn: () =>
+      renderMarkdown({
+        title,
+        haiku,
+        body,
+        date: now.toISOString(),
+        lat,
+        lon,
+        placeName,
+        weather,
+      }),
   });
-
-  const putResp = await putContents(env, path, markdown, title, delay);
-
-  const url = renderUrl(env.JOURNAL_URL_TEMPLATE, { yyyy, mm, dd, slug: finalSlug });
-  return { url, path, sha: putResp.commit.sha };
 }
 
 /**
@@ -321,24 +371,14 @@ export async function publishPostWithImage(
   const { title, haiku, body, lat, lon, placeName, weather, env, image } = args;
   const now = (args.now ?? (() => new Date()))();
 
-  const yyyy = String(now.getUTCFullYear());
-  const mm = pad2(now.getUTCMonth() + 1);
-  const dd = pad2(now.getUTCDate());
-
-  const baseSlug = slugify(title, now);
-  const { path, slug: finalSlug } = await findFreePath(env, env.JOURNAL_POST_PATH_TEMPLATE, {
-    yyyy,
-    mm,
-    dd,
-    baseSlug,
-  });
+  const resolved = await resolvePublishPath({ env, title, now });
 
   const ext = extensionForMime(image.mimeType);
   const imagePath = image.pathTemplate
-    .replaceAll("{yyyy}", yyyy)
-    .replaceAll("{mm}", mm)
-    .replaceAll("{dd}", dd)
-    .replaceAll("{slug}", finalSlug)
+    .replaceAll("{yyyy}", resolved.yyyy)
+    .replaceAll("{mm}", resolved.mm)
+    .replaceAll("{dd}", resolved.dd)
+    .replaceAll("{slug}", resolved.slug)
     .replaceAll("{ext}", ext);
 
   const markdown = renderMarkdownWithImage({
@@ -366,7 +406,7 @@ export async function publishPostWithImage(
       expectedHeadOid,
       fileChanges: {
         additions: [
-          { path, contents: base64Utf8(markdown) },
+          { path: resolved.path, contents: base64Utf8(markdown) },
           { path: imagePath, contents: base64Bytes(image.bytes) },
         ],
       },
@@ -408,10 +448,9 @@ export async function publishPostWithImage(
     });
   }
 
-  const url = renderUrl(env.JOURNAL_URL_TEMPLATE, { yyyy, mm, dd, slug: finalSlug });
   return {
-    url,
-    path,
+    url: resolved.url,
+    path: resolved.path,
     sha: commit.oid,
     imagePath,
     commitOid: commit.oid,
@@ -545,33 +584,24 @@ export async function publishTrackPost(args: PublishTrackPostArgs): Promise<Publ
   const now = (args.now ?? (() => new Date(metrics.closedAt)))();
   const delay = args.delay ?? defaultDelay;
 
-  const yyyy = String(now.getUTCFullYear());
-  const mm = pad2(now.getUTCMonth() + 1);
-  const dd = pad2(now.getUTCDate());
-
-  const baseSlug = slugify(title, now);
-  const { path, slug: finalSlug } = await findFreePath(env, env.JOURNAL_POST_PATH_TEMPLATE, {
-    yyyy,
-    mm,
-    dd,
-    baseSlug,
-  });
-
-  const markdown = renderTrackMarkdown({
+  return publishMarkdown({
+    env,
     title,
-    haiku,
-    body,
-    metrics,
-    endLat,
-    endLon,
-    startPlace,
-    endPlace,
-    weather,
+    now,
+    delay,
+    renderFn: () =>
+      renderTrackMarkdown({
+        title,
+        haiku,
+        body,
+        metrics,
+        endLat,
+        endLon,
+        startPlace,
+        endPlace,
+        weather,
+      }),
   });
-
-  const putResp = await putContents(env, path, markdown, title, delay);
-  const url = renderUrl(env.JOURNAL_URL_TEMPLATE, { yyyy, mm, dd, slug: finalSlug });
-  return { url, path, sha: putResp.commit.sha };
 }
 
 function renderTrackMarkdown(a: {

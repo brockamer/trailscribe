@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { generateNarrative, NarrativeError } from "../src/core/narrative.js";
+import { generateNarrative, generateTrackNarrative, NarrativeError } from "../src/core/narrative.js";
 import type { Env } from "../src/env.js";
 import { makeTestEnv } from "./helpers/env.js";
 
@@ -330,5 +330,51 @@ describe("LLM_PROVIDER_HEADERS_JSON — analytics passthrough", () => {
 
     const out = await generateNarrative({ note: "x", env });
     expect(out.title).toBe("T");
+  });
+});
+
+describe("generateTrackNarrative — imperial units in LLM input (#195)", () => {
+  test("buildTrackPrompt sends mi/ft/mph; system prompt instructs US customary", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
+    );
+
+    await generateTrackNarrative({
+      metrics: {
+        pingCount: 14,
+        startedAt: Date.parse("2026-05-02T15:51:30Z"),
+        closedAt: Date.parse("2026-05-02T16:24:30Z"),
+        durationSeconds: 1980,
+        distanceKm: 10,
+        pace: { avgKmh: 16, p50Kmh: 15, p95Kmh: 20 },
+        elevation: { gainM: 100, lossM: 80, minM: 0, maxM: 100 },
+        routeShape: "out-and-back",
+        activityHint: "bike",
+      },
+      startPlace: "Malibu, CA",
+      endPlace: "Topanga, CA",
+      env,
+    });
+
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    const userMsg = body.messages.find((m) => m.role === "user")?.content ?? "";
+    const sysMsg = body.messages.find((m) => m.role === "system")?.content ?? "";
+
+    // No metric units leak through to the model.
+    expect(userMsg).not.toMatch(/\bkm\b/);
+    expect(userMsg).not.toMatch(/\bkm\/h\b/);
+    expect(userMsg).not.toMatch(/\bmeters?\b/);
+
+    // Imperial values present: 10 km → 6.21 mi; 100 m → 328 ft; 16 km/h → 9.94 mph.
+    expect(userMsg).toMatch(/Distance: 6\.21 mi/);
+    expect(userMsg).toMatch(/Elevation gain: 328 ft/);
+    expect(userMsg).toMatch(/Average speed: 9\.9 mph/);
+    expect(userMsg).toMatch(/p95: 12\.4 mph/);
+
+    // System prompt explicitly instructs imperial in the body.
+    expect(sysMsg).toMatch(/US customary units|miles, feet|mph/);
   });
 });

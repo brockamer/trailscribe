@@ -1,5 +1,6 @@
 import type { Env } from "../../env.js";
 import type { TrackMetrics } from "../../core/track-metrics.js";
+import { formatHaiku, kmToMi, mToFt } from "../../core/units.js";
 
 const RETRY_DELAYS_MS = [1000, 4000, 16000] as const;
 const MAX_SLUG_COLLISION_ATTEMPTS = 10;
@@ -230,7 +231,7 @@ function renderMarkdown(a: RenderArgs): string {
   }
   lines.push("tags: [trailscribe]");
   lines.push("---");
-  lines.push(a.haiku);
+  lines.push(formatHaiku(a.haiku));
   lines.push("");
   lines.push(a.body);
   return lines.join("\n");
@@ -502,7 +503,7 @@ function renderMarkdownWithImage(a: RenderArgsWithImage): string {
   lines.push("---");
   lines.push(`![${a.title}](${imageUrl})`);
   lines.push("");
-  lines.push(a.haiku);
+  lines.push(formatHaiku(a.haiku));
   lines.push("");
   lines.push(a.body);
   return lines.join("\n");
@@ -592,8 +593,8 @@ function renderTrackMarkdown(a: {
   lines.push(`track:`);
   lines.push(`  started_at: ${new Date(m.startedAt).toISOString()}`);
   lines.push(`  duration_seconds: ${m.durationSeconds}`);
-  lines.push(`  distance_km: ${m.distanceKm.toFixed(2)}`);
-  lines.push(`  elevation_gain_m: ${Math.round(m.elevation.gainM)}`);
+  lines.push(`  distance_mi: ${kmToMi(m.distanceKm).toFixed(2)}`);
+  lines.push(`  elevation_gain_ft: ${Math.round(mToFt(m.elevation.gainM))}`);
   lines.push(`  activity_hint: ${m.activityHint}`);
   lines.push(`  route_shape: ${m.routeShape}`);
   if (a.startPlace !== undefined && a.startPlace !== "") {
@@ -609,7 +610,7 @@ function renderTrackMarkdown(a: {
   if (a.weather !== undefined) lines.push(`weather: ${quoteYaml(a.weather)}`);
   lines.push(`tags: [trailscribe, track]`);
   lines.push("---");
-  lines.push(a.haiku);
+  lines.push(formatHaiku(a.haiku));
   lines.push("");
   lines.push(a.body);
   return lines.join("\n");

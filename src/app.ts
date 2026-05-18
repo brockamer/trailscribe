@@ -16,7 +16,7 @@ import { orchestrate } from "./core/orchestrator.js";
 import { sendReply } from "./adapters/outbound/garmin-ipc-inbound.js";
 import { buildReply } from "./core/reply.js";
 import { monthlyTotals } from "./core/ledger.js";
-import { handleStopTrack, recordSessionStart } from "./core/tracking.js";
+import { handleStopTrack, recordSessionStart, recordTrackInterval } from "./core/tracking.js";
 
 /**
  * Garmin tracking event codes. mc 0 = Position Report, mc 10 = Start Track,
@@ -189,6 +189,36 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
   }
 
   if (event.messageCode !== 3) {
+    // #201: Latch the device's current tracking interval whenever a tracking
+    // event carries a nonzero change. Per Garmin IPC Outbound spec, the
+    // intervalChange field is nonzero only on actual changes (0 = unchanged),
+    // so most events flow past this no-op. Persisted in TS_TRACKS as
+    // `track_interval:<imei>` and read by handleStopTrack's refusal branches
+    // to surface a (interval: Xh) hint when the device autonomously bumped
+    // to a long interval. Runs BEFORE the per-mc dispatch so the value is
+    // visible to handleStopTrack on a mc=12 event whose own status carries
+    // an intervalChange.
+    const intervalChange = event.status?.intervalChange;
+    if (typeof intervalChange === "number" && intervalChange > 0) {
+      try {
+        await recordTrackInterval(env, event.imei, intervalChange);
+        log({
+          event: "track_interval_recorded",
+          level: "info",
+          imei: event.imei,
+          intervalSec: intervalChange,
+          messageCode: event.messageCode,
+          key,
+        });
+      } catch (err) {
+        log({
+          event: "track_interval_record_failed",
+          level: "warn",
+          imei: event.imei,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
     if (event.messageCode === 4) {
       log({ event: "sos_received_ignored", level: "warn", imei: event.imei, key });
     } else if (event.messageCode === 12) {

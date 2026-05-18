@@ -2,6 +2,9 @@ import { describe, test, expect, vi, beforeEach } from "vitest";
 import {
   storeTrackRecord,
   handleStopTrack,
+  recordTrackInterval,
+  readTrackInterval,
+  formatInterval,
   type TrackSessionRecord,
 } from "../src/core/tracking.js";
 import { generateTrackNarrative } from "../src/core/narrative.js";
@@ -23,6 +26,44 @@ vi.mock("../src/adapters/ai/openrouter.js");
 vi.mock("../src/adapters/outbound/garmin-ipc-inbound.js", () => ({
   sendReply: vi.fn().mockResolvedValue({ count: 1 }),
 }));
+
+describe("track_interval KV helpers (#201)", () => {
+  test("recordTrackInterval + readTrackInterval round-trips a value", async () => {
+    const env = makeTestEnv();
+    await recordTrackInterval(env, "300052030374220", 14400);
+    const got = await readTrackInterval(env, "300052030374220");
+    expect(got).not.toBeNull();
+    expect(got!.intervalSec).toBe(14400);
+    expect(got!.recordedAt).toBeGreaterThan(0);
+  });
+
+  test("readTrackInterval returns null when never written", async () => {
+    const env = makeTestEnv();
+    expect(await readTrackInterval(env, "300052030374220")).toBeNull();
+  });
+
+  test("recordTrackInterval overwrites previous value (last-write-wins)", async () => {
+    const env = makeTestEnv();
+    await recordTrackInterval(env, "300052030374220", 14400);
+    await recordTrackInterval(env, "300052030374220", 120);
+    const got = await readTrackInterval(env, "300052030374220");
+    expect(got!.intervalSec).toBe(120);
+  });
+
+  test("formatInterval compacts seconds into h/m/s suffixes", () => {
+    expect(formatInterval(14400)).toBe("4h");
+    expect(formatInterval(7200)).toBe("2h");
+    expect(formatInterval(3600)).toBe("1h");
+    expect(formatInterval(1800)).toBe("30m");
+    expect(formatInterval(600)).toBe("10m");
+    expect(formatInterval(120)).toBe("2m");
+    expect(formatInterval(60)).toBe("1m");
+    expect(formatInterval(30)).toBe("30s");
+    expect(formatInterval(5)).toBe("5s");
+    // Floor-rounded: 5400s = 1.5h → "1h"
+    expect(formatInterval(5400)).toBe("1h");
+  });
+});
 
 describe("storeTrackRecord", () => {
   test("writes the record under track:<imei>:<sessionId>", async () => {
@@ -478,6 +519,88 @@ describe("handleStopTrack — end to end", () => {
     expect(narrativeSpy).toHaveBeenCalledTimes(1); // <-- the bound: still 1, not 2
     expect(publishSpy).toHaveBeenCalledTimes(2);
     expect(sendReply).toHaveBeenCalledTimes(1);
+  });
+
+  // #201: refusal-SMS branches surface the device's last-known tracking
+  // interval as a (interval: Xh) paren-tag when known. Latched on prior
+  // events by recordTrackInterval (wired in src/app.ts non_free_text path).
+  test("refusal SMS no_active_session: appends (interval: Xh) when known (#201)", async () => {
+    const env = makeTestEnv();
+    await recordTrackInterval(env, "300052030374220", 14400);
+    await handleStopTrack(
+      { imei: "300052030374220", messageCode: 12, timeStamp: Date.now() },
+      env,
+      "idem-201-noactive",
+    );
+    expect(sendReply).toHaveBeenCalledTimes(1);
+    const reply = vi.mocked(sendReply).mock.calls[0][1][0];
+    expect(reply).toContain("no active session");
+    expect(reply).toContain("(interval: 4h)");
+    expect(reply.length).toBeLessThanOrEqual(160);
+  });
+
+  test("refusal SMS no_pings: appends (interval: Xh) when known (#201)", async () => {
+    const env = makeTestEnv();
+    const closedAt = Date.now();
+    await seedSessionStart(env, "300052030374220", closedAt - 5 * 60 * 1000);
+    await recordTrackInterval(env, "300052030374220", 14400);
+    vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue("<kml/>");
+
+    await handleStopTrack(
+      { imei: "300052030374220", messageCode: 12, timeStamp: closedAt },
+      env,
+      "idem-201-nopings",
+    );
+
+    expect(sendReply).toHaveBeenCalledTimes(1);
+    const reply = vi.mocked(sendReply).mock.calls[0][1][0];
+    expect(reply).toContain("no breadcrumbs");
+    expect(reply).toContain("(interval: 4h)");
+    expect(reply.length).toBeLessThanOrEqual(160);
+  });
+
+  test("refusal SMS too_brief: appends (interval: Xh) when known (#201)", async () => {
+    const env = makeTestEnv();
+    const closedAt = Date.now();
+    await seedSessionStart(env, "300052030374220", closedAt - 5 * 60 * 1000);
+    await recordTrackInterval(env, "300052030374220", 14400);
+    const singlePingKml = `<?xml version="1.0"?>
+<kml><Document><Placemark>
+  <TimeStamp><when>2026-05-18T03:09:30Z</when></TimeStamp>
+  <ExtendedData>
+    <Data name="Latitude"><value>34.02767</value></Data>
+    <Data name="Longitude"><value>-118.75931</value></Data>
+    <Data name="Elevation"><value>40.92 m</value></Data>
+    <Data name="Velocity"><value>65.5 km/h</value></Data>
+    <Data name="Course"><value>247.5</value></Data>
+    <Data name="Valid GPS Fix"><value>True</value></Data>
+  </ExtendedData>
+</Placemark></Document></kml>`;
+    vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(singlePingKml);
+
+    await handleStopTrack(
+      { imei: "300052030374220", messageCode: 12, timeStamp: closedAt },
+      env,
+      "idem-201-toobrief",
+    );
+
+    expect(sendReply).toHaveBeenCalledTimes(1);
+    const reply = vi.mocked(sendReply).mock.calls[0][1][0];
+    expect(reply).toContain("Track too brief");
+    expect(reply).toContain("(interval: 4h)");
+    expect(reply.length).toBeLessThanOrEqual(160);
+  });
+
+  test("refusal SMS: omits (interval: …) tag when never recorded (#201)", async () => {
+    const env = makeTestEnv();
+    await handleStopTrack(
+      { imei: "300052030374220", messageCode: 12, timeStamp: Date.now() },
+      env,
+      "idem-201-nointerval",
+    );
+    const reply = vi.mocked(sendReply).mock.calls[0][1][0];
+    expect(reply).toContain("no active session");
+    expect(reply).not.toContain("interval:");
   });
 
   test("idempotent on replay: second handleStopTrack call short-circuits", async () => {

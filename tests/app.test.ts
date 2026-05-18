@@ -404,6 +404,95 @@ describe("Worker /garmin/ipc — Stop Track routing", () => {
     expect(handleStopTrack).not.toHaveBeenCalled();
   });
 
+  // #201 — every non-FT tracking event whose status.intervalChange > 0
+  // latches the value into TS_TRACKS as `track_interval:<imei>` BEFORE
+  // dispatching to the per-mc handler. Single capture point covers
+  // mc 0 / 10 / 11 / 12.
+  test("messageCode 11 with intervalChange > 0 latches track_interval:<imei> (#201)", async () => {
+    const intervalEvent = {
+      Version: "4.0",
+      Events: [{
+        imei: "123456789012345",
+        messageCode: 11,
+        timeStamp: Date.now(),
+        point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
+        status: { autonomous: 0, lowBattery: 0, intervalChange: 14400, resetDetected: 0 },
+      }],
+    };
+    const res = await postIpc(intervalEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(res.status).toBe(200);
+    const stored = (await env.TS_TRACKS.get("track_interval:123456789012345", "json")) as
+      | { intervalSec: number; recordedAt: number }
+      | null;
+    expect(stored).not.toBeNull();
+    expect(stored!.intervalSec).toBe(14400);
+  });
+
+  test("messageCode 10 with intervalChange > 0 also latches the interval (#201)", async () => {
+    const startEvent = {
+      Version: "4.0",
+      Events: [{
+        imei: "123456789012345",
+        messageCode: 10,
+        timeStamp: Date.now(),
+        point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
+        status: { autonomous: 0, lowBattery: 0, intervalChange: 120, resetDetected: 0 },
+      }],
+    };
+    const res = await postIpc(startEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(res.status).toBe(200);
+    const stored = (await env.TS_TRACKS.get("track_interval:123456789012345", "json")) as
+      | { intervalSec: number; recordedAt: number }
+      | null;
+    expect(stored).not.toBeNull();
+    expect(stored!.intervalSec).toBe(120);
+  });
+
+  test("messageCode 12 with intervalChange > 0 latches BEFORE handleStopTrack dispatch (#201)", async () => {
+    // Critical ordering invariant — the KV write site sits at the top of the
+    // non-FT branch precisely so a Stop Track event whose own status carries
+    // an interval change is visible to handleStopTrack's refusal-SMS hint.
+    // Capture the KV value at the moment the mock is invoked.
+    let intervalAtDispatch: unknown = "<handleStopTrack-not-called>";
+    vi.mocked(handleStopTrack).mockImplementationOnce(async () => {
+      intervalAtDispatch = await env.TS_TRACKS.get(
+        "track_interval:123456789012345",
+        "json",
+      );
+    });
+    const stopEvent = {
+      Version: "4.0",
+      Events: [{
+        imei: "123456789012345",
+        messageCode: 12,
+        timeStamp: Date.parse("2026-05-02T16:24:30Z"),
+        point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
+        status: { autonomous: 0, lowBattery: 0, intervalChange: 14400, resetDetected: 0 },
+      }],
+    };
+    const res = await postIpc(stopEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(res.status).toBe(200);
+    expect(handleStopTrack).toHaveBeenCalledTimes(1);
+    expect(intervalAtDispatch).toMatchObject({ intervalSec: 14400 });
+  });
+
+  test("intervalChange === 0 does NOT write track_interval (no-op, 0 = unchanged) (#201)", async () => {
+    const positionEvent = {
+      Version: "4.0",
+      Events: [{
+        imei: "123456789012345",
+        messageCode: 0,
+        timeStamp: Date.now(),
+        point: { latitude: 34.0, longitude: -118.0, altitude: 0, gpsFix: 1, course: 0, speed: 0 },
+        status: { autonomous: 0, lowBattery: 0, intervalChange: 0, resetDetected: 0 },
+      }],
+    };
+    const res = await postIpc(positionEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(res.status).toBe(200);
+    const stored = await env.TS_TRACKS.get("track_interval:123456789012345", "json");
+    expect(stored).toBeNull();
+  });
+
   test("messageCode 12: handleStopTrack throw is logged and webhook still returns 200", async () => {
     vi.mocked(handleStopTrack).mockRejectedValueOnce(new Error("mapshare 503"));
     const stopEvent = {

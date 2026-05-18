@@ -396,6 +396,48 @@ describe("handleStopTrack — end to end", () => {
     expect(vi.mocked(sendReply).mock.calls[0][1][0]).toContain("no breadcrumbs");
   });
 
+  test("single-ping KML: sends 'too brief' reply, no publish, no narrative (#197)", async () => {
+    const env = makeTestEnv();
+    const closedAt = Date.now();
+    await seedSessionStart(env, "300052030374220", closedAt - 5 * 60 * 1000);
+
+    // Minimal one-Placemark KML — mirrors the Garmin MapShare share-page shape
+    // that produced the ghost-post bug (Session 1 on 2026-05-17: pingCount=1,
+    // distance=0, but a real per-ping velocity that flowed through to the LLM
+    // as a defensible-but-meaningless "drive at 65.6 mph" narrative).
+    const singlePingKml = `<?xml version="1.0"?>
+<kml><Document><Placemark>
+  <TimeStamp><when>2026-05-18T03:09:30Z</when></TimeStamp>
+  <ExtendedData>
+    <Data name="Latitude"><value>34.02767</value></Data>
+    <Data name="Longitude"><value>-118.75931</value></Data>
+    <Data name="Elevation"><value>40.92 m</value></Data>
+    <Data name="Velocity"><value>65.5 km/h</value></Data>
+    <Data name="Course"><value>247.5</value></Data>
+    <Data name="Valid GPS Fix"><value>True</value></Data>
+  </ExtendedData>
+</Placemark></Document></kml>`;
+
+    vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(singlePingKml);
+    const publishSpy = vi.spyOn(publishMod, "publishTrackPost");
+    const narrativeSpy = vi.spyOn(narrativeMod, "generateTrackNarrative");
+
+    await handleStopTrack(
+      { imei: "300052030374220", messageCode: 12, timeStamp: closedAt },
+      env,
+      "idem-key-too-brief",
+    );
+
+    expect(narrativeSpy).not.toHaveBeenCalled();
+    expect(publishSpy).not.toHaveBeenCalled();
+    expect(sendReply).toHaveBeenCalledTimes(1);
+    const reply = vi.mocked(sendReply).mock.calls[0][1][0];
+    expect(reply).toContain("Track too brief");
+    expect(reply).toContain("1 breadcrumb");
+    // Reply must fit Garmin's 160-char Iridium limit
+    expect(reply.length).toBeLessThanOrEqual(160);
+  });
+
   test("inner-LLM checkpoint: narrative cached when publish fails, re-run avoids fresh LLM call (#172)", async () => {
     const env = makeTestEnv();
     await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));

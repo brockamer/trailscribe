@@ -16,12 +16,19 @@ import { kmToMi, mToFt } from "./units.js";
 
 const TRACK_RECORD_TTL_SECONDS = 60 * 60 * 24 * 365;
 const TRACK_START_TTL_SECONDS = 60 * 60 * 24;
+const TRACK_INTERVAL_TTL_SECONDS = 60 * 60 * 24;
 
 interface TrackStartRecord {
   startedAt: number;
 }
 
+interface TrackIntervalRecord {
+  intervalSec: number;
+  recordedAt: number;
+}
+
 const trackStartKey = (imei: string): string => `track_start:${imei}`;
+const trackIntervalKey = (imei: string): string => `track_interval:${imei}`;
 
 /**
  * Record an open tracking session's start timestamp (from a Garmin mc 10
@@ -57,6 +64,47 @@ export async function readSessionStart(
  */
 export async function clearSessionStart(env: Env, imei: string): Promise<void> {
   await env.TS_TRACKS.delete(trackStartKey(imei));
+}
+
+/**
+ * Persist the device's current tracking interval (seconds). Called whenever a
+ * tracking event carries `status.intervalChange > 0` — per Garmin IPC Outbound
+ * spec, that field is nonzero only when the interval actually changed, so we
+ * latch the last-known value here so downstream handlers can read it on any
+ * subsequent event. 24h TTL mirrors `track_start` (graceful degradation: a
+ * device that hasn't reported an interval change in 24h drops out of the hint,
+ * which is preferable to surfacing a stale value).
+ */
+export async function recordTrackInterval(
+  env: Env,
+  imei: string,
+  intervalSec: number,
+): Promise<void> {
+  await putJSON(
+    env.TS_TRACKS,
+    trackIntervalKey(imei),
+    { intervalSec, recordedAt: Date.now() },
+    { expirationTtl: TRACK_INTERVAL_TTL_SECONDS },
+  );
+}
+
+/** Read the device's last-known tracking interval, or null. */
+export async function readTrackInterval(
+  env: Env,
+  imei: string,
+): Promise<TrackIntervalRecord | null> {
+  return getJSON<TrackIntervalRecord>(env.TS_TRACKS, trackIntervalKey(imei));
+}
+
+/**
+ * Compact unit-suffix format for SMS hints: 14400 → "4h", 1800 → "30m", 30 → "30s".
+ * Hours floor-rounded (14400/3600 = 4.0, 5400/3600 = 1.5 → "1h"); minutes likewise.
+ * Designed for the (interval: Xh) refusal-SMS tag, where bytes matter more than precision.
+ */
+export function formatInterval(sec: number): string {
+  if (sec >= 3600) return `${Math.floor(sec / 3600)}h`;
+  if (sec >= 60) return `${Math.floor(sec / 60)}m`;
+  return `${Math.max(0, Math.floor(sec))}s`;
 }
 
 export interface TrackSessionRecord {
@@ -111,6 +159,12 @@ export async function handleStopTrack(
     // Stop arrived without a preceding Start (operator pressed Stop twice,
     // device emitted Stop on its own, or Iridium delivered Stop before Start).
     const startRecord = await readSessionStart(env, event.imei);
+    // Read the device's last-known tracking interval (#201). Surfaced in
+    // refusal SMS branches as a paren-tag when known — when the device has
+    // autonomously bumped to a long interval (e.g. 14400s = 4h after
+    // stationary detection), this is the highest-signal diagnostic the
+    // operator can get on a refusal without checking the device manually.
+    const intervalRecord = await readTrackInterval(env, event.imei);
     if (!startRecord) {
       log({
         event: "track_stop_no_active_session",
@@ -121,7 +175,10 @@ export async function handleStopTrack(
       });
       await sendReply(
         event.imei,
-        ["Track ended; no active session was recorded — nothing to publish."],
+        [withIntervalHint(
+          "Track ended; no active session was recorded — nothing to publish.",
+          intervalRecord,
+        )],
         env,
       );
       return { skipped: "no_active_session" };
@@ -143,7 +200,10 @@ export async function handleStopTrack(
       log({ event: "track_no_pings", level: "warn", imei: event.imei, idemKey });
       await sendReply(
         event.imei,
-        ["Track ended; no breadcrumbs in MapShare for this window."],
+        [withIntervalHint(
+          "Track ended; no breadcrumbs in MapShare for this window.",
+          intervalRecord,
+        )],
         env,
       );
       return { skipped: "no_pings" };
@@ -171,7 +231,10 @@ export async function handleStopTrack(
       });
       await sendReply(
         event.imei,
-        ["Track too brief — 1 breadcrumb. Try longer or move sooner after Start."],
+        [withIntervalHint(
+          "Track too brief — 1 breadcrumb. Try longer or move sooner after Start.",
+          intervalRecord,
+        )],
         env,
       );
       return { skipped: "too_brief" };
@@ -251,6 +314,21 @@ export async function handleStopTrack(
     await clearSessionStart(env, event.imei);
     return { sessionId, journalUrl: result.url };
   });
+}
+
+/**
+ * Append a `(interval: Xh)` paren-tag to a refusal SMS when the device's
+ * last-known tracking interval is known. Returns the base text unchanged when
+ * the interval has never been recorded (graceful degradation rather than
+ * "(interval: unknown)" noise). Paren-tag stays under ~14 chars so all three
+ * existing refusal messages remain comfortably under Garmin's 160-char limit.
+ */
+function withIntervalHint(
+  base: string,
+  interval: TrackIntervalRecord | null,
+): string {
+  if (!interval) return base;
+  return `${base} (interval: ${formatInterval(interval.intervalSec)})`;
 }
 
 function formatTrackReply(metrics: TrackMetrics, url: string): string {

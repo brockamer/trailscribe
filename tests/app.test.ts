@@ -448,6 +448,34 @@ describe("Worker /garmin/ipc — Stop Track routing", () => {
     expect(stored!.intervalSec).toBe(120);
   });
 
+  test("messageCode 12 with intervalChange > 0 latches BEFORE handleStopTrack dispatch (#201)", async () => {
+    // Critical ordering invariant — the KV write site sits at the top of the
+    // non-FT branch precisely so a Stop Track event whose own status carries
+    // an interval change is visible to handleStopTrack's refusal-SMS hint.
+    // Capture the KV value at the moment the mock is invoked.
+    let intervalAtDispatch: unknown = "<handleStopTrack-not-called>";
+    vi.mocked(handleStopTrack).mockImplementationOnce(async () => {
+      intervalAtDispatch = await env.TS_TRACKS.get(
+        "track_interval:123456789012345",
+        "json",
+      );
+    });
+    const stopEvent = {
+      Version: "4.0",
+      Events: [{
+        imei: "123456789012345",
+        messageCode: 12,
+        timeStamp: Date.parse("2026-05-02T16:24:30Z"),
+        point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
+        status: { autonomous: 0, lowBattery: 0, intervalChange: 14400, resetDetected: 0 },
+      }],
+    };
+    const res = await postIpc(stopEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(res.status).toBe(200);
+    expect(handleStopTrack).toHaveBeenCalledTimes(1);
+    expect(intervalAtDispatch).toMatchObject({ intervalSec: 14400 });
+  });
+
   test("intervalChange === 0 does NOT write track_interval (no-op, 0 = unchanged) (#201)", async () => {
     const positionEvent = {
       Version: "4.0",

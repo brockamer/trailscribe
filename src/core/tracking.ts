@@ -149,6 +149,34 @@ export async function handleStopTrack(
       return { skipped: "no_pings" };
     }
 
+    // Single-ping session: there is no segment to summarise. Distance is
+    // mathematically zero (Haversine needs two points), duration collapses
+    // (startedAt == closedAt from the one ping's timestamp), and `paceStats`
+    // would return the single ping's velocity as the avg / p50 / p95 — all
+    // technically true, but enough to drive an LLM toward a "session"
+    // narrative built around a single moment. We refuse to publish.
+    //
+    // Root cause is upstream: Mini 3 Plus auto-extends the tracking interval
+    // when it detects no motion (we've observed mc=11 events with
+    // status.intervalChange=14400, i.e. 4-hour interval), so a short session
+    // can leave MapShare with one ingested breadcrumb (or zero) by the time
+    // mc 12 arrives.
+    if (pings.length === 1) {
+      log({
+        event: "track_too_brief",
+        level: "warn",
+        imei: event.imei,
+        idemKey,
+        pingCount: 1,
+      });
+      await sendReply(
+        event.imei,
+        ["Track too brief — 1 breadcrumb. Try longer or move sooner after Start."],
+        env,
+      );
+      return { skipped: "too_brief" };
+    }
+
     const metrics = computeMetrics(pings);
     const startPing = pings[0];
     const endPing = pings[pings.length - 1];

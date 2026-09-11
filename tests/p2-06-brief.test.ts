@@ -208,7 +208,10 @@ describe("P2-06 !brief — long output email path", () => {
       subject: string;
       text: string;
     };
-    expect(sentBody.to).toBe(env.RESEND_FROM_EMAIL);
+    // Overflow mail must land in the operator's real inbox, not the
+    // send-only RESEND_FROM_EMAIL identity (see #operator-email-overflow).
+    expect(sentBody.to).toBe(env.OPERATOR_EMAIL);
+    expect(sentBody.to).not.toBe(env.RESEND_FROM_EMAIL);
     expect(sentBody.subject).toContain("TrailScribe brief");
     expect(sentBody.text).toContain(longBrief);
   });

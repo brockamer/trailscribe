@@ -101,7 +101,7 @@ export async function handleAi(cmd: AiCommand, ctx: OrchestratorContext): Promis
           ? cmd.question.slice(0, SUBJECT_PREVIEW_MAX)
           : cmd.question;
       const sendResult = await sendEmail({
-        to: env.RESEND_FROM_EMAIL,
+        to: env.OPERATOR_EMAIL,
         subject: `TrailScribe !ai: ${subjectPreview}`,
         body: `Question:\n${cmd.question}\n\n---\n\n${content}`,
         env,

@@ -54,6 +54,15 @@ ADDRESS_BOOK_JSON=
 # as other secrets — strip trailing newlines.
 IMAGE_API_KEY=
 
+# ---- Operator inbox (overflow mail destination) ----
+# Non-secret var (also set in wrangler.toml [vars]); listed here too so a
+# local `wrangler dev` run has it even before `.dev.vars` is filled in.
+# !brief / !ai / !camp route their full answer here when it's too long for a
+# reply (>320 chars). Must be a real inbox — NOT RESEND_FROM_EMAIL, which is
+# a send-only sender identity on Resend's own domain in α and has no mailbox
+# behind it (mail "sent" there was silently lost; see PRD §8 D11).
+OPERATOR_EMAIL=brockamer@gmail.com
+
 # ---- MapShare KML feed (tracking session artifacts) ----
 # Per-tenant Garmin MapShare slug; the path component appended to MAPSHARE_BASE.
 # Find at explore.garmin.com → MapShare → Page name.

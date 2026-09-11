@@ -2,7 +2,7 @@
 
 **Status:** Signed off 2026-04-22. Phase 0 (scaffolding) shipped 2026-04-24. Phase 1 (α-MVP, six commands end-to-end on production) shipped 2026-04-26 with the prod-traffic close gate (#111) verified 2026-04-27. **Currently:** Phase 2 — extended commands. Plan: `plans/phase-2-extended-commands.md`.
 **Owner:** Brock Amer
-**Updated:** 2026-04-28
+**Updated:** 2026-09-11
 **Scope:** α-MVP (Phase 1) is the canonical scope of this document. Phase 2 (the eight deferred commands) is detailed in `plans/phase-2-extended-commands.md`; Phase 3+ referenced here for alignment, not specified in full.
 
 ---
@@ -393,6 +393,12 @@ If the same webhook replays after partial completion:
 ### Resolved 2026-04-29
 
 - **D10. Intercept policy.** The Worker silent-drops messages whose `freeText` does not start with `!` (after trim) — no IPC Inbound reply, structured `intercept_skipped` log only, idempotency key recorded so Garmin retries short-circuit. `!`-prefixed messages with unknown verbs still receive `"Try !help"` so command typos remain recoverable. Decided 2026-04-29 (#122) after operator surfaced clutter from "Try !help" replies to casual messages during the #111 production turn-on. Recipient-gating (option 3 in #122 — only reply when device's `addresses[]` includes the TrailScribe contact) was deferred — revisit only if field experience surfaces a case where an `!`-prefixed message accidentally addressed to a non-TrailScribe contact produces unwanted replies.
+
+### Resolved 2026-09-11
+
+- **D11. Operator overflow-mail destination.** New non-secret var `OPERATOR_EMAIL`, set alongside `RESEND_FROM_EMAIL`/`RESEND_FROM_NAME` in `wrangler.toml [vars]` (all three envs) and `.dev.vars.example`. Fixes a silent-data-loss bug: `!brief`/`!ai`/`!camp` route their answer to email when it exceeds the 320-char reply budget, and all three were sending `to: env.RESEND_FROM_EMAIL` — but `RESEND_FROM_EMAIL` (`trailscribe@tx.trailscribe.net`) is a send-only **envelope-From** identity on Resend's own domain, not a mailbox with an inbox behind it. The device got the success reply `"Long answer sent by email."` while the content vanished. `RESEND_FROM_EMAIL` and a mail *destination* are different concepts and need different vars — reusing the From identity as a To address was the bug, not a valid shortcut, so per the "no new env vars without justification" rule this is the justification for `OPERATOR_EMAIL` as a distinct var rather than folding the fix into an existing one.
+  - **No fallback to `RESEND_FROM_EMAIL` if unset.** `env.OPERATOR_EMAIL || env.RESEND_FROM_EMAIL` would silently reconstruct the exact bug this fixes (mail to a dead inbox + a reply claiming success). `OPERATOR_EMAIL` is required in the zod schema (`z.string().email()`, no default), matching how every other required string var in `src/env.ts` is declared. Note `parseEnv()` is not on the request path (`src/app.ts` uses `c.env` directly — see Ground rules), so the schema doesn't *runtime-enforce* this per request; it's still correct as the declared contract, and the deployed surface (`wrangler.toml`, all three envs) always sets it. In the one path that could reach an unset value locally (a stale `.dev.vars`), `JSON.stringify` drops the `to` key entirely, Resend's API 4xx-rejects the send immediately (no retry — see `src/adapters/mail/resend.ts`), and the command handler surfaces `"... overflow email failed: ..."` to the device instead of a false-success pointer — failing loudly by construction, not by an added guard.
+  - **Value:** `brockamer@gmail.com` (operator's real inbox) for all three envs and local dev.
 
 ### Original decision text (for reference)
 

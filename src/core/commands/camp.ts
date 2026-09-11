@@ -103,7 +103,7 @@ export async function handleCamp(
           ? cmd.query.slice(0, SUBJECT_PREVIEW_MAX)
           : cmd.query;
       const sendResult = await sendEmail({
-        to: env.RESEND_FROM_EMAIL,
+        to: env.OPERATOR_EMAIL,
         subject: `TrailScribe !camp: ${subjectPreview}`,
         body: `Query:\n${cmd.query}\n\n---\n\n${prefixed}`,
         env,

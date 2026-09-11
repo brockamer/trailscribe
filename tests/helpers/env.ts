@@ -80,6 +80,7 @@ export function makeTestEnv(overrides: Partial<Env> = {}): Env {
     LOG_TRACK_PAYLOADS: "false",
     RESEND_FROM_EMAIL: "trailscribe@resend.dev",
     RESEND_FROM_NAME: "TrailScribe",
+    OPERATOR_EMAIL: "brockamer@gmail.com",
     JOURNAL_POST_PATH_TEMPLATE: "_posts/{yyyy}-{mm}-{dd}-{slug}.md",
     JOURNAL_URL_TEMPLATE: "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html",
     JOURNAL_BASEURL: "/trailscribe-journal",

@@ -104,7 +104,7 @@ export async function handleBrief(
   try {
     await withCheckpoint(env, idemKey, "brief_overflow_email", async () => {
       const sendResult = await sendEmail({
-        to: env.RESEND_FROM_EMAIL,
+        to: env.OPERATOR_EMAIL,
         subject: `TrailScribe brief (last ${windowDays}d, ${entries.length} entries)`,
         body: `Window: last ${windowDays}d\n\n${content}`,
         env,

@@ -37,6 +37,9 @@ IPC_INBOUND_DRY_RUN = "false"
 LOG_TRACK_PAYLOADS = "true"
 RESEND_FROM_EMAIL = "trailscribe@tx.trailscribe.net"
 RESEND_FROM_NAME = "TrailScribe"
+# Real inbox for !brief/!ai/!camp overflow mail — RESEND_FROM_EMAIL above is a
+# send-only envelope-From identity with no mailbox behind it (see PRD §8 D11).
+OPERATOR_EMAIL = "brockamer@gmail.com"
 JOURNAL_POST_PATH_TEMPLATE = "_posts/{yyyy}-{mm}-{dd}-{slug}.md"
 JOURNAL_URL_TEMPLATE = "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html"
 JOURNAL_BASEURL = "/trailscribe-journal"
@@ -118,6 +121,9 @@ IPC_INBOUND_DRY_RUN = "false"
 LOG_TRACK_PAYLOADS = "true"
 RESEND_FROM_EMAIL = "trailscribe@tx.trailscribe.net"
 RESEND_FROM_NAME = "TrailScribe (staging)"
+# Real inbox for !brief/!ai/!camp overflow mail — RESEND_FROM_EMAIL above is a
+# send-only envelope-From identity with no mailbox behind it (see PRD §8 D11).
+OPERATOR_EMAIL = "brockamer@gmail.com"
 JOURNAL_POST_PATH_TEMPLATE = "_posts/{yyyy}-{mm}-{dd}-{slug}.md"
 JOURNAL_URL_TEMPLATE = "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html"
 JOURNAL_BASEURL = "/trailscribe-journal"
@@ -174,6 +180,9 @@ IPC_INBOUND_DRY_RUN = "false"
 LOG_TRACK_PAYLOADS = "true"
 RESEND_FROM_EMAIL = "trailscribe@tx.trailscribe.net"
 RESEND_FROM_NAME = "TrailScribe"
+# Real inbox for !brief/!ai/!camp overflow mail — RESEND_FROM_EMAIL above is a
+# send-only envelope-From identity with no mailbox behind it (see PRD §8 D11).
+OPERATOR_EMAIL = "brockamer@gmail.com"
 JOURNAL_POST_PATH_TEMPLATE = "_posts/{yyyy}-{mm}-{dd}-{slug}.md"
 JOURNAL_URL_TEMPLATE = "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html"
 JOURNAL_BASEURL = "/trailscribe-journal"

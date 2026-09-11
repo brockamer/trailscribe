@@ -33,6 +33,7 @@ export interface Env {
   LOG_TRACK_PAYLOADS: string;
   RESEND_FROM_EMAIL: string;
   RESEND_FROM_NAME: string;
+  OPERATOR_EMAIL: string;
   JOURNAL_POST_PATH_TEMPLATE: string;
   JOURNAL_URL_TEMPLATE: string;
   JOURNAL_BASEURL: string;
@@ -99,6 +100,11 @@ export const EnvSchema = z.object({
   LOG_TRACK_PAYLOADS: z.string(),
   RESEND_FROM_EMAIL: z.string().email(),
   RESEND_FROM_NAME: z.string().min(1),
+  // Inbox the operator actually reads. RESEND_FROM_EMAIL is a send-only
+  // envelope-From identity (Resend's own domain in α) with no mailbox behind
+  // it — mail "sent" there vanishes. Overflow mail (!brief/!ai/!camp) must
+  // land in a real inbox, hence a distinct destination var (see PRD §8 D11).
+  OPERATOR_EMAIL: z.string().email(),
   JOURNAL_POST_PATH_TEMPLATE: z.string().min(1),
   JOURNAL_URL_TEMPLATE: z.string().min(1),
   // Path prefix prepended to rendered image URLs in markdown so Jekyll project

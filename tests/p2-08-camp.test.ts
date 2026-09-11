@@ -161,7 +161,10 @@ describe("P2-08 !camp — long reply email path", () => {
       subject: string;
       text: string;
     };
-    expect(sentBody.to).toBe(env.RESEND_FROM_EMAIL);
+    // Overflow mail must land in the operator's real inbox, not the
+    // send-only RESEND_FROM_EMAIL identity (see #operator-email-overflow).
+    expect(sentBody.to).toBe(env.OPERATOR_EMAIL);
+    expect(sentBody.to).not.toBe(env.RESEND_FROM_EMAIL);
     expect(sentBody.subject).toContain("TrailScribe !camp");
     expect(sentBody.text).toContain("(may be outdated) " + longAnswer);
   });

@@ -479,6 +479,34 @@ describe("handleStopTrack — end to end", () => {
     expect(reply.length).toBeLessThanOrEqual(160);
   });
 
+  test("MapShare fetch failure sends a visible error reply (e.g. wrong access code after a device swap)", async () => {
+    const env = makeTestEnv();
+    await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));
+    // A 401 from the KML feed is what a stale MAPSHARE_PASSWORD looks like — the
+    // likeliest failure right after replacing the device, since the slug and
+    // access code are bound to the Garmin device/account.
+    vi.spyOn(mapshareMod, "fetchMapShareKml").mockRejectedValue(
+      new Error("MapShare feed returned 401"),
+    );
+
+    const stopEvent: GarminEvent = {
+      imei: "300052030374220",
+      messageCode: 12,
+      timeStamp: Date.parse("2026-05-02T16:24:30Z"),
+    };
+
+    // Same contract as the publish guard: reply first, then rethrow so
+    // safeOrchestrate still markFailed()s and the checkpoint stays uncompleted.
+    await expect(handleStopTrack(stopEvent, env, "idem-fetch-fail")).rejects.toThrow(/401/);
+
+    expect(sendReply).toHaveBeenCalledTimes(1);
+    const [imei, [reply]] = vi.mocked(sendReply).mock.calls[0];
+    expect(imei).toBe("300052030374220");
+    expect(reply).toContain("MapShare");
+    expect(reply).toContain("401");
+    expect(reply.length).toBeLessThanOrEqual(160);
+  });
+
   test("publish failure sends a visible error reply (device previously got nothing)", async () => {
     const env = makeTestEnv();
     await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));

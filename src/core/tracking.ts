@@ -193,8 +193,42 @@ export async function handleStopTrack(
     });
     const sessionId = await sha256Hex(`${event.imei}:${closedAt}`);
 
-    const rawKml = await fetchMapShareKml(env, startedAt, closedAt);
-    const pings = parsePings(rawKml);
+    // The MapShare fetch is the single likeliest failure after a device swap:
+    // MAPSHARE_KEY (page slug) and MAPSHARE_PASSWORD (access code) are bound to
+    // the Garmin device/account, and a replacement unit can be issued a fresh
+    // default page. Without this catch a 401 here throws past the publish guard
+    // below, reaches safeOrchestrate, and the device gets nothing at all — the
+    // exact silence this whole change exists to remove.
+    let rawKml: string;
+    let pings: ReturnType<typeof parsePings>;
+    try {
+      rawKml = await fetchMapShareKml(env, startedAt, closedAt);
+      pings = parsePings(rawKml);
+    } catch (err) {
+      log({
+        event: "track_fetch_failed",
+        level: "error",
+        imei: event.imei,
+        idemKey,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      try {
+        await sendReply(
+          event.imei,
+          [trackErrorReply(FETCH_ERROR_PREFIX, err, intervalRecord)],
+          env,
+        );
+      } catch (replyErr) {
+        log({
+          event: "track_fetch_error_reply_failed",
+          level: "error",
+          imei: event.imei,
+          idemKey,
+          error: replyErr instanceof Error ? replyErr.message : String(replyErr),
+        });
+      }
+      throw err;
+    }
 
     if (pings.length === 0) {
       log({ event: "track_no_pings", level: "warn", imei: event.imei, idemKey });
@@ -317,7 +351,11 @@ export async function handleStopTrack(
       // show the IPC failure instead of the actual publish cause, which is
       // worse than the silent-void bug this whole change exists to fix.
       try {
-        await sendReply(event.imei, [publishErrorReply(err, intervalRecord)], env);
+        await sendReply(
+          event.imei,
+          [trackErrorReply(PUBLISH_ERROR_PREFIX, err, intervalRecord)],
+          env,
+        );
       } catch (replyErr) {
         log({
           event: "track_publish_error_reply_failed",
@@ -369,6 +407,7 @@ function withIntervalHint(
 
 const MAX_SMS_CHARS = 160;
 const PUBLISH_ERROR_PREFIX = "Track publish failed: ";
+const FETCH_ERROR_PREFIX = "Track failed, MapShare: ";
 
 /**
  * Build the visible error SMS for a publish failure. `sendReply` hard-throws
@@ -377,11 +416,15 @@ const PUBLISH_ERROR_PREFIX = "Track publish failed: ";
  * `(interval: Xh)` tag — computed exactly, not guessed, so this can never
  * push the interval-hint call over the limit.
  */
-function publishErrorReply(err: unknown, interval: TrackIntervalRecord | null): string {
+function trackErrorReply(
+  prefix: string,
+  err: unknown,
+  interval: TrackIntervalRecord | null,
+): string {
   const msg = err instanceof Error ? err.message : String(err);
   const hintLen = interval ? ` (interval: ${formatInterval(interval.intervalSec)})`.length : 0;
-  const msgBudget = Math.max(0, MAX_SMS_CHARS - PUBLISH_ERROR_PREFIX.length - hintLen);
-  return withIntervalHint(`${PUBLISH_ERROR_PREFIX}${msg.slice(0, msgBudget)}`, interval);
+  const msgBudget = Math.max(0, MAX_SMS_CHARS - prefix.length - hintLen);
+  return withIntervalHint(`${prefix}${msg.slice(0, msgBudget)}`, interval);
 }
 
 function formatTrackReply(metrics: TrackMetrics, url: string): string {

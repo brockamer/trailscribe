@@ -287,7 +287,7 @@ describe("P1-18 !todo — happy path", () => {
 
     const [, messages] = sendReplyMock.mock.calls[0];
     const joined = messages.join(" ");
-    expect(joined).toContain("Task added · https://todoist.com/showTask?id=task-123");
+    expect(joined).toContain("Task added · https://app.todoist.com/app/task/task-123");
     // Device reply must not carry map links — location stays in the Todoist description.
     expect(joined).not.toContain("google.com/maps");
     expect(joined).not.toContain("share.garmin.com");

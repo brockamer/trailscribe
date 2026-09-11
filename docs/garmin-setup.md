@@ -9,6 +9,7 @@ send messages to TrailScribe (IPC Outbound) and receive replies (IPC Inbound).
 > `docs/architecture.md` cannot run as-is.
 
 Authoritative references:
+
 - [`../materials/Garmin IPC Outbound.txt`](../materials/Garmin%20IPC%20Outbound.txt) — v2.0.8
 - [`../materials/Garmin IPC Inbound.txt`](../materials/Garmin%20IPC%20Inbound.txt) — v3.1.1
 
@@ -54,6 +55,7 @@ have multiple devices).
 ### What the Worker does with the POST
 
 Per event in the envelope:
+
 1. Verify `X-Outbound-Auth-Token: <token>` (Garmin's custom header, not standard `Authorization`).
 2. Validate the V2 envelope shape.
 3. Confirm `imei` is in the allowlist.
@@ -84,13 +86,13 @@ worth pinning before the first real `!command` from the field.
 Explore app → Contacts → New) named `TrailScribe` with email
 `trailscribe@tx.trailscribe.net`. Pick that contact as the recipient for every
 outbound `!command`. Mechanically, Portal Connect IPC Outbound forwards
-*every* device message to TrailScribe's webhook regardless of the chosen
+_every_ device message to TrailScribe's webhook regardless of the chosen
 recipient — but the address still matters because IPC Inbound replies show up
 on-device as a thread keyed off the original "To". Sending to the right
 address keeps replies visible in one thread.
 
 **Keep "Include Location" off for routine commands.** The per-message
-*Include Location* toggle on the Mini 3 Plus, when on, attaches a Google Maps
+_Include Location_ toggle on the Mini 3 Plus, when on, attaches a Google Maps
 URL to the displayed reply (cosmetic, device-side; the webhook payload is
 unchanged). The URL is unusable on the offline device and wastes display real
 estate. Commands that need a GPS fix (`!post`, `!mail`, `!todo`, future
@@ -105,10 +107,12 @@ webhook side — the device-side share is redundant.
    rotation.
 2. **Note the Inbound URL** shown on the Inbound Settings page. Looks like
    `https://<tenant>.inreachapp.com` or `https://enterprise.inreach.garmin.com`.
-   Strip the protocol prefix if necessary and store the full base (including
-   `/api`) as `GARMIN_IPC_INBOUND_BASE_URL`. E.g.:
-   `https://ipcinbound.inreachapp.com/api`
-3. TrailScribe POSTs replies to `{base}/Messaging/Message` with
+   Store the **host only, with no path** as `GARMIN_IPC_INBOUND_BASE_URL`. E.g.:
+   `https://ipcinbound.inreachapp.com`
+   Do **not** append `/api` — the code adds `/api/Messaging/Message` itself, so a
+   trailing `/api` produces `/api/api/Messaging/Message` → 404 and replies fail
+   silently (the Outbound webhook still returns 200, so nothing retries).
+3. TrailScribe POSTs replies to `{base}/api/Messaging/Message` with
    `X-API-Key: <key>` and a JSON body per the Inbound v3.1.1 contract.
 
 ### Critical constraints (from Inbound spec)

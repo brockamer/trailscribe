@@ -13,7 +13,10 @@ GARMIN_INBOUND_TOKEN=
 GARMIN_IPC_INBOUND_API_KEY=
 
 # Per-tenant IPC Inbound base URL (find via explore.garmin.com → Admin Controls → Portal Connect → Inbound Settings → Inbound URL).
-# Example: https://ipcinbound.inreachapp.com/api
+# HOST ONLY — do NOT include a path. The code appends `/api/Messaging/Message`
+# (src/adapters/outbound/garmin-ipc-inbound.ts). A trailing `/api` here yields
+# `/api/api/Messaging/Message` → 404, and device replies fail silently.
+# Example: https://ipcinbound.inreachapp.com
 GARMIN_IPC_INBOUND_BASE_URL=
 
 # Comma-separated 15-digit IMEIs we accept from Outbound webhooks.

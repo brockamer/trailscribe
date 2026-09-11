@@ -68,7 +68,7 @@ export function makeTestEnv(overrides: Partial<Env> = {}): Env {
     TRACK_LOOKBACK_HOURS: "12",
     TRACK_NARRATIVE_BODY_MAX: "3000",
     LLM_BASE_URL: "https://openrouter.ai/api/v1",
-    LLM_MODEL: "anthropic/claude-sonnet-4-6",
+    LLM_MODEL: "anthropic/claude-sonnet-5",
     LLM_INPUT_COST_PER_1K: "0.00",
     LLM_OUTPUT_COST_PER_1K: "0.00",
     LLM_PROVIDER_HEADERS_JSON: "",

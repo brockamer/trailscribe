@@ -235,7 +235,7 @@ list-scan ledger queries actually start to bite. Full architecture in
 | HTTP | Hono |
 | Validation | zod |
 | State | Cloudflare KV — four namespaces (DO + D1 in Phase 3) |
-| LLM | OpenRouter → `anthropic/claude-sonnet-4-6` |
+| LLM | OpenRouter → `anthropic/claude-sonnet-5` |
 | Image-gen | Replicate Flux schnell (`!postimg` only) |
 | Email | Resend |
 | Journal | GitHub Pages via Contents API |

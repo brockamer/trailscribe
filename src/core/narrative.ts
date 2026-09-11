@@ -8,7 +8,7 @@ import { kmhToMph, kmToMi, mToFt } from "./units.js";
 /**
  * Narrative module — composes a `!post` event into a structured blog post via
  * the configured LLM (P1-04: model + base URL come from env, defaulting to
- * `anthropic/claude-sonnet-4-6` on OpenRouter).
+ * `anthropic/claude-sonnet-5` on OpenRouter).
  *
  * The orchestrator (P1-16) calls `generateNarrative(input)` once per `!post`,
  * gets back `{ title, haiku, body, usage }`, and:
@@ -204,7 +204,7 @@ export async function generateNarrative(input: NarrativeInput): Promise<Narrativ
 
   const { data, usage } = await runNarrativeCall({
     env: input.env,
-    model: input.env.LLM_MODEL || "anthropic/claude-sonnet-4-6",
+    model: input.env.LLM_MODEL || "anthropic/claude-sonnet-5",
     systemPrompt,
     userPrompt,
     responseSchema: POST_NARRATIVE_SCHEMA,
@@ -307,7 +307,7 @@ export async function generateTrackNarrative(
 ): Promise<NarrativeOutput> {
   const { data, usage } = await runNarrativeCall({
     env: input.env,
-    model: input.env.LLM_MODEL || "anthropic/claude-sonnet-4-6",
+    model: input.env.LLM_MODEL || "anthropic/claude-sonnet-5",
     systemPrompt: SYSTEM_PROMPT_TRACK,
     userPrompt: buildTrackPrompt(input),
     responseSchema: TRACK_NARRATIVE_SCHEMA,

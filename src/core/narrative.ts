@@ -136,7 +136,11 @@ async function runNarrativeCall<T>(
         { role: "user", content: opts.userPrompt },
       ],
       response_format: { type: "json_schema", json_schema: opts.responseSchema },
-      temperature: 0.7,
+      // No `temperature`: Claude Sonnet 5 removed the sampling parameters
+      // (temperature / top_p / top_k) and rejects them with a 400. OpenRouter's
+      // model catalogue agrees — `supported_parameters` for
+      // anthropic/claude-sonnet-5 omits all three, while 4.6 still lists them.
+      // Sending 0.7 here would have 400'd every LLM command on the new model.
       max_tokens: opts.maxTokens,
     },
     env: opts.env,

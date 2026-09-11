@@ -99,6 +99,7 @@ openssl rand -hex 32
 ```
 
 Use the same value in:
+
 1. Cloudflare Secret (above)
 2. Garmin Portal Connect → IPC Outbound → Static Token field
 
@@ -135,7 +136,7 @@ title: TrailScribe Journal
 description: Field notes from off-grid trips, posted via Garmin inReach.
 remote_theme: "mmistakes/minimal-mistakes@4.28.0"
 minimal_mistakes_skin: "dirt"
-permalink: /:year/:month/:day/:title.html   # MUST match JOURNAL_URL_TEMPLATE
+permalink: /:year/:month/:day/:title.html # MUST match JOURNAL_URL_TEMPLATE
 plugins:
   - jekyll-feed
   - jekyll-include-cache
@@ -217,7 +218,7 @@ fine-grained PAT, **not** a classic token, scoped to **exactly** this one
 repo with the minimum permission `Contents: Read and write`.
 
 1. https://github.com/settings/personal-access-tokens/new
-2. Token name: `trailscribe-journal-write`
+2. Token name: `trailscribe-worker-journal-write`
 3. Resource owner: your account
 4. Repository access: **Only select repositories** → `trailscribe-journal`
 5. Repository permissions:
@@ -226,17 +227,61 @@ repo with the minimum permission `Contents: Read and write`.
 6. Generate. Copy the `github_pat_*` value once.
 7. Store as Wrangler secret in both envs:
    ```bash
-   pnpm wrangler secret put GITHUB_JOURNAL_TOKEN --env staging
-   pnpm wrangler secret put GITHUB_JOURNAL_TOKEN --env production
+   echo -n "<github_pat_value>" | pnpm wrangler secret put GITHUB_JOURNAL_TOKEN --env staging
+   echo -n "<github_pat_value>" | pnpm wrangler secret put GITHUB_JOURNAL_TOKEN --env production
    ```
+   (The `echo -n` is not optional — see **Setting secrets safely** below.)
 
 Also set the companion secrets (already in §2 above):
 
 - `GITHUB_JOURNAL_REPO` — e.g. `brockamer/trailscribe-journal`
 - `GITHUB_JOURNAL_BRANCH` — e.g. `main`
 
-Rotation: yearly, or on suspected compromise. PATs expire — set a calendar
-reminder for the chosen expiration date.
+Rotation: yearly, or on suspected compromise.
+
+**Current token — recorded 2026-09-11:**
+
+|         |                                                               |
+| ------- | ------------------------------------------------------------- |
+| Name    | `trailscribe-worker-journal-write`                            |
+| Expires | **2027-04-25**                                                |
+| Scope   | `Contents: Read and write` on `brockamer/trailscribe-journal` |
+
+Record the expiry date here whenever the token is rotated. The previous
+instruction was "set a calendar reminder for the chosen expiration date" —
+no date was ever written down, so the 2026-09 re-entry audit had to treat an
+expired PAT as a live unknown and could not rule it out without a portal login.
+A date in this table costs nothing and closes that question permanently.
+
+### Setting secrets safely — always pipe with `echo -n`
+
+Every `wrangler secret put` in this document should be driven by a pipe, not an
+interactive paste:
+
+```bash
+echo -n "<value>" | pnpm wrangler secret put <NAME> --env <staging|production>
+```
+
+The `-n` suppresses the trailing newline `echo` would otherwise append. Without
+it the secret is stored with a `\n` on the end, which breaks auth comparisons,
+URL construction, and bearer tokens in ways that look like four different bugs.
+
+This is not hypothetical. Four separate newline/whitespace corruptions hit this
+project in a single day (2026-04-25/26):
+
+| Secret                        | Symptom                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| `GARMIN_IPC_INBOUND_BASE_URL` | URL parse error (a status-line spinner string came along with the paste) |
+| `LLM_API_KEY`                 | OpenRouter 401 "User not found" — the same key worked in the terminal    |
+| `CF_ACCOUNT_ID`               | account-id mismatch (hidden whitespace from a dashboard URL)             |
+| `CF_API_TOKEN`                | Cloudflare auth error 9106                                               |
+
+Four symptoms, one cause: invisible trailing whitespace. Secrets are write-only —
+`wrangler secret list` shows names, never values — so a corrupted secret cannot be
+read back and diagnosed. It can only be re-set.
+
+**When auth works locally but fails after deploy, suspect a corrupted secret
+first.** It presents identically to a wrong key.
 
 ### Pin `JOURNAL_URL_TEMPLATE`
 
@@ -321,7 +366,7 @@ Two ways to enable it:
    catch it).
 
 2. **CLI override (faster).** `pnpm exec wrangler deploy --env staging
-   --var IPC_INBOUND_DRY_RUN:true` — applies just for that deploy. Re-run the
+--var IPC_INBOUND_DRY_RUN:true` — applies just for that deploy. Re-run the
    normal `pnpm deploy:staging` to revert.
 
 When ON, `sendReply` short-circuits the Garmin POST and emits a structured

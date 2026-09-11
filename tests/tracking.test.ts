@@ -479,6 +479,110 @@ describe("handleStopTrack — end to end", () => {
     expect(reply.length).toBeLessThanOrEqual(160);
   });
 
+  test("publish failure sends a visible error reply (device previously got nothing)", async () => {
+    const env = makeTestEnv();
+    await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));
+    vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
+    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Malibu, CA");
+    vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Sunny, 18°C");
+    vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
+      title: "PCH and back",
+      haiku: "a\nb\nc",
+      body: "Run + beach + return.",
+      usage: { prompt_tokens: 100, completion_tokens: 50 },
+    });
+    vi.spyOn(publishMod, "publishTrackPost").mockRejectedValue(new Error("403 Bad credentials"));
+
+    const stopEvent: GarminEvent = {
+      imei: "300052030374220",
+      messageCode: 12,
+      timeStamp: Date.parse("2026-05-02T16:24:30Z"),
+    };
+
+    // Must still propagate: safeOrchestrate (app.ts) needs the throw to
+    // markFailed(), and the outer `publish_track` checkpoint must NOT cache
+    // a completed result so a genuine Garmin retry re-attempts the publish
+    // (see the #172 test below for that bound). The new behavior is the
+    // sendReply call that now happens *before* the rethrow.
+    await expect(handleStopTrack(stopEvent, env, "idem-publish-fail")).rejects.toThrow(
+      /Bad credentials/,
+    );
+
+    expect(sendReply).toHaveBeenCalledTimes(1);
+    const [imei, [reply]] = vi.mocked(sendReply).mock.calls[0];
+    expect(imei).toBe("300052030374220");
+    expect(reply).toContain("Bad credentials");
+    expect(reply.length).toBeLessThanOrEqual(160);
+  });
+
+  test("publish failure error reply truncates a long message but preserves the (interval: Xh) tag", async () => {
+    const env = makeTestEnv();
+    await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));
+    await recordTrackInterval(env, "300052030374220", 14400);
+    vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
+    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Malibu, CA");
+    vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Sunny, 18°C");
+    vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
+      title: "PCH and back",
+      haiku: "a\nb\nc",
+      body: "Run + beach + return.",
+      usage: { prompt_tokens: 100, completion_tokens: 50 },
+    });
+    // A realistic GitHub Contents API 403 body is routinely 200+ chars —
+    // long enough that a naive prefix + message concat would blow past
+    // Garmin's 160-char Iridium cap once the (interval: 4h) tag is appended.
+    const longMsg =
+      "403 Forbidden: " +
+      "Resource not accessible by personal access token. ".repeat(4) +
+      "(request id: abc123)";
+    vi.spyOn(publishMod, "publishTrackPost").mockRejectedValue(new Error(longMsg));
+
+    const stopEvent: GarminEvent = {
+      imei: "300052030374220",
+      messageCode: 12,
+      timeStamp: Date.parse("2026-05-02T16:24:30Z"),
+    };
+
+    await expect(handleStopTrack(stopEvent, env, "idem-publish-fail-long")).rejects.toThrow();
+
+    expect(sendReply).toHaveBeenCalledTimes(1);
+    const reply = vi.mocked(sendReply).mock.calls[0][1][0];
+    expect(reply.length).toBeLessThanOrEqual(160);
+    // Proves the interval-hint reserve worked — the tag survived truncation
+    // rather than being silently clipped off the end.
+    expect(reply.endsWith("(interval: 4h)")).toBe(true);
+  });
+
+  test("publish failure: if sendReply itself throws, the ORIGINAL publish error still propagates", async () => {
+    const env = makeTestEnv();
+    await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));
+    vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
+    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Malibu, CA");
+    vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Sunny, 18°C");
+    vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
+      title: "PCH and back",
+      haiku: "a\nb\nc",
+      body: "Run + beach + return.",
+      usage: { prompt_tokens: 100, completion_tokens: 50 },
+    });
+    vi.spyOn(publishMod, "publishTrackPost").mockRejectedValue(new Error("403 Bad credentials"));
+    // Reply delivery itself fails (dead link / bad API key). If this
+    // rejection replaced the publish error, the idempotency record's
+    // `error` field — what a replay/operator actually reads — would show
+    // the IPC failure instead of the real cause. Worse than silent-void.
+    vi.mocked(sendReply).mockRejectedValueOnce(new Error("network error: fetch failed"));
+
+    const stopEvent: GarminEvent = {
+      imei: "300052030374220",
+      messageCode: 12,
+      timeStamp: Date.parse("2026-05-02T16:24:30Z"),
+    };
+
+    await expect(handleStopTrack(stopEvent, env, "idem-publish-fail-reply-down")).rejects.toThrow(
+      /Bad credentials/,
+    );
+  });
+
   test("inner-LLM checkpoint: narrative cached when publish fails, re-run avoids fresh LLM call (#172)", async () => {
     const env = makeTestEnv();
     await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));
@@ -512,13 +616,14 @@ describe("handleStopTrack — end to end", () => {
     await expect(handleStopTrack(stopEvent, env, "idem-cost-bound")).rejects.toThrow(/Bad credentials/);
     expect(narrativeSpy).toHaveBeenCalledTimes(1);
     expect(publishSpy).toHaveBeenCalledTimes(1);
+    expect(sendReply).toHaveBeenCalledTimes(1); // visible error reply on the failed attempt
 
     // Second call (Garmin retry): narrative cache hit → LLM NOT re-called;
     // publish runs again and succeeds this time.
     await handleStopTrack(stopEvent, env, "idem-cost-bound");
     expect(narrativeSpy).toHaveBeenCalledTimes(1); // <-- the bound: still 1, not 2
     expect(publishSpy).toHaveBeenCalledTimes(2);
-    expect(sendReply).toHaveBeenCalledTimes(1);
+    expect(sendReply).toHaveBeenCalledTimes(2); // error reply + eventual success reply
   });
 
   // #201: refusal-SMS branches surface the device's last-known tracking

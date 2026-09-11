@@ -46,7 +46,11 @@ unset CODE
 
 case "$CODE_HTTP" in
   200)
-    PINGS=$(grep -c '<Placemark' "$BODY" 2>/dev/null || echo 0)
+    # NB: `grep -c` prints 0 AND exits 1 when there are no matches, so a
+    # `|| echo 0` fallback appends a SECOND 0 and yields "0\n0" — which then
+    # blows up the integer test below. Count with wc instead: it always prints
+    # one number and always exits 0.
+    PINGS=$(grep -o '<Placemark' "$BODY" 2>/dev/null | wc -l | tr -d '[:space:]')
     echo "[2/2] access code ACCEPTED (HTTP 200)."
     echo "      placemarks in last 30 days: $PINGS"
     if [ "$PINGS" -eq 0 ]; then

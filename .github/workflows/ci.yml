@@ -30,3 +30,8 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+
+      # Runs last so that genuine defects (typecheck, tests, lint) surface
+      # before a style nit does. Identical to `pnpm format:check` locally.
+      - name: Format
+        run: pnpm format:check

@@ -17,6 +17,10 @@ import { kmToMi, mToFt } from "./units.js";
 const TRACK_RECORD_TTL_SECONDS = 60 * 60 * 24 * 365;
 const TRACK_START_TTL_SECONDS = 60 * 60 * 24;
 const TRACK_INTERVAL_TTL_SECONDS = 60 * 60 * 24;
+/** Diagnostic history outlives the interval latch: a field test can span days. */
+const TRACK_EVENTS_TTL_SECONDS = 60 * 60 * 24 * 7;
+/** Bounded so one chatty device cannot grow the value past KV's 25 MB limit. */
+const TRACK_EVENTS_MAX = 25;
 
 interface TrackStartRecord {
   startedAt: number;
@@ -29,6 +33,7 @@ interface TrackIntervalRecord {
 
 const trackStartKey = (imei: string): string => `track_start:${imei}`;
 const trackIntervalKey = (imei: string): string => `track_interval:${imei}`;
+const trackEventsKey = (imei: string): string => `track_events:${imei}`;
 
 /**
  * Record an open tracking session's start timestamp (from a Garmin mc 10
@@ -84,6 +89,58 @@ export async function recordTrackInterval(
     { intervalSec, recordedAt: Date.now() },
     { expirationTtl: TRACK_INTERVAL_TTL_SECONDS },
   );
+}
+
+/**
+ * One tracking event's status block, verbatim, with enough context to place it.
+ *
+ * `status` is deliberately `Record<string, unknown>` rather than
+ * `GarminEvent["status"]`. The webhook validates the envelope with a type guard
+ * (`isGarminEnvelope` in app.ts), not a zod schema, so nothing strips fields the
+ * interface does not declare — they are present at runtime and this is the only
+ * place that keeps them.
+ */
+export interface TrackEventSnapshot {
+  /** When the Worker saw it (ms epoch). */
+  at: number;
+  messageCode?: number;
+  /** The device's own timestamp for the event (ms epoch). */
+  timeStamp?: number;
+  status: Record<string, unknown>;
+}
+
+/**
+ * Append a tracking event's full status block to a bounded per-IMEI history.
+ *
+ * Exists because `recordTrackInterval` keeps a single number and throws the rest
+ * away. The 2026-09-12 walking field test could not be explained as a result:
+ * the device reported a 14400 s interval two minutes into a walk on a unit
+ * configured for 2 minutes, and the payload that would say whether that was
+ * power saving, a plan limit, or our own misreading of `intervalChange` was
+ * already gone.
+ *
+ * A history rather than a latest-value, because a session's mc 12 arrives after
+ * its mc 11 and would otherwise overwrite the very event under investigation.
+ */
+export async function recordTrackEvent(env: Env, imei: string, event: GarminEvent): Promise<void> {
+  const prior = (await getJSON<TrackEventSnapshot[]>(env.TS_TRACKS, trackEventsKey(imei))) ?? [];
+  const snapshot: TrackEventSnapshot = {
+    at: Date.now(),
+    messageCode: event.messageCode,
+    timeStamp: event.timeStamp,
+    status: { ...((event.status ?? {}) as Record<string, unknown>) },
+  };
+  await putJSON(
+    env.TS_TRACKS,
+    trackEventsKey(imei),
+    [...prior, snapshot].slice(-TRACK_EVENTS_MAX),
+    { expirationTtl: TRACK_EVENTS_TTL_SECONDS },
+  );
+}
+
+/** Read the bounded tracking-event history, oldest first. Empty when none. */
+export async function readTrackEvents(env: Env, imei: string): Promise<TrackEventSnapshot[]> {
+  return (await getJSON<TrackEventSnapshot[]>(env.TS_TRACKS, trackEventsKey(imei))) ?? [];
 }
 
 /** Read the device's last-known tracking interval, or null. */

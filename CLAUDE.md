@@ -12,6 +12,7 @@ Living context file for Claude Code. Keep concise; update as decisions are made.
 - `pnpm typecheck` — `tsc --noEmit`
 - `pnpm lint` — ESLint
 - `pnpm format` — Prettier on **staged files only** (no-op if nothing staged); pass explicit paths to override (`pnpm format docs/PRD.md`). Use `pnpm format:all` for a deliberate whole-repo sweep. Default is scoped per #191 to keep PR diffs tight.
+- `pnpm format:check` — `prettier --check .`; reports drift without writing. **CI runs exactly this and fails on drift** (#225, option 2 — chosen 2026-09-12 after 58 files had accumulated unnoticed because nothing gated them). So `pnpm format` before committing is no longer just courtesy. If CI fails here, `pnpm format:all` fixes it.
 - `pnpm deploy:staging` / `pnpm deploy:prod`
 
 ## Product

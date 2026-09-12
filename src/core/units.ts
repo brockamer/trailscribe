@@ -11,7 +11,7 @@
 const KM_PER_MI = 1.609344;
 const M_PER_FT = 0.3048;
 
-export function kmToMi(km: number): number {
+export   function    kmToMi(km: number): number {
   return km / KM_PER_MI;
 }
 

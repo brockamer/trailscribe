@@ -17,6 +17,7 @@
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format": "bash scripts/format.sh",
     "format:all": "prettier --write .",
+    "format:check": "prettier --check .",
     "deploy:staging": "wrangler deploy --env staging",
     "deploy:prod": "wrangler deploy --env production"
   },

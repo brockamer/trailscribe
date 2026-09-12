@@ -12,7 +12,8 @@ Living context file for Claude Code. Keep concise; update as decisions are made.
 - `pnpm typecheck` — `tsc --noEmit`
 - `pnpm lint` — ESLint
 - `pnpm format` — Prettier on **staged files only** (no-op if nothing staged); pass explicit paths to override (`pnpm format docs/PRD.md`). Use `pnpm format:all` for a deliberate whole-repo sweep. Default is scoped per #191 to keep PR diffs tight.
-- `pnpm format:check` — `prettier --check .`; reports drift without writing. **CI runs exactly this and fails on drift** (#225, option 2 — chosen 2026-09-12 after 58 files had accumulated unnoticed because nothing gated them). So `pnpm format` before committing is no longer just courtesy. If CI fails here, `pnpm format:all` fixes it.
+- `pnpm format:check` — `prettier --check .`; reports drift without writing. **CI runs exactly this and fails on drift** (#225, option 2 — chosen 2026-09-12 after 58 files had accumulated unnoticed because nothing gated them). So `pnpm format` before committing is no longer just courtesy. If CI fails here, `pnpm format:all` normally fixes it.
+  **If it does not** — the file still fails `format:check` right after a write pass — you have hit a prettier non-convergence, not a stale checkout. The known cause is a Markdown line holding both emphasis (`*x*`) and a bare identifier containing an underscore (`some_file.pdf`): prettier normalizes `*x*` to `_x_`, then on the next pass pairs that underscore with the one in the identifier and rewrites both, corrupting the text. Fix the source, not the formatter — put the identifier in a code span (`` `some_file.pdf` ``). Found and fixed once already, in the Mode B design spec.
 - `pnpm deploy:staging` / `pnpm deploy:prod`
 
 ## Product

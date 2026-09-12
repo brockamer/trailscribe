@@ -4,12 +4,15 @@ import {
   handleStopTrack,
   recordTrackInterval,
   readTrackInterval,
+  recordTrackEvent,
+  readTrackEvents,
   formatInterval,
   type TrackSessionRecord,
 } from "../src/core/tracking.js";
 import { generateTrackNarrative } from "../src/core/narrative.js";
 import { chatCompletion } from "../src/adapters/ai/openrouter.js";
 import { makeTestEnv } from "./helpers/env.js";
+import { makeApp } from "../src/app.js";
 import { publishTrackPost } from "../src/adapters/publish/github-pages.js";
 import { sendReply } from "../src/adapters/outbound/garmin-ipc-inbound.js";
 import { monthlyTotals } from "../src/core/ledger.js";
@@ -48,6 +51,123 @@ describe("track_interval KV helpers (#201)", () => {
     await recordTrackInterval(env, "300052030374220", 120);
     const got = await readTrackInterval(env, "300052030374220");
     expect(got!.intervalSec).toBe(120);
+  });
+
+  // #201 diagnosis: the 2026-09-12 walking field test could not be explained,
+  // because the Worker keeps only `intervalSec` and discards everything else the
+  // device reported. The device claimed a 14400 s interval two minutes into a
+  // walk on a unit configured for 2 minutes, and we cannot tell whether that was
+  // power saving, a plan limit, or our own decode being wrong. `status` is never
+  // zod-parsed (app.ts uses a type guard), so unknown fields are present at
+  // runtime — they just have to be persisted.
+  test("recordTrackEvent keeps status fields absent from the typed interface", async () => {
+    const env = makeTestEnv();
+    await recordTrackEvent(env, "300052030374220", {
+      imei: "300052030374220",
+      messageCode: 11,
+      timeStamp: 1789214580000,
+      status: {
+        intervalChange: 14400,
+        lowBattery: 0,
+        // Not in the GarminEvent["status"] interface. Exactly the kind of field
+        // that would answer the open question, and exactly what we drop today.
+        batteryPercent: 41,
+        sendInterval: 14400,
+      },
+    } as unknown as GarminEvent);
+
+    const events = await readTrackEvents(env, "300052030374220");
+    expect(events).toHaveLength(1);
+    expect(events[0].messageCode).toBe(11);
+    expect(events[0].status).toEqual({
+      intervalChange: 14400,
+      lowBattery: 0,
+      batteryPercent: 41,
+      sendInterval: 14400,
+    });
+  });
+
+  // The whole reason this is a history and not a latest-value: in a real
+  // session the mc 12 (Stop Track) arrives after the mc 11 (interval change),
+  // so a single-slot store would overwrite the event being investigated with
+  // the one that ends the session.
+  test("a later Stop Track event does not overwrite the earlier interval event", async () => {
+    const env = makeTestEnv();
+    const imei = "300052030374220";
+    await recordTrackEvent(env, imei, {
+      imei,
+      messageCode: 11,
+      status: { intervalChange: 14400 },
+    } as unknown as GarminEvent);
+    await recordTrackEvent(env, imei, {
+      imei,
+      messageCode: 12,
+      status: { intervalChange: 0 },
+    } as unknown as GarminEvent);
+
+    const events = await readTrackEvents(env, imei);
+    expect(events.map((e) => e.messageCode)).toEqual([11, 12]);
+    expect(events[0].status.intervalChange).toBe(14400);
+  });
+
+  // KV values are capped at 25 MB. A device that flaps its interval must not be
+  // able to grow this key without limit; the oldest snapshots are dropped.
+  test("the history is bounded and keeps the most recent entries", async () => {
+    const env = makeTestEnv();
+    const imei = "300052030374220";
+    for (let i = 0; i < 30; i++) {
+      await recordTrackEvent(env, imei, {
+        imei,
+        messageCode: 11,
+        timeStamp: i,
+        status: { intervalChange: i },
+      } as unknown as GarminEvent);
+    }
+
+    const events = await readTrackEvents(env, imei);
+    expect(events).toHaveLength(25);
+    // Oldest five dropped, newest retained.
+    expect(events[0].timeStamp).toBe(5);
+    expect(events[24].timeStamp).toBe(29);
+  });
+
+  // Integration: the helper is worthless unless the webhook actually calls it.
+  // Today app.ts records only `intervalChange` and only when it is > 0, so a
+  // mc 11 carrying extra status fields is seen and discarded.
+  test("the webhook records the full status of a tracking event", async () => {
+    const env = makeTestEnv();
+    const app = makeApp();
+    const imei = "123456789012345";
+
+    const res = await app.request(
+      "/garmin/ipc",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-outbound-auth-token": env.GARMIN_INBOUND_TOKEN,
+        },
+        body: JSON.stringify({
+          Version: "2.0",
+          Events: [
+            {
+              imei,
+              messageCode: 11,
+              timeStamp: 1789214580000,
+              point: { latitude: 34.02, longitude: -118.83, altitude: 10, gpsFix: 2 },
+              status: { intervalChange: 14400, lowBattery: 0, batteryPercent: 41 },
+            },
+          ],
+        }),
+      },
+      env,
+    );
+    expect(res.status).toBe(200);
+
+    const events = await readTrackEvents(env, imei);
+    expect(events).toHaveLength(1);
+    expect(events[0].messageCode).toBe(11);
+    expect(events[0].status.batteryPercent).toBe(41);
   });
 
   test("formatInterval compacts seconds into h/m/s suffixes", () => {

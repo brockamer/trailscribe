@@ -16,7 +16,12 @@ import { orchestrate } from "./core/orchestrator.js";
 import { sendReply } from "./adapters/outbound/garmin-ipc-inbound.js";
 import { buildReply } from "./core/reply.js";
 import { monthlyTotals } from "./core/ledger.js";
-import { handleStopTrack, recordSessionStart, recordTrackInterval } from "./core/tracking.js";
+import {
+  handleStopTrack,
+  recordSessionStart,
+  recordTrackInterval,
+  recordTrackEvent,
+} from "./core/tracking.js";
 
 /**
  * Garmin tracking event codes. mc 0 = Position Report, mc 10 = Start Track,
@@ -199,6 +204,34 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
     // to a long interval. Runs BEFORE the per-mc dispatch so the value is
     // visible to handleStopTrack on a mc=12 event whose own status carries
     // an intervalChange.
+    // Diagnostic history for #201. `recordTrackInterval` below keeps a single
+    // number and discards the rest of `status`, which is why the 2026-09-12
+    // walking field test could not be explained: the device announced a
+    // 14400 s interval two minutes into a walk on a unit set to 2 minutes, and
+    // the payload that would say why was already gone.
+    //
+    // Recorded for every tracking message code, not just those with a nonzero
+    // intervalChange — an mc 11 reporting 0 is itself evidence about what that
+    // field means. mc 0 matters most of all: MapShare and the IPC Outbound
+    // breadcrumb stream are independent, so capturing mc 0 here shows whether
+    // the device transmitted position reports at all, regardless of what
+    // reached MapShare.
+    //
+    // Best-effort: a diagnostic write must never fail the request path, or the
+    // instrument becomes the outage.
+    if (TRACKING_MESSAGE_CODES.has(event.messageCode)) {
+      try {
+        await recordTrackEvent(env, event.imei, event);
+      } catch (err) {
+        log({
+          event: "track_event_record_failed",
+          level: "warn",
+          imei: event.imei,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     const intervalChange = event.status?.intervalChange;
     if (typeof intervalChange === "number" && intervalChange > 0) {
       try {
@@ -375,6 +408,13 @@ async function trySendReplyWithCheckpoint(
     return false;
   }
 }
+
+/**
+ * Message codes that describe a tracking session: 0 position report,
+ * 10 Start Track, 11 Track Interval, 12 Stop Track. Free text (3) and SOS (4)
+ * are deliberately excluded — they carry no tracking telemetry.
+ */
+const TRACKING_MESSAGE_CODES = new Set([0, 10, 11, 12]);
 
 function isGarminEnvelope(body: unknown): body is GarminEnvelope {
   return (

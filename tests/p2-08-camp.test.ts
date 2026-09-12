@@ -41,7 +41,11 @@ function chatCompletionResponse(content: string, prompt = 60, completion = 80) {
   return {
     id: "chatcmpl-test",
     choices: [{ message: { role: "assistant", content }, finish_reason: "stop" }],
-    usage: { prompt_tokens: prompt, completion_tokens: completion, total_tokens: prompt + completion },
+    usage: {
+      prompt_tokens: prompt,
+      completion_tokens: completion,
+      total_tokens: prompt + completion,
+    },
   };
 }
 
@@ -110,7 +114,8 @@ describe("P2-08 !camp — short reply happy path", () => {
     fetchSpy = makeFetchRouter([
       {
         match: (u) => u.includes("openrouter.ai") || u.includes("/chat/completions"),
-        respond: () => jsonResponse(chatCompletionResponse("Onion Valley has dispersed sites along the creek.")),
+        respond: () =>
+          jsonResponse(chatCompletionResponse("Onion Valley has dispersed sites along the creek.")),
       },
     ]);
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
@@ -207,7 +212,9 @@ describe("P2-08 !camp — idempotency", () => {
     await postIpc(ev);
 
     const calls = fetchSpy.mock.calls.map((c) => String(c[0]));
-    const llmCalls = calls.filter((u) => u.includes("openrouter") || u.includes("/chat/completions"));
+    const llmCalls = calls.filter(
+      (u) => u.includes("openrouter") || u.includes("/chat/completions"),
+    );
     const emailCalls = calls.filter((u) => u.includes("api.resend.com"));
     expect(llmCalls).toHaveLength(1);
     expect(emailCalls).toHaveLength(1);

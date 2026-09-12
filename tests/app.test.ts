@@ -11,9 +11,8 @@ vi.mock("../src/adapters/outbound/garmin-ipc-inbound.js", () => ({
 }));
 
 vi.mock("../src/core/tracking.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/core/tracking.js")>(
-    "../src/core/tracking.js",
-  );
+  const actual =
+    await vi.importActual<typeof import("../src/core/tracking.js")>("../src/core/tracking.js");
   return {
     ...actual,
     handleStopTrack: vi.fn().mockResolvedValue(undefined),
@@ -367,19 +366,23 @@ describe("Worker /garmin/ipc — Stop Track routing", () => {
           return null;
         }
       })
-      .find((entry): entry is Record<string, unknown> => entry?.event === "stop_track_handler_error");
+      .find(
+        (entry): entry is Record<string, unknown> => entry?.event === "stop_track_handler_error",
+      );
   }
 
   test("messageCode 12 invokes handleStopTrack", async () => {
     const stopEvent = {
       Version: "4.0",
-      Events: [{
-        imei: "123456789012345",
-        messageCode: 12,
-        timeStamp: Date.parse("2026-05-02T16:24:30Z"),
-        point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
-        status: { autonomous: 0, lowBattery: 0, intervalChange: 0, resetDetected: 0 },
-      }],
+      Events: [
+        {
+          imei: "123456789012345",
+          messageCode: 12,
+          timeStamp: Date.parse("2026-05-02T16:24:30Z"),
+          point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
+          status: { autonomous: 0, lowBattery: 0, intervalChange: 0, resetDetected: 0 },
+        },
+      ],
     };
     const res = await postIpc(stopEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
     expect(res.status).toBe(200);
@@ -391,13 +394,15 @@ describe("Worker /garmin/ipc — Stop Track routing", () => {
   test("messageCode 10 (Start Track) does NOT invoke handleStopTrack", async () => {
     const startEvent = {
       Version: "4.0",
-      Events: [{
-        imei: "123456789012345",
-        messageCode: 10,
-        timeStamp: Date.now(),
-        point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
-        status: { autonomous: 0, lowBattery: 0, intervalChange: 120, resetDetected: 0 },
-      }],
+      Events: [
+        {
+          imei: "123456789012345",
+          messageCode: 10,
+          timeStamp: Date.now(),
+          point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
+          status: { autonomous: 0, lowBattery: 0, intervalChange: 120, resetDetected: 0 },
+        },
+      ],
     };
     const res = await postIpc(startEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
     expect(res.status).toBe(200);
@@ -411,19 +416,22 @@ describe("Worker /garmin/ipc — Stop Track routing", () => {
   test("messageCode 11 with intervalChange > 0 latches track_interval:<imei> (#201)", async () => {
     const intervalEvent = {
       Version: "4.0",
-      Events: [{
-        imei: "123456789012345",
-        messageCode: 11,
-        timeStamp: Date.now(),
-        point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
-        status: { autonomous: 0, lowBattery: 0, intervalChange: 14400, resetDetected: 0 },
-      }],
+      Events: [
+        {
+          imei: "123456789012345",
+          messageCode: 11,
+          timeStamp: Date.now(),
+          point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
+          status: { autonomous: 0, lowBattery: 0, intervalChange: 14400, resetDetected: 0 },
+        },
+      ],
     };
     const res = await postIpc(intervalEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
     expect(res.status).toBe(200);
-    const stored = (await env.TS_TRACKS.get("track_interval:123456789012345", "json")) as
-      | { intervalSec: number; recordedAt: number }
-      | null;
+    const stored = (await env.TS_TRACKS.get("track_interval:123456789012345", "json")) as {
+      intervalSec: number;
+      recordedAt: number;
+    } | null;
     expect(stored).not.toBeNull();
     expect(stored!.intervalSec).toBe(14400);
   });
@@ -431,19 +439,22 @@ describe("Worker /garmin/ipc — Stop Track routing", () => {
   test("messageCode 10 with intervalChange > 0 also latches the interval (#201)", async () => {
     const startEvent = {
       Version: "4.0",
-      Events: [{
-        imei: "123456789012345",
-        messageCode: 10,
-        timeStamp: Date.now(),
-        point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
-        status: { autonomous: 0, lowBattery: 0, intervalChange: 120, resetDetected: 0 },
-      }],
+      Events: [
+        {
+          imei: "123456789012345",
+          messageCode: 10,
+          timeStamp: Date.now(),
+          point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
+          status: { autonomous: 0, lowBattery: 0, intervalChange: 120, resetDetected: 0 },
+        },
+      ],
     };
     const res = await postIpc(startEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
     expect(res.status).toBe(200);
-    const stored = (await env.TS_TRACKS.get("track_interval:123456789012345", "json")) as
-      | { intervalSec: number; recordedAt: number }
-      | null;
+    const stored = (await env.TS_TRACKS.get("track_interval:123456789012345", "json")) as {
+      intervalSec: number;
+      recordedAt: number;
+    } | null;
     expect(stored).not.toBeNull();
     expect(stored!.intervalSec).toBe(120);
   });
@@ -455,20 +466,19 @@ describe("Worker /garmin/ipc — Stop Track routing", () => {
     // Capture the KV value at the moment the mock is invoked.
     let intervalAtDispatch: unknown = "<handleStopTrack-not-called>";
     vi.mocked(handleStopTrack).mockImplementationOnce(async () => {
-      intervalAtDispatch = await env.TS_TRACKS.get(
-        "track_interval:123456789012345",
-        "json",
-      );
+      intervalAtDispatch = await env.TS_TRACKS.get("track_interval:123456789012345", "json");
     });
     const stopEvent = {
       Version: "4.0",
-      Events: [{
-        imei: "123456789012345",
-        messageCode: 12,
-        timeStamp: Date.parse("2026-05-02T16:24:30Z"),
-        point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
-        status: { autonomous: 0, lowBattery: 0, intervalChange: 14400, resetDetected: 0 },
-      }],
+      Events: [
+        {
+          imei: "123456789012345",
+          messageCode: 12,
+          timeStamp: Date.parse("2026-05-02T16:24:30Z"),
+          point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
+          status: { autonomous: 0, lowBattery: 0, intervalChange: 14400, resetDetected: 0 },
+        },
+      ],
     };
     const res = await postIpc(stopEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
     expect(res.status).toBe(200);
@@ -479,13 +489,15 @@ describe("Worker /garmin/ipc — Stop Track routing", () => {
   test("intervalChange === 0 does NOT write track_interval (no-op, 0 = unchanged) (#201)", async () => {
     const positionEvent = {
       Version: "4.0",
-      Events: [{
-        imei: "123456789012345",
-        messageCode: 0,
-        timeStamp: Date.now(),
-        point: { latitude: 34.0, longitude: -118.0, altitude: 0, gpsFix: 1, course: 0, speed: 0 },
-        status: { autonomous: 0, lowBattery: 0, intervalChange: 0, resetDetected: 0 },
-      }],
+      Events: [
+        {
+          imei: "123456789012345",
+          messageCode: 0,
+          timeStamp: Date.now(),
+          point: { latitude: 34.0, longitude: -118.0, altitude: 0, gpsFix: 1, course: 0, speed: 0 },
+          status: { autonomous: 0, lowBattery: 0, intervalChange: 0, resetDetected: 0 },
+        },
+      ],
     };
     const res = await postIpc(positionEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
     expect(res.status).toBe(200);
@@ -497,13 +509,15 @@ describe("Worker /garmin/ipc — Stop Track routing", () => {
     vi.mocked(handleStopTrack).mockRejectedValueOnce(new Error("mapshare 503"));
     const stopEvent = {
       Version: "4.0",
-      Events: [{
-        imei: "123456789012345",
-        messageCode: 12,
-        timeStamp: Date.parse("2026-05-02T16:24:30Z"),
-        point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
-        status: { autonomous: 0, lowBattery: 0, intervalChange: 0, resetDetected: 0 },
-      }],
+      Events: [
+        {
+          imei: "123456789012345",
+          messageCode: 12,
+          timeStamp: Date.parse("2026-05-02T16:24:30Z"),
+          point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
+          status: { autonomous: 0, lowBattery: 0, intervalChange: 0, resetDetected: 0 },
+        },
+      ],
     };
     const res = await postIpc(stopEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
     expect(res.status).toBe(200);

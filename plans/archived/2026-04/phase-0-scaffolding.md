@@ -15,6 +15,7 @@
 - Remaining stories: [#16 P0-07](https://github.com/brockamer/trailscribe/issues/16), [#17 P0-20](https://github.com/brockamer/trailscribe/issues/17) (both user-gated on Cloudflare credentials)
 
 **Milestone exit criteria (all must be true):**
+
 - [ ] `wrangler dev` serves a stub `POST /garmin/ipc` that verifies bearer auth, parses a Garmin V2 event, short-circuits duplicates via KV, and returns 200 OK
 - [ ] `wrangler deploy --env staging` succeeds; staging URL receives a test Garmin payload and returns 200 OK
 - [ ] CI runs typecheck + lint + Vitest on PR to `main`, all green
@@ -37,6 +38,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** Repo is on `master`; CI targets `main`; GitHub default branch needs to match.
 
 **Acceptance criteria:**
+
 - [ ] Local branch renamed: `git branch -m master main`
 - [ ] Remote default updated: `gh repo edit --default-branch main`
 - [ ] Remote branch force-moved: `git push origin -u main && git push origin --delete master`
@@ -53,6 +55,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** CI uses `working-directory: ./trailscribe` which doesn't exist inside the repo. Also targets `master` (to be fixed by P0-01) and still runs Jest (which we're replacing in P0-05).
 
 **Acceptance criteria:**
+
 - [ ] Remove all `working-directory: ./trailscribe` lines
 - [ ] Update `branches:` to `main` (coupled with P0-01)
 - [ ] Replace `npm install -g pnpm` with `uses: pnpm/action-setup@v3` (cached, pinned)
@@ -71,6 +74,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** `package.json` is Node/Express oriented. Workers needs no Express, no `ts-node-dev`, no Jest. Add Hono, Vitest, Wrangler, Workers types.
 
 **Acceptance criteria:**
+
 - [ ] Remove deps: `express`, `axios`, `@types/express`
 - [ ] Remove dev deps: `jest`, `ts-jest`, `@types/jest`, `ts-node`, `ts-node-dev`
 - [ ] Add deps: `hono`, `zod` (keep)
@@ -98,6 +102,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** Current config targets Node ESM. Workers needs `lib: ["ES2022"]` only (no DOM), `types: ["@cloudflare/workers-types"]`, and `moduleResolution: "bundler"` for Wrangler.
 
 **Acceptance criteria:**
+
 - [ ] `compilerOptions.lib` = `["ES2022"]`
 - [ ] `compilerOptions.types` = `["@cloudflare/workers-types", "vitest/globals"]`
 - [ ] `compilerOptions.moduleResolution` = `"bundler"`
@@ -120,6 +125,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** Replace Jest with Vitest. Port the existing 5 tests and add the `!mail subj:` spaces regression test.
 
 **Acceptance criteria:**
+
 - [ ] `vitest.config.ts` at repo root using `@cloudflare/vitest-pool-workers` pool for Workers-compatible tests
 - [ ] `tests/grammar.test.ts` runs under Vitest, all 4 existing tests pass
 - [ ] New test: `parseCommand('!mail to:a@b.com subj:Hello World body:Hi')` returns `subj: "Hello World"` (currently fails — locked in by P0-09 bugfix)
@@ -136,6 +142,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** Need staging + production envs, 4 KV namespaces, vars, and secret placeholders documented.
 
 **Acceptance criteria:**
+
 - [ ] `wrangler.toml` at repo root
 - [ ] `name = "trailscribe"`, `main = "src/index.ts"`, `compatibility_date = "2026-04-01"`, `compatibility_flags = ["nodejs_compat"]`
 - [ ] Top-level `[vars]` block with non-secret defaults: `TRAILSCRIBE_ENV`, `GOOGLE_MAPS_BASE`, `MAPSHARE_BASE`, `OPENAI_MODEL`, `OPENAI_INPUT_COST_PER_1K`, `OPENAI_OUTPUT_COST_PER_1K`, `APPEND_COST_SUFFIX`, `DAILY_TOKEN_BUDGET`, `IPC_SCHEMA_VERSION`, `RESEND_FROM_EMAIL`, `RESEND_FROM_NAME`, `JOURNAL_POST_PATH_TEMPLATE`
@@ -154,6 +161,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** Four KV namespaces per PRD §3 must exist before bindings resolve.
 
 **Acceptance criteria:**
+
 - [ ] Run 8× `wrangler kv namespace create <NAME>` and `wrangler kv namespace create <NAME> --env staging` (or use `--preview` for staging pattern — pick one and document in `docs/setup-cloudflare.md`)
 - [ ] Capture each `id` from output and paste into `wrangler.toml`
 - [ ] `wrangler kv namespace list` shows all 8 (4 names × 2 envs)
@@ -170,6 +178,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** Wrangler's local-dev secrets format is `.dev.vars` (dotenv-compatible). Need an example checked in; real `.dev.vars` gitignored.
 
 **Acceptance criteria:**
+
 - [ ] `.dev.vars.example` created with every secret key from P0-06, values blank or placeholder (`<set-me>`)
 - [ ] `.dev.vars` added to `.gitignore`
 - [ ] `docs/setup-cloudflare.md` section "Secrets": documents `cp .dev.vars.example .dev.vars`, populate values, `wrangler secret put <KEY> --env staging` for each (exact commands listed)
@@ -186,6 +195,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** Per Verdict B, grammar + types + links are the salvage. Port, trim to MVP commands, fix `!mail subj` regex.
 
 **Acceptance criteria:**
+
 - [ ] `src/core/types.ts` exports `ParsedCommand` discriminated union, trimmed to MVP 6: `ping`, `help`, `cost`, `post`, `mail`, `todo`. No `ai`, `where`, `drop`, `camp`, `brief`, `blast`, `share` (defer to Phase 2+).
 - [ ] `src/core/grammar.ts` ports `parseCommand` with:
   - `!mail subj:` regex fixed to allow spaces in subject: `to:([^\s]+)\s+subj:(.+?)\s+body:(.+)`
@@ -207,6 +217,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** Replace the old `src/config/env.ts` Node-style loader with a Workers-native binding schema.
 
 **Acceptance criteria:**
+
 - [ ] `src/env.ts` exports `Env` interface matching `wrangler.toml` bindings (KV namespaces typed as `KVNamespace`; vars as `string`; secrets as `string`)
 - [ ] Also exports `EnvSchema` zod object for runtime validation at Worker boot (validates string types and presence of required secrets at first request)
 - [ ] Helper `parseEnv(env: unknown): Env` throws on missing/invalid bindings with a clear message
@@ -223,6 +234,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** Minimal Worker entry that answers Garmin Outbound webhooks correctly at the network layer. No orchestrator logic yet.
 
 **Acceptance criteria:**
+
 - [ ] `src/index.ts` exports default `{ fetch: app.fetch }` from a Hono instance
 - [ ] Route `POST /garmin/ipc` does in order:
   1. Verify `Authorization: Bearer <token>` matches `env.GARMIN_INBOUND_TOKEN` — on miss, return 200 OK with log entry `auth_fail` (intentionally 200 to avoid retry cascade)
@@ -249,6 +261,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** Directory structure per CLAUDE.md module map. Each adapter exports a typed function that throws `"not implemented in α-Phase-0"` or returns a canned shape — enough that `pnpm typecheck` and `pnpm test` stay green while Phase 1 fills them in one at a time.
 
 **Acceptance criteria:**
+
 - [ ] Files exist (each with a 1-line module JSDoc and a typed stub function):
   - `src/adapters/outbound/garmin-ipc-inbound.ts` — `sendReply(imei, message, env): Promise<void>`
   - `src/adapters/mail/resend.ts` — `sendEmail({to, subject, body, env}): Promise<void>`
@@ -276,6 +289,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** The Pipedream example imports from a nonexistent `trailscribe/dist/...`. The n8n doc tells people to `cd ./trailscribe`. The README's top-matter sells Pipedream as primary. Workers is now primary.
 
 **Acceptance criteria:**
+
 - [ ] `docs/archive/` directory created
 - [ ] Moved: `docs/pipedream-setup.md`, `docs/selfhost-n8n-proxmox.md`, `examples/pipedream-steps.md`, `examples/workers-minimal.md`, `examples/n8n-docker-compose.yml` → `docs/archive/`
 - [ ] Each archived file gets a header: `> Archived 2026-04-22 — superseded by Workers-first architecture in docs/architecture.md. Kept for historical reference only.`
@@ -299,6 +313,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** Current arch doc describes Express on Pipedream/n8n/Workers. Now only Workers; also reflect bearer token auth, X-API-Key outbound, idempotency composite key.
 
 **Acceptance criteria:**
+
 - [ ] Single deployment target (Workers) — no mentions of Pipedream/n8n as primary paths
 - [ ] Inbound flow matches PRD §3 + §4 (bearer verify → parse V2 → idempotency → dispatch)
 - [ ] Outbound flow references IPC Inbound `/api/Messaging/Message` with X-API-Key
@@ -317,6 +332,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** Replaces the archived Pipedream + n8n guides. Walks through Cloudflare account setup, Wrangler install, KV namespace creation, secret population, first deploy.
 
 **Acceptance criteria:**
+
 - [ ] Sections: Prerequisites (Cloudflare account, Wrangler, node 18+); `wrangler login`; create KV namespaces (exact commands); `cp .dev.vars.example .dev.vars` and populate; `wrangler secret put` for each secret (list every one); `wrangler deploy --env staging`; point Garmin Portal Connect at staging URL (reference `docs/garmin-setup.md`); verify with a curl-with-fixture test
 - [ ] Covers secret rotation (yearly for `GARMIN_INBOUND_TOKEN`, `GARMIN_IPC_INBOUND_API_KEY`)
 - [ ] Covers staging → production promotion path
@@ -332,6 +348,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** CI builds/tests on PR; this workflow deploys on push to `main`.
 
 **Acceptance criteria:**
+
 - [ ] `.github/workflows/deploy-cloudflare.yml` created
 - [ ] Trigger: `push` to `main` only (production branch-based deploy); manual `workflow_dispatch` for ad-hoc
 - [ ] Steps: checkout → setup-node + pnpm → install → typecheck → test → `wrangler deploy --env production` using `CF_API_TOKEN` repo secret
@@ -350,6 +367,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** Current guide mentions shared-secret in passing. Now we have authoritative contracts (materials/Garmin IPC Outbound.txt, Inbound.txt) and a specific bearer-token approach.
 
 **Acceptance criteria:**
+
 - [ ] Explicit "Professional tier required" callout at top
 - [ ] IPC Outbound setup: Portal Connect → Add Endpoint → URL `https://<worker>.workers.dev/garmin/ipc` → Schema V2 → Static Token (paste value of `GARMIN_INBOUND_TOKEN`)
 - [ ] IPC Inbound setup: Portal Connect → Inbound Settings → toggle on → Generate API Key (copy into `GARMIN_IPC_INBOUND_API_KEY`) → note `GARMIN_IPC_INBOUND_BASE_URL`
@@ -368,6 +386,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** Keep salvaged files (grammar now at `src/core/grammar.ts`, types, links); delete everything else under old paths. Retain `docs/field-commands.md` and `docs/runbook-offgrid.md` — content is still valid.
 
 **Acceptance criteria:**
+
 - [ ] Deleted: `src/http/`, `src/agent/`, `src/tools/` (except any link-helper we already ported), `src/runtime/`, `src/config/`
 - [ ] Deleted: `examples/env.example` (replaced by `.dev.vars.example`)
 - [ ] Deleted: `tests/idempotency.test.ts` (in-memory idempotency no longer exists)
@@ -384,6 +403,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** `SECURITY.md` and `CODE_OF_CONDUCT.md` have `[your-email@example.com]` placeholders. `CONTRIBUTING.md` describes a `pnpm dev` + Jest flow that's no longer accurate.
 
 **Acceptance criteria:**
+
 - [ ] Substitute a real contact email in `SECURITY.md` and `CODE_OF_CONDUCT.md` — use `brockamer@gmail.com` (confirmed public email of record) unless user provides a different address
 - [ ] `CONTRIBUTING.md` updated: `wrangler dev` (not `pnpm dev`); Vitest (not Jest); Hono routes (not Express); KV (not in-memory)
 - [ ] Add note to `CONTRIBUTING.md`: issues/PRs flow through the Jared project board (will be set up post-Phase-0)
@@ -399,6 +419,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 **Context:** Final gate for Phase 0 exit. Prove the Worker receives a real-shape Garmin V2 event and 200-OKs it with the right side effects (KV entry created).
 
 **Acceptance criteria:**
+
 - [ ] `tests/fixtures/garmin-outbound-v2-freetext.json` committed: realistic V2 envelope with `imei` from `IMEI_ALLOWLIST`, `messageCode: 3`, `freeText: "!ping"`, valid coordinates
 - [ ] `curl` command documented in `docs/setup-cloudflare.md` that posts the fixture to staging URL with correct bearer
 - [ ] Run the curl: response is `200 OK "ok"`
@@ -414,10 +435,10 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 ## Sizing summary
 
 | Size | Count |
-|---|---|
-| S | 10 |
-| M | 10 |
-| L | 0 |
+| ---- | ----- |
+| S    | 10    |
+| M    | 10    |
+| L    | 0     |
 
 **Rough total:** ~1.5–2 focused days of work, mostly because each story is scoped thin. Several can be parallelized (P0-13, P0-14, P0-15, P0-17, P0-19 are all doc-only and can land concurrently).
 
@@ -427,18 +448,19 @@ Critical path (can't skip):
 **P0-01 → P0-03 → P0-04 → P0-05 → P0-06 → P0-07 → P0-08 → P0-09 → P0-10 → P0-11 → P0-12 → P0-18 → P0-20**
 
 Parallel tracks (can land in any order once unblocked):
+
 - Docs: **P0-13, P0-14, P0-15, P0-17, P0-19** — start as soon as PRD is signed (now)
 - CI: **P0-02** after P0-05; **P0-16** after P0-11
 
 ## Risk register
 
-| Risk | Likelihood | Mitigation |
-|---|---|---|
-| Cloudflare API token not provisioned yet | H | P0-06/07 lay groundwork; user performs `wrangler login` interactively once |
-| Resend free-tier domain/sender issues | L | `trailscribe@resend.dev` is their hosted subdomain; no DNS needed for α |
-| GitHub PAT scoping for journal repo | M | P0-08 documents fine-grained PAT with `contents:write` on exactly one repo |
-| `@cloudflare/vitest-pool-workers` API churn | M | Pin version in `package.json`; follow current docs at plan-time |
-| Breaking CI during branch rename | L | P0-01 and P0-02 land as one PR |
+| Risk                                        | Likelihood | Mitigation                                                                 |
+| ------------------------------------------- | ---------- | -------------------------------------------------------------------------- |
+| Cloudflare API token not provisioned yet    | H          | P0-06/07 lay groundwork; user performs `wrangler login` interactively once |
+| Resend free-tier domain/sender issues       | L          | `trailscribe@resend.dev` is their hosted subdomain; no DNS needed for α    |
+| GitHub PAT scoping for journal repo         | M          | P0-08 documents fine-grained PAT with `contents:write` on exactly one repo |
+| `@cloudflare/vitest-pool-workers` API churn | M          | Pin version in `package.json`; follow current docs at plan-time            |
+| Breaking CI during branch rename            | L          | P0-01 and P0-02 land as one PR                                             |
 
 ## Out of scope for Phase 0 (reminder)
 

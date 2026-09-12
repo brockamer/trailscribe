@@ -21,19 +21,20 @@
 
 **What we observed:** Across two real tracking sessions and 5+ days of normal device traffic captured at the Worker (full payload, no sampling, verified via Cloudflare ray IDs):
 
-| Code | Name | Count |
-|---|---|---|
-| 0 | Position Report | **0** events |
-| 10 | Start Track | 1 |
-| 11 | Track Interval | 1 (`intervalChange: 14400` — 4-hour power-saving auto-fallback) |
-| 12 | Stop Track | 2 (one per session) |
-| 3 | Free Text | works correctly |
-| 20 | Mail Check | normal |
-| 21 | Am I Alive | normal |
+| Code | Name            | Count                                                           |
+| ---- | --------------- | --------------------------------------------------------------- |
+| 0    | Position Report | **0** events                                                    |
+| 10   | Start Track     | 1                                                               |
+| 11   | Track Interval  | 1 (`intervalChange: 14400` — 4-hour power-saving auto-fallback) |
+| 12   | Stop Track      | 2 (one per session)                                             |
+| 3    | Free Text       | works correctly                                                 |
+| 20   | Mail Check      | normal                                                          |
+| 21   | Am I Alive      | normal                                                          |
 
 The **2026-05-02 PCH/Malibu session** (~50 min, real movement: 0.25mi run + beach walking + return — well past the 100m power-saving threshold) produced 0 Position Reports. Yesterday's session is the load-bearing data point because it had unambiguous movement.
 
 **Diagnostics ruling out our-side bugs:**
+
 - Auth passes (10/11/12 events arrive over the same channel with the same token)
 - Outbound queue size = 0 with `Last Send Attempt` timestamps matching every POST we receive
 - V4 envelope shape is identical to V2 (`topLevelKeys: ["Version", "Events"]`) — no sibling array carries position data
@@ -45,7 +46,7 @@ The **2026-05-02 PCH/Malibu session** (~50 min, real movement: 0.25mi run + beac
 2. **Per-tenant configuration gate** that's not exposed in the Portal Connect UI; would require Garmin to flip a flag on our account.
 3. **Position Reports are simply not part of IPC Outbound for Mini 3 Plus + V4 + Internet transport** under any configuration; tracking data lives only in MapShare KML feeds.
 
-External research (2026-05-03 via Perplexity) confirmed: production integrations (CalTopo, GSatTrack, NCAR's `inreach-nodeorm`, j-arens' `garmin-ipc`) DO receive tracking positions via IPC Outbound somehow — but none publicly document the exact mechanism, and the official IPC_Outbound.pdf v2.0.8 documents *no* tenant-level toggle for `messageCode: 0` enablement. The MapShare KML/JSON feed at `share.garmin.com/<key>` is a documented alternative tracking-data surface used by many integrations.
+External research (2026-05-03 via Perplexity) confirmed: production integrations (CalTopo, GSatTrack, NCAR's `inreach-nodeorm`, j-arens' `garmin-ipc`) DO receive tracking positions via IPC Outbound somehow — but none publicly document the exact mechanism, and the official `IPC_Outbound.pdf` v2.0.8 documents _no_ tenant-level toggle for `messageCode: 0` enablement. The MapShare KML/JSON feed at `share.garmin.com/<key>` is a documented alternative tracking-data surface used by many integrations.
 
 **Resolution (2026-05-03):** validated MapShare KML returns the full breadcrumb stream — see §13.7 for the verified 14-Placemark dump from the 2026-05-02 PCH session. **The spec now uses MapShare as the canonical tracking-data source** (Mode B). The Stop Track event from IPC remains the trigger; the breadcrumb data comes from the KML feed. See §5 / §6 for the (much simpler) implementation.
 
@@ -53,7 +54,7 @@ External research (2026-05-03 via Perplexity) confirmed: production integrations
 
 ## 0.1 Amendment — 2026-05-17 empirical update (mc=0 IS flowing)
 
-> **§0 has been partially refuted by new evidence.** On 2026-05-17, during the #175 close-gate (611 km Pinal County → Redlands drive over ~8h37m, 205 MapShare breadcrumbs), `wrangler tail` captured a single `messageCode: 0` (Position Report) event with `transportMode: "Satellite"`, arriving ~20 s before the `mc=12` Stop Track. §0 is retained as historical record — it explains *why* Mode B was chosen — but its specific empirical claims are corrected below. Investigation: #194.
+> **§0 has been partially refuted by new evidence.** On 2026-05-17, during the #175 close-gate (611 km Pinal County → Redlands drive over ~8h37m, 205 MapShare breadcrumbs), `wrangler tail` captured a single `messageCode: 0` (Position Report) event with `transportMode: "Satellite"`, arriving ~20 s before the `mc=12` Stop Track. §0 is retained as historical record — it explains _why_ Mode B was chosen — but its specific empirical claims are corrected below. Investigation: #194.
 
 **Captured event** (2026-05-17T23:23:28Z UTC):
 
@@ -62,14 +63,23 @@ External research (2026-05-03 via Perplexity) confirmed: production integrations
   "event": "ipc_received",
   "version": "4.0",
   "rawBody": {
-    "Events": [{
-      "transportMode": "Satellite",
-      "imei": "300052030374220",
-      "messageCode": 0,
-      "timeStamp": 1779060150000,
-      "point": {"latitude": 34.0456223487854, "longitude": -117.15710878372192, "altitude": 489.23477, "gpsFix": 2, "course": 337.5, "speed": 107.994},
-      "status": {"autonomous": 0, "lowBattery": 0, "intervalChange": 0, "resetDetected": 0}
-    }]
+    "Events": [
+      {
+        "transportMode": "Satellite",
+        "imei": "300052030374220",
+        "messageCode": 0,
+        "timeStamp": 1779060150000,
+        "point": {
+          "latitude": 34.0456223487854,
+          "longitude": -117.15710878372192,
+          "altitude": 489.23477,
+          "gpsFix": 2,
+          "course": 337.5,
+          "speed": 107.994
+        },
+        "status": { "autonomous": 0, "lowBattery": 0, "intervalChange": 0, "resetDetected": 0 }
+      }
+    ]
   }
 }
 ```
@@ -80,13 +90,13 @@ External research (2026-05-03 via Perplexity) confirmed: production integrations
 - **§0 hypothesis #2** (per-tenant configuration gate not exposed in the Portal Connect UI) — **neither refuted nor confirmed.** This remains the most plausible explanation for the 2026-05-03 → 2026-05-17 state change (a silent tenant flip, possibly in response to the Pro Support email even without a written reply) but cannot be verified without Garmin's cooperation.
 - **§0 hypothesis #3** (Position Reports simply aren't part of IPC Outbound for Mini 3 Plus + V4 under any configuration) — **refuted.** mc=0 IS part of IPC Outbound for this device + tenant.
 - **§4.3 first bullet** ("IPC Outbound mc 0 is empirically absent for our tenant") — **superseded.** Was true as of 2026-05-03; refuted 2026-05-17. Bullet softened in place to acknowledge the amendment.
-- **§5.1 Mode A bullet** ("Mode A — empirically not viable: mc 0 events don't reach our Worker") — **superseded.** Mode A is empirically *possible* on Satellite transport; remains *deferred* on independent grounds (below).
+- **§5.1 Mode A bullet** ("Mode A — empirically not viable: mc 0 events don't reach our Worker") — **superseded.** Mode A is empirically _possible_ on Satellite transport; remains _deferred_ on independent grounds (below).
 
 **What §0 still gets right:** the 2026-05-02 PCH session (§0 table, §13.1) produced 0 Position Reports — that snapshot is historically accurate and unedited. Whether mc=0 was always flowing and the May-3 capture windows just missed active sessions, or whether something changed between 2026-05-03 and 2026-05-17 (tenant flip, firmware update, account tier change), cannot be disambiguated from one event. Mode B is architecturally unaffected either way.
 
 **Worker behavior is unchanged.** `src/app.ts:217` continues to silent-drop mc=0 via the `non_free_text` log path — the correct behavior for Mode B. mc=0 carries no session-aggregate metadata that MapShare KML doesn't already provide better (no per-point GPS-fix flag, no units, no LineString, no operator/device metadata — see §4.2 and §13.7). Persisting mc=0 events live would require either (a) full Mode A re-architecture, or (b) a parallel breadcrumb buffer that duplicates MapShare; neither is justified by one data point.
 
-**Mode A viability — deferred.** mc=0 is empirically *possible* on Satellite transport (the §0 blocker is gone), but Mode B remains canonical for three independent reasons that hold regardless of mc=0 enablement:
+**Mode A viability — deferred.** mc=0 is empirically _possible_ on Satellite transport (the §0 blocker is gone), but Mode B remains canonical for three independent reasons that hold regardless of mc=0 enablement:
 
 1. **Architectural simplicity.** Pull-on-close (one HTTP fetch at session end) avoids the per-IMEI live-state problem that Mode A's `parsePings()`-equivalent ingestion implies.
 2. **Schema richness.** MapShare KML's named fields, explicit units, `Valid GPS Fix` flag, and pre-computed LineString are not derivable from IPC mc=0 alone (§4.3, §13.7).
@@ -138,10 +148,10 @@ Per §0's empirical finding, this spec is built around **two complementary data 
 
 These messageCodes are confirmed to flow over our existing webhook (`/garmin/ipc`) reliably:
 
-| Code | Name | Role in this spec |
-|---|---|---|
-| `10` | Start Track | Could trigger session-open work, but we don't *need* it (see §6) |
-| `11` | Track Interval | Power-saving / interval-change status; informational |
+| Code | Name           | Role in this spec                                                  |
+| ---- | -------------- | ------------------------------------------------------------------ |
+| `10` | Start Track    | Could trigger session-open work, but we don't _need_ it (see §6)   |
+| `11` | Track Interval | Power-saving / interval-change status; informational               |
 | `12` | **Stop Track** | **Trigger for the entire pipeline** — session ended, fetch KML now |
 
 Per-event envelope shape (V4): `{Version: "4.0", Events: [<event>]}` where each event has `imei`, `messageCode`, `timeStamp`, `point.{latitude, longitude, altitude, gpsFix, course, speed}`, `status.{lowBattery, intervalChange}`, and (V3+) `transportMode: "Internet" | "Satellite"`.
@@ -235,15 +245,15 @@ Stored shape (`TrackSessionRecord`):
 interface TrackSessionRecord {
   sessionId: string;
   imei: string;
-  startedAt: number;        // ms epoch (from KML first-Placemark timestamp)
-  closedAt: number;         // ms epoch (from mc 12 timeStamp)
-  closeReason: "stop";      // future: "timeout" if we add safety nets
+  startedAt: number; // ms epoch (from KML first-Placemark timestamp)
+  closedAt: number; // ms epoch (from mc 12 timeStamp)
+  closeReason: "stop"; // future: "timeout" if we add safety nets
   pingCount: number;
   distanceKm: number;
   elevationGainM: number;
   durationSeconds: number;
-  journalUrl: string | null;  // populated post-publish
-  rawKml: string;            // verbatim KML response, for v2 re-derivation
+  journalUrl: string | null; // populated post-publish
+  rawKml: string; // verbatim KML response, for v2 re-derivation
 }
 ```
 
@@ -253,14 +263,14 @@ interface TrackSessionRecord {
 
 The trigger-and-pull architecture eliminates most of the original Mode A complexity:
 
-| Edge case | How Mode B handles it |
-|---|---|
-| Missing Start Track | Irrelevant — we don't act on Start. KML feed reveals the actual session window. |
-| Missing Stop Track | Session is never published. Operator can manually trigger replay (future feature) or notice "no track posted" and investigate. Acceptable v1 behavior. |
-| Duplicate Stop Track | Idempotent at the existing `withCheckpoint` layer — second mc 12 finds an already-published session and short-circuits. |
-| Position Report after Stop | We don't ingest Position Reports — non-issue. |
-| Track Interval changes | Visible in `intervalChange` field of mc 11 events (logged for diagnostics) but not load-bearing for the narrative. |
-| Worker crash mid-publish | KV record survives; replay finds an unpublished session and retries. |
+| Edge case                  | How Mode B handles it                                                                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Missing Start Track        | Irrelevant — we don't act on Start. KML feed reveals the actual session window.                                                                        |
+| Missing Stop Track         | Session is never published. Operator can manually trigger replay (future feature) or notice "no track posted" and investigate. Acceptable v1 behavior. |
+| Duplicate Stop Track       | Idempotent at the existing `withCheckpoint` layer — second mc 12 finds an already-published session and short-circuits.                                |
+| Position Report after Stop | We don't ingest Position Reports — non-issue.                                                                                                          |
+| Track Interval changes     | Visible in `intervalChange` field of mc 11 events (logged for diagnostics) but not load-bearing for the narrative.                                     |
+| Worker crash mid-publish   | KV record survives; replay finds an unpublished session and retries.                                                                                   |
 
 ### 5.5 One post per session
 
@@ -399,7 +409,7 @@ Same shape as the original spec:
 ```yaml
 ---
 title: "..."
-date: 2026-05-02T16:24:30Z         # closedAt
+date: 2026-05-02T16:24:30Z # closedAt
 type: track
 track:
   started_at: 2026-05-02T15:51:30Z
@@ -416,7 +426,6 @@ location: { lat: 34.0265, lon: -118.7603, place: "<endPlace>" }
 weather: "..."
 tags: [trailscribe, track]
 ---
-
 <haiku>
 
 <body>
@@ -471,6 +480,7 @@ Per published track session:
 **Per session: ~$0.012**, well under the $0.05 PRD §6 ceiling.
 
 Storage:
+
 - KV: ~5-50 KB raw KML per session under `TS_TRACKS`. A year of daily sessions ≈ 18 MB. Comfortable.
 
 ## 9. Test strategy
@@ -500,7 +510,7 @@ Cuts 1 and 2 are independent (can parallelize). Cut 3 depends on both.
 - **MapShare privacy.** Operator should password-protect their MapShare to keep position history private. Worker fetches with the password baked into `MAPSHARE_KEY` env (or as a separate `MAPSHARE_PASSWORD` secret if Garmin requires basic auth on protected feeds). Verify the auth shape during Cut 1.
 - **`!brief` becomes session-aware?** The original Mode A "session-aware brief" idea is now trivial in Mode B — `!brief` could fetch the same KML with `d1=now-Xh` and produce a recent-activity summary. Out of scope for this spec but a clean follow-up.
 - **Persona styling — v1 or v2?** Single tone for v1. Persona-tagged variants are a v2 lever (~20% scope growth).
-- **Real-device close-gate.** Need at least one end-to-end test session producing a real published journal post before this can be marked shipped. The operator's 2026-05-02 PCH session is the fixture seed; the close-gate is a *fresh* tracking session with the implementation deployed.
+- **Real-device close-gate.** Need at least one end-to-end test session producing a real published journal post before this can be marked shipped. The operator's 2026-05-02 PCH session is the fixture seed; the close-gate is a _fresh_ tracking session with the implementation deployed.
 
 ## 12. Decision log (to be filled as we converge)
 
@@ -537,13 +547,13 @@ Same device. Session 16:29:58Z (Start Track) → 17:20:39Z (Stop Track), ~50 min
 - 1 × `messageCode: 12` Stop Track at 17:20:39Z
 - 0 × `messageCode: 0` Position Report
 
-The 14400s interval bump is *correct device behavior* per Garmin docs (CalTopo-quoted): *"The inReach device has a power-saving function that will change the Send Interval to 4 hours if the device has not traveled more than 100 meters."* So this session's 0 Position Reports is consistent with stationary behavior. **The 2026-05-02 session is the cleaner test** for the IPC-Position-Report question because real movement happened.
+The 14400s interval bump is _correct device behavior_ per Garmin docs (CalTopo-quoted): _"The inReach device has a power-saving function that will change the Send Interval to 4 hours if the device has not traveled more than 100 meters."_ So this session's 0 Position Reports is consistent with stationary behavior. **The 2026-05-02 session is the cleaner test** for the IPC-Position-Report question because real movement happened.
 
 ### 13.3 V4 envelope shape
 
 All POSTs in this period (5 captured) had identical top-level shape: `{Version: "4.0", Events: [<single event>]}`. No `Tracks[]`, `Positions[]`, or other sibling arrays. The advisor-suggested "V4 moved tracking to a separate top-level field" hypothesis is empirically refuted. V4's only addition over V2 (visible in our data) is a per-event `transportMode` field with values `"Internet"` (phone-paired, observed) or `"Satellite"` (Iridium, presumed but not observed in this period).
 
-### 13.4 Production integrations that *do* receive tracking via IPC
+### 13.4 Production integrations that _do_ receive tracking via IPC
 
 Per 2026-05-03 research:
 

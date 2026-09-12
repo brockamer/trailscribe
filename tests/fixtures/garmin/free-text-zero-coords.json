@@ -6,9 +6,7 @@
       "messageCode": 3,
       "freeText": "!ping",
       "timeStamp": 1739802018000,
-      "addresses": [
-        { "address": "trailscribe@resend.dev" }
-      ],
+      "addresses": [{ "address": "trailscribe@resend.dev" }],
       "point": {
         "latitude": 0,
         "longitude": 0,

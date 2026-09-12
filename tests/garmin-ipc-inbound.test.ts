@@ -69,12 +69,9 @@ describe("sendReply — happy path", () => {
       .mockResolvedValueOnce(jsonResponse(200, { count: 1 }))
       .mockResolvedValueOnce(jsonResponse(200, { count: 1 }));
 
-    const result = await sendReply(
-      "123456789012345",
-      ["page one (1/2)", "page two (2/2)"],
-      env,
-      { delay: noDelay },
-    );
+    const result = await sendReply("123456789012345", ["page one (1/2)", "page two (2/2)"], env, {
+      delay: noDelay,
+    });
 
     expect(result).toEqual({ count: 2 });
     expect(fetchSpy).toHaveBeenCalledTimes(2);
@@ -134,9 +131,7 @@ describe("sendReply — Garmin error responses", () => {
   });
 
   test("401 logs auth_fail_outbound and rethrows", async () => {
-    fetchSpy.mockResolvedValueOnce(
-      jsonResponse(401, { Code: 1, Description: "Unauthorized" }),
-    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse(401, { Code: 1, Description: "Unauthorized" }));
 
     await expect(
       sendReply("123456789012345", ["pong"], env, { delay: noDelay }),
@@ -174,9 +169,7 @@ describe("sendReply — retry semantics (5xx/429)", () => {
       status: 429,
       headers: { "content-type": "application/json", "retry-after": "1" },
     });
-    fetchSpy
-      .mockResolvedValueOnce(tooMany)
-      .mockResolvedValueOnce(jsonResponse(200, { count: 1 }));
+    fetchSpy.mockResolvedValueOnce(tooMany).mockResolvedValueOnce(jsonResponse(200, { count: 1 }));
 
     const result = await sendReply("123456789012345", ["pong"], env, { delay: noDelay });
     expect(result).toEqual({ count: 1 });
@@ -231,12 +224,9 @@ describe("sendReply — dry-run flag", () => {
   test("IPC_INBOUND_DRY_RUN=true: no fetch, returns count=pages, emits ipc_inbound_dry_run log", async () => {
     env = makeTestEnv({ IPC_INBOUND_DRY_RUN: "true" });
 
-    const result = await sendReply(
-      "123456789012345",
-      ["page one (1/2)", "page two (2/2)"],
-      env,
-      { delay: noDelay },
-    );
+    const result = await sendReply("123456789012345", ["page one (1/2)", "page two (2/2)"], env, {
+      delay: noDelay,
+    });
 
     expect(result).toEqual({ count: 2 });
     expect(fetchSpy).not.toHaveBeenCalled();

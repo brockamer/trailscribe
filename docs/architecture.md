@@ -54,30 +54,30 @@ design rationale and phased-evolution detail.
 
 ## Modules
 
-| Path | Role |
-|---|---|
-| `src/index.ts` | Worker entry; `export default { fetch }`; delegates to Hono app |
-| `src/app.ts` | Hono factory; routes, bearer verification, envelope parse, idempotency |
-| `src/env.ts` | Typed `Env` binding + zod `EnvSchema` + helpers (`imeiAllowSet`, `dailyTokenBudget`, …) |
-| `src/core/types.ts` | `ParsedCommand`, `GarminEvent`, `GarminEnvelope`, `CommandResult` |
-| `src/core/grammar.ts` | `parseCommand()` — α-MVP verb parser |
-| `src/core/idempotency.ts` | Composite-key derivation, SHA-256 helper, `IdempotencyRecord` |
-| `src/core/orchestrator.ts` | Dispatch by command type (Phase 1 wires real adapters) |
-| `src/core/narrative.ts` | Prompt + JSON-mode OpenAI call (Phase 1) |
-| `src/core/context.ts` | Per-IMEI rolling window in `TS_CONTEXT` (Phase 1) |
-| `src/core/ledger.ts` | Monthly rollup in `TS_LEDGER` using real OpenAI usage (Phase 1) |
-| `src/core/commands.ts` | Thin per-command handler registry (Phase 1) |
-| `src/core/links.ts` | Google Maps + MapShare link builders |
-| `src/adapters/inbound/…` | (reserved — single Hono route today; keep for multi-gateway future) |
-| `src/adapters/outbound/garmin-ipc-inbound.ts` | `sendReply(imei, msg, env)` — POST /Messaging/Message (Phase 1) |
-| `src/adapters/mail/resend.ts` | `sendEmail()` — Resend transactional API (Phase 1) |
-| `src/adapters/tasks/todoist.ts` | `addTask()` — Todoist REST (Phase 1) |
-| `src/adapters/publish/github-pages.ts` | `publishPost()` — GitHub Contents API commits (Phase 1) |
-| `src/adapters/location/geocode.ts` | `reverseGeocode()` — Nominatim, cached in `TS_CACHE` (Phase 1) |
-| `src/adapters/location/weather.ts` | `currentWeather()` — Open-Meteo, cached (Phase 1) |
-| `src/adapters/ai/openai.ts` | `generateNarrative()` — JSON-mode + real `usage` (Phase 1) |
-| `src/adapters/storage/kv.ts` | Typed KV helpers (`getJSON`, `putJSON`, `exists`) |
-| `src/adapters/logging/worker-logs.ts` | Structured JSON logger |
+| Path                                          | Role                                                                                    |
+| --------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `src/index.ts`                                | Worker entry; `export default { fetch }`; delegates to Hono app                         |
+| `src/app.ts`                                  | Hono factory; routes, bearer verification, envelope parse, idempotency                  |
+| `src/env.ts`                                  | Typed `Env` binding + zod `EnvSchema` + helpers (`imeiAllowSet`, `dailyTokenBudget`, …) |
+| `src/core/types.ts`                           | `ParsedCommand`, `GarminEvent`, `GarminEnvelope`, `CommandResult`                       |
+| `src/core/grammar.ts`                         | `parseCommand()` — α-MVP verb parser                                                    |
+| `src/core/idempotency.ts`                     | Composite-key derivation, SHA-256 helper, `IdempotencyRecord`                           |
+| `src/core/orchestrator.ts`                    | Dispatch by command type (Phase 1 wires real adapters)                                  |
+| `src/core/narrative.ts`                       | Prompt + JSON-mode OpenAI call (Phase 1)                                                |
+| `src/core/context.ts`                         | Per-IMEI rolling window in `TS_CONTEXT` (Phase 1)                                       |
+| `src/core/ledger.ts`                          | Monthly rollup in `TS_LEDGER` using real OpenAI usage (Phase 1)                         |
+| `src/core/commands.ts`                        | Thin per-command handler registry (Phase 1)                                             |
+| `src/core/links.ts`                           | Google Maps + MapShare link builders                                                    |
+| `src/adapters/inbound/…`                      | (reserved — single Hono route today; keep for multi-gateway future)                     |
+| `src/adapters/outbound/garmin-ipc-inbound.ts` | `sendReply(imei, msg, env)` — POST /Messaging/Message (Phase 1)                         |
+| `src/adapters/mail/resend.ts`                 | `sendEmail()` — Resend transactional API (Phase 1)                                      |
+| `src/adapters/tasks/todoist.ts`               | `addTask()` — Todoist REST (Phase 1)                                                    |
+| `src/adapters/publish/github-pages.ts`        | `publishPost()` — GitHub Contents API commits (Phase 1)                                 |
+| `src/adapters/location/geocode.ts`            | `reverseGeocode()` — Nominatim, cached in `TS_CACHE` (Phase 1)                          |
+| `src/adapters/location/weather.ts`            | `currentWeather()` — Open-Meteo, cached (Phase 1)                                       |
+| `src/adapters/ai/openai.ts`                   | `generateNarrative()` — JSON-mode + real `usage` (Phase 1)                              |
+| `src/adapters/storage/kv.ts`                  | Typed KV helpers (`getJSON`, `putJSON`, `exists`)                                       |
+| `src/adapters/logging/worker-logs.ts`         | Structured JSON logger                                                                  |
 
 ## Data contracts
 

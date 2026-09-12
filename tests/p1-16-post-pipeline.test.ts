@@ -45,7 +45,10 @@ function jsonResponse(obj: unknown, status = 200): Response {
   });
 }
 
-function envelope(freeText: string, opts: { ts?: number; gps?: { lat: number; lon: number } } = {}) {
+function envelope(
+  freeText: string,
+  opts: { ts?: number; gps?: { lat: number; lon: number } } = {},
+) {
   const point = opts.gps
     ? { latitude: opts.gps.lat, longitude: opts.gps.lon, altitude: 1000, gpsFix: 2 }
     : { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0 };
@@ -80,7 +83,10 @@ async function postIpc(body: unknown): Promise<Response> {
 
 /** Compose mock fetch handlers keyed by URL substring. Returns a vi.fn. */
 function makeFetchRouter(
-  routes: Array<{ match: (url: string, init?: RequestInit) => boolean; respond: () => Response | Promise<Response> }>,
+  routes: Array<{
+    match: (url: string, init?: RequestInit) => boolean;
+    respond: () => Response | Promise<Response>;
+  }>,
 ) {
   return vi.fn(async (url: URL | RequestInfo, init?: RequestInit) => {
     const u = typeof url === "string" ? url : url.toString();
@@ -120,7 +126,8 @@ beforeEach(() => {
     MAPSHARE_BASE: "https://share.garmin.com",
     GITHUB_JOURNAL_REPO: "brockamer/trailscribe-journal",
     GITHUB_JOURNAL_BRANCH: "main",
-    JOURNAL_URL_TEMPLATE: "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html",
+    JOURNAL_URL_TEMPLATE:
+      "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html",
     LLM_INPUT_COST_PER_1K: "0.20",
     LLM_OUTPUT_COST_PER_1K: "0.80",
   });
@@ -165,7 +172,11 @@ describe("P1-16 !post — happy path with GPS", () => {
     ]);
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
 
-    const res = await postIpc(envelope("!post Lake Sabrina basin glowing pink at sunset.", { gps: { lat: NATALIE_LAT, lon: NATALIE_LON } }));
+    const res = await postIpc(
+      envelope("!post Lake Sabrina basin glowing pink at sunset.", {
+        gps: { lat: NATALIE_LAT, lon: NATALIE_LON },
+      }),
+    );
     expect(res.status).toBe(200);
 
     expect(sendReplyMock).toHaveBeenCalledTimes(1);
@@ -421,7 +432,9 @@ describe("P1-16 !post — budget gate", () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
     const [, messages] = sendReplyMock.mock.calls[0];
-    expect(messages[0]).toBe("Daily AI budget reached. Retry tomorrow or raise DAILY_TOKEN_BUDGET.");
+    expect(messages[0]).toBe(
+      "Daily AI budget reached. Retry tomorrow or raise DAILY_TOKEN_BUDGET.",
+    );
   });
 });
 

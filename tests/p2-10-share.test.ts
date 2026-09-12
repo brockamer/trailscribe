@@ -145,7 +145,9 @@ describe("P2-10 !share — alias resolution", () => {
     expect(sentBody.subject).toBe("TrailScribe — note from the field");
     expect(sentBody.text).toContain("stopped at lake");
     expect(sentBody.text).toContain("Lake Sabrina");
-    expect(sentBody.text).toContain(`Maps: https://www.google.com/maps/search/?api=1&query=${LAT},${LON}`);
+    expect(sentBody.text).toContain(
+      `Maps: https://www.google.com/maps/search/?api=1&query=${LAT},${LON}`,
+    );
   });
 
   test("unknown alias: rejected before Resend call", async () => {

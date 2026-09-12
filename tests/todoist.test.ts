@@ -78,9 +78,7 @@ describe("addTask — happy path", () => {
 
 describe("addTask — error paths", () => {
   test("401 bad token surfaces TodoistError", async () => {
-    fetchSpy.mockResolvedValueOnce(
-      jsonResponse(401, { error: "AUTH_INVALID_TOKEN" }),
-    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse(401, { error: "AUTH_INVALID_TOKEN" }));
 
     let caught: unknown;
     try {
@@ -101,9 +99,9 @@ describe("addTask — error paths", () => {
 
   test("403 forbidden also surfaced (not retried)", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse(403, { error: "Forbidden" }));
-    await expect(
-      addTask({ task: "x", timestamp: 0, env, delay: noDelay }),
-    ).rejects.toBeInstanceOf(TodoistError);
+    await expect(addTask({ task: "x", timestamp: 0, env, delay: noDelay })).rejects.toBeInstanceOf(
+      TodoistError,
+    );
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 

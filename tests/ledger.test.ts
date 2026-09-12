@@ -145,8 +145,12 @@ describe("recordTransaction — KV semantics", () => {
       env,
     });
 
-    const dayKeyCall = dailyPutSpy.mock.calls.find((c) => /^ledger:\d{4}-\d{2}-\d{2}$/.test(String(c[0])));
-    const monthKeyCall = dailyPutSpy.mock.calls.find((c) => /^ledger:\d{4}-\d{2}$/.test(String(c[0])));
+    const dayKeyCall = dailyPutSpy.mock.calls.find((c) =>
+      /^ledger:\d{4}-\d{2}-\d{2}$/.test(String(c[0])),
+    );
+    const monthKeyCall = dailyPutSpy.mock.calls.find((c) =>
+      /^ledger:\d{4}-\d{2}$/.test(String(c[0])),
+    );
 
     expect(dayKeyCall).toBeDefined();
     expect(monthKeyCall).toBeDefined();

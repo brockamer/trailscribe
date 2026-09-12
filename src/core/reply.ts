@@ -35,9 +35,7 @@ export interface BuildReplyArgs {
  */
 export function buildReply({ body, costUsdMtd, env }: BuildReplyArgs): string[] {
   const tail =
-    appendCostSuffix(env) && typeof costUsdMtd === "number"
-      ? ` · $${costUsdMtd.toFixed(2)}`
-      : "";
+    appendCostSuffix(env) && typeof costUsdMtd === "number" ? ` · $${costUsdMtd.toFixed(2)}` : "";
 
   // Single-page case: body + tail fits within 160 with no marker overhead.
   if (body.length + tail.length <= SMS_MAX) {
@@ -79,8 +77,6 @@ export function buildReply({ body, costUsdMtd, env }: BuildReplyArgs): string[] 
 
 function assertWithinLimit(s: string): void {
   if (s.length > SMS_MAX) {
-    throw new Error(
-      `buildReply produced a ${s.length}-char page (limit ${SMS_MAX}). Caller bug.`,
-    );
+    throw new Error(`buildReply produced a ${s.length}-char page (limit ${SMS_MAX}). Caller bug.`);
   }
 }

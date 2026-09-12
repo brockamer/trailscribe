@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { generateNarrative, generateTrackNarrative, NarrativeError } from "../src/core/narrative.js";
+import {
+  generateNarrative,
+  generateTrackNarrative,
+  NarrativeError,
+} from "../src/core/narrative.js";
 import type { Env } from "../src/env.js";
 import { makeTestEnv } from "./helpers/env.js";
 
@@ -15,7 +19,10 @@ const originalFetch = globalThis.fetch;
 const NATALIE_NOTE =
   "Lake Sabrina basin glowing pink at sunset, alpenglow on the granite walls. Cold wind off the cirque.";
 
-function jsonResponse(content: object | string, opts: Partial<{ status: number; usage: object }> = {}) {
+function jsonResponse(
+  content: object | string,
+  opts: Partial<{ status: number; usage: object }> = {},
+) {
   const body = {
     id: "chatcmpl-test",
     choices: [
@@ -68,9 +75,7 @@ describe("generateNarrative — happy path", () => {
   });
 
   test("posts to LLM_BASE_URL/chat/completions with bearer auth", async () => {
-    fetchSpy.mockResolvedValueOnce(
-      jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
-    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
 
     await generateNarrative({ note: "x", env });
 
@@ -85,9 +90,7 @@ describe("generateNarrative — happy path", () => {
   });
 
   test("uses LLM_MODEL from env (default: anthropic/claude-sonnet-4-6)", async () => {
-    fetchSpy.mockResolvedValueOnce(
-      jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
-    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
 
     await generateNarrative({ note: "x", env });
 
@@ -97,9 +100,7 @@ describe("generateNarrative — happy path", () => {
   });
 
   test("requests json_schema structured output", async () => {
-    fetchSpy.mockResolvedValueOnce(
-      jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
-    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
 
     await generateNarrative({ note: "x", env });
 
@@ -114,9 +115,7 @@ describe("generateNarrative — happy path", () => {
 
 describe("generateNarrative — prompt composition", () => {
   test("with lat/lon/placeName/weather → prompt includes Location + Weather lines", async () => {
-    fetchSpy.mockResolvedValueOnce(
-      jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
-    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
 
     await generateNarrative({
       note: NATALIE_NOTE,
@@ -138,9 +137,7 @@ describe("generateNarrative — prompt composition", () => {
   });
 
   test("without GPS → prompt OMITS Location line entirely (no '(0, 0)' placeholder)", async () => {
-    fetchSpy.mockResolvedValueOnce(
-      jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
-    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
 
     await generateNarrative({ note: NATALIE_NOTE, env });
 
@@ -156,9 +153,7 @@ describe("generateNarrative — prompt composition", () => {
   });
 
   test("bare !post (no note, #124) → user prompt OMITS 'Note:' line; system prompt forbids invention", async () => {
-    fetchSpy.mockResolvedValueOnce(
-      jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
-    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
 
     await generateNarrative({
       lat: 37.1682,
@@ -184,9 +179,7 @@ describe("generateNarrative — prompt composition", () => {
   });
 
   test("whitespace-only note → treated as bare (no-note prompt path)", async () => {
-    fetchSpy.mockResolvedValueOnce(
-      jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
-    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
 
     await generateNarrative({ note: "   ", placeName: "X", lat: 1, lon: 2, env });
 
@@ -202,9 +195,7 @@ describe("generateNarrative — prompt composition", () => {
   });
 
   test("with-note path → system prompt is the original first-person variant", async () => {
-    fetchSpy.mockResolvedValueOnce(
-      jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
-    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
 
     await generateNarrative({ note: "feeling great", env });
 
@@ -219,9 +210,7 @@ describe("generateNarrative — prompt composition", () => {
   });
 
   test("placeName missing but lat/lon present → still omits Location (need all three)", async () => {
-    fetchSpy.mockResolvedValueOnce(
-      jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
-    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
 
     await generateNarrative({ note: "x", lat: 37, lon: -118, env });
 
@@ -279,9 +268,7 @@ describe("chatCompletion — retry behavior (via narrative)", () => {
   test("5xx then 200 → retries once, returns success", async () => {
     fetchSpy
       .mockResolvedValueOnce(new Response("internal error", { status: 503 }))
-      .mockResolvedValueOnce(
-        jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
-      );
+      .mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
 
     // Inject zero-delay so the test doesn't actually wait 1s.
     // Wire through the env's ai layer is not exposed; we rely on the global
@@ -294,9 +281,7 @@ describe("chatCompletion — retry behavior (via narrative)", () => {
   test("network error then 200 → retries", async () => {
     fetchSpy
       .mockRejectedValueOnce(new TypeError("fetch failed"))
-      .mockResolvedValueOnce(
-        jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
-      );
+      .mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
 
     const out = await generateNarrative({ note: "x", env });
     expect(out.title).toBe("T");
@@ -310,9 +295,7 @@ describe("LLM_PROVIDER_HEADERS_JSON — analytics passthrough", () => {
       "HTTP-Referer": "https://trailscribe.workers.dev",
       "X-Title": "TrailScribe",
     });
-    fetchSpy.mockResolvedValueOnce(
-      jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
-    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
 
     await generateNarrative({ note: "x", env });
 
@@ -324,9 +307,7 @@ describe("LLM_PROVIDER_HEADERS_JSON — analytics passthrough", () => {
 
   test("malformed JSON in env var is silently ignored (no throw)", async () => {
     env.LLM_PROVIDER_HEADERS_JSON = "{not valid json";
-    fetchSpy.mockResolvedValueOnce(
-      jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
-    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
 
     const out = await generateNarrative({ note: "x", env });
     expect(out.title).toBe("T");
@@ -335,9 +316,7 @@ describe("LLM_PROVIDER_HEADERS_JSON — analytics passthrough", () => {
 
 describe("generateTrackNarrative — imperial units in LLM input (#195)", () => {
   test("buildTrackPrompt sends mi/ft/mph; system prompt instructs US customary", async () => {
-    fetchSpy.mockResolvedValueOnce(
-      jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }),
-    );
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
 
     await generateTrackNarrative({
       metrics: {

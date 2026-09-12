@@ -91,7 +91,13 @@ function loggedEvents(): Array<Record<string, unknown>> {
   return lines.map((l) => JSON.parse(l) as Record<string, unknown>);
 }
 
-async function readIdemRecord(event: { imei: string; messageCode: number; timeStamp: number; freeText?: string; payload?: string }) {
+async function readIdemRecord(event: {
+  imei: string;
+  messageCode: number;
+  timeStamp: number;
+  freeText?: string;
+  payload?: string;
+}) {
   const k = await idempotencyKey(event);
   const raw = await env.TS_IDEMPOTENCY.get(`idem:${k}`);
   return raw === null ? null : (JSON.parse(raw) as IdempotencyRecord);

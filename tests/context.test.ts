@@ -34,30 +34,16 @@ describe("appendEvent + recentEvents — rolling window", () => {
 
   test("appending a 6th event drops the oldest; 5 retained", async () => {
     for (let i = 1; i <= 6; i += 1) {
-      await appendEvent(
-        "123456789012345",
-        evt({ timestamp: i, free_text: `evt-${i}` }),
-        env,
-      );
+      await appendEvent("123456789012345", evt({ timestamp: i, free_text: `evt-${i}` }), env);
     }
     const events = await recentEvents("123456789012345", env);
     expect(events).toHaveLength(5);
-    expect(events.map((e) => e.free_text)).toEqual([
-      "evt-6",
-      "evt-5",
-      "evt-4",
-      "evt-3",
-      "evt-2",
-    ]);
+    expect(events.map((e) => e.free_text)).toEqual(["evt-6", "evt-5", "evt-4", "evt-3", "evt-2"]);
   });
 
   test("lat/lon are optional — events without GPS round-trip cleanly", async () => {
     await appendEvent("123456789012345", evt({ timestamp: 10 }), env);
-    await appendEvent(
-      "123456789012345",
-      evt({ timestamp: 20, lat: 37.1682, lon: -118.5891 }),
-      env,
-    );
+    await appendEvent("123456789012345", evt({ timestamp: 20, lat: 37.1682, lon: -118.5891 }), env);
     const events = await recentEvents("123456789012345", env);
     expect(events[0].lat).toBeCloseTo(37.1682, 4);
     expect(events[1].lat).toBeUndefined();

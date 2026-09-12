@@ -106,7 +106,10 @@ export async function chatCompletion(args: ChatCompletionArgs): Promise<ChatComp
     lastErr = err;
   }
 
-  throw lastErr ?? new LLMError({ status: 0, message: "chatCompletion failed without a captured error" });
+  throw (
+    lastErr ??
+    new LLMError({ status: 0, message: "chatCompletion failed without a captured error" })
+  );
 }
 
 function buildHeaders(env: Env): Record<string, string> {

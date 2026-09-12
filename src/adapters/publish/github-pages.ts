@@ -244,7 +244,9 @@ async function putContents(
     lastErr = err;
   }
 
-  throw lastErr ?? new PublishError({ status: 0, message: "publish failed without a captured error" });
+  throw (
+    lastErr ?? new PublishError({ status: 0, message: "publish failed without a captured error" })
+  );
 }
 
 function githubHeaders(env: Env): Record<string, string> {
@@ -287,7 +289,10 @@ function renderMarkdown(a: RenderArgs): string {
   return lines.join("\n");
 }
 
-function renderUrl(template: string, parts: { yyyy: string; mm: string; dd: string; slug: string }): string {
+function renderUrl(
+  template: string,
+  parts: { yyyy: string; mm: string; dd: string; slug: string },
+): string {
   return template
     .replaceAll("{yyyy}", parts.yyyy)
     .replaceAll("{mm}", parts.mm)

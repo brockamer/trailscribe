@@ -40,21 +40,19 @@ const trackIntervalKey = (imei: string): string => `track_interval:${imei}`;
  * (e.g. battery died mid-session, never sent mc 12) don't bleed into the
  * next session.
  */
-export async function recordSessionStart(
-  env: Env,
-  imei: string,
-  startedAt: number,
-): Promise<void> {
-  await putJSON(env.TS_TRACKS, trackStartKey(imei), { startedAt }, {
-    expirationTtl: TRACK_START_TTL_SECONDS,
-  });
+export async function recordSessionStart(env: Env, imei: string, startedAt: number): Promise<void> {
+  await putJSON(
+    env.TS_TRACKS,
+    trackStartKey(imei),
+    { startedAt },
+    {
+      expirationTtl: TRACK_START_TTL_SECONDS,
+    },
+  );
 }
 
 /** Read the current open-session start timestamp for an IMEI, or null. */
-export async function readSessionStart(
-  env: Env,
-  imei: string,
-): Promise<TrackStartRecord | null> {
+export async function readSessionStart(env: Env, imei: string): Promise<TrackStartRecord | null> {
   return getJSON<TrackStartRecord>(env.TS_TRACKS, trackStartKey(imei));
 }
 
@@ -122,10 +120,7 @@ export interface TrackSessionRecord {
 }
 
 /** Persist a closed track session to TS_TRACKS KV. */
-export async function storeTrackRecord(
-  env: Env,
-  record: TrackSessionRecord,
-): Promise<void> {
+export async function storeTrackRecord(env: Env, record: TrackSessionRecord): Promise<void> {
   const key = `track:${record.imei}:${record.sessionId}`;
   await putJSON(env.TS_TRACKS, key, record, {
     expirationTtl: TRACK_RECORD_TTL_SECONDS,
@@ -175,10 +170,12 @@ export async function handleStopTrack(
       });
       await sendReply(
         event.imei,
-        [withIntervalHint(
-          "Track ended; no active session was recorded — nothing to publish.",
-          intervalRecord,
-        )],
+        [
+          withIntervalHint(
+            "Track ended; no active session was recorded — nothing to publish.",
+            intervalRecord,
+          ),
+        ],
         env,
       );
       return { skipped: "no_active_session" };
@@ -234,10 +231,12 @@ export async function handleStopTrack(
       log({ event: "track_no_pings", level: "warn", imei: event.imei, idemKey });
       await sendReply(
         event.imei,
-        [withIntervalHint(
-          "Track ended; no breadcrumbs in MapShare for this window.",
-          intervalRecord,
-        )],
+        [
+          withIntervalHint(
+            "Track ended; no breadcrumbs in MapShare for this window.",
+            intervalRecord,
+          ),
+        ],
         env,
       );
       return { skipped: "no_pings" };
@@ -265,10 +264,12 @@ export async function handleStopTrack(
       });
       await sendReply(
         event.imei,
-        [withIntervalHint(
-          "Track too brief — 1 breadcrumb. Try longer or move sooner after Start.",
-          intervalRecord,
-        )],
+        [
+          withIntervalHint(
+            "Track too brief — 1 breadcrumb. Try longer or move sooner after Start.",
+            intervalRecord,
+          ),
+        ],
         env,
       );
       return { skipped: "too_brief" };
@@ -290,13 +291,31 @@ export async function handleStopTrack(
     const weather = weatherSettled.status === "fulfilled" ? weatherSettled.value : undefined;
 
     if (startSettled.status === "rejected") {
-      log({ event: "track_enrichment_failed", level: "warn", kind: "geocode_start", imei: event.imei, error: String(startSettled.reason) });
+      log({
+        event: "track_enrichment_failed",
+        level: "warn",
+        kind: "geocode_start",
+        imei: event.imei,
+        error: String(startSettled.reason),
+      });
     }
     if (endSettled.status === "rejected") {
-      log({ event: "track_enrichment_failed", level: "warn", kind: "geocode_end", imei: event.imei, error: String(endSettled.reason) });
+      log({
+        event: "track_enrichment_failed",
+        level: "warn",
+        kind: "geocode_end",
+        imei: event.imei,
+        error: String(endSettled.reason),
+      });
     }
     if (weatherSettled.status === "rejected") {
-      log({ event: "track_enrichment_failed", level: "warn", kind: "weather", imei: event.imei, error: String(weatherSettled.reason) });
+      log({
+        event: "track_enrichment_failed",
+        level: "warn",
+        kind: "weather",
+        imei: event.imei,
+        error: String(weatherSettled.reason),
+      });
     }
 
     const narrative = await withCheckpoint(env, idemKey, "track_narrative", () =>
@@ -397,10 +416,7 @@ export async function handleStopTrack(
  * "(interval: unknown)" noise). Paren-tag stays under ~14 chars so all three
  * existing refusal messages remain comfortably under Garmin's 160-char limit.
  */
-function withIntervalHint(
-  base: string,
-  interval: TrackIntervalRecord | null,
-): string {
+function withIntervalHint(base: string, interval: TrackIntervalRecord | null): string {
   if (!interval) return base;
   return `${base} (interval: ${formatInterval(interval.intervalSec)})`;
 }
@@ -431,9 +447,6 @@ function formatTrackReply(metrics: TrackMetrics, url: string): string {
   const mi = kmToMi(metrics.distanceKm).toFixed(1);
   const gainFt = Math.round(mToFt(metrics.elevation.gainM));
   const minutes = Math.round(metrics.durationSeconds / 60);
-  const duration =
-    minutes >= 60
-      ? `${Math.floor(minutes / 60)}h${minutes % 60}m`
-      : `${minutes}min`;
+  const duration = minutes >= 60 ? `${Math.floor(minutes / 60)}h${minutes % 60}m` : `${minutes}min`;
   return `Track posted: ${mi}mi, ${gainFt}ft gain, ${duration}\n${url}`;
 }

@@ -52,9 +52,7 @@ describe("generateImage — happy path", () => {
     expect(result.costUsd).toBeCloseTo(0.003, 4);
 
     const [predUrl, predInit] = fetchImpl.mock.calls[0];
-    expect(predUrl).toBe(
-      `https://api.replicate.com/v1/models/${env.IMAGE_MODEL}/predictions`,
-    );
+    expect(predUrl).toBe(`https://api.replicate.com/v1/models/${env.IMAGE_MODEL}/predictions`);
     const headers = (predInit as RequestInit).headers as Record<string, string>;
     expect(headers.Authorization).toBe(`Bearer ${env.IMAGE_API_KEY}`);
     expect(headers.Prefer).toBe("wait");
@@ -100,9 +98,7 @@ describe("generateImage — happy path", () => {
 
 describe("generateImage — failure paths", () => {
   test("Replicate 4xx surfaces as ImageGenError with provider response", async () => {
-    fetchImpl.mockResolvedValueOnce(
-      new Response("invalid model version", { status: 422 }),
-    );
+    fetchImpl.mockResolvedValueOnce(new Response("invalid model version", { status: 422 }));
     await expect(generateImage({ prompt: "x", env, fetchImpl })).rejects.toMatchObject({
       name: "ImageGenError",
       status: 422,
@@ -117,9 +113,7 @@ describe("generateImage — failure paths", () => {
         error: "model crashed",
       }),
     );
-    await expect(generateImage({ prompt: "x", env, fetchImpl })).rejects.toThrow(
-      /did not succeed/,
-    );
+    await expect(generateImage({ prompt: "x", env, fetchImpl })).rejects.toThrow(/did not succeed/);
   });
 
   test("prediction succeeded but empty output → ImageGenError", async () => {

@@ -22,6 +22,7 @@
 ## File Structure
 
 **Create:**
+
 - `src/adapters/location/mapshare.ts` — KML feed fetcher + regex-based ping parser. Exposes `fetchMapShareKml`, `parsePings`, `KmlPing` interface, `MapShareError` class.
 - `src/core/track-metrics.ts` — pure functions over `KmlPing[]`. Exposes `haversineKm`, `totalDistanceKm`, `elevationProfile`, `paceStats`, `routeShape`, `activityHint`, `computeMetrics`.
 - `src/core/tracking.ts` — orchestrator. Exposes `handleStopTrack` (called from webhook), `storeTrackRecord` (KV writer), `TrackSessionRecord` interface.
@@ -31,6 +32,7 @@
 - `tests/tracking.test.ts` — integration tests for `handleStopTrack` end-to-end (mocked LLM + GitHub).
 
 **Modify:**
+
 - `wrangler.toml` — add `TS_TRACKS` KV namespace per env (3 places); add `TRACK_LOOKBACK_HOURS`, `TRACK_NARRATIVE_BODY_MAX` vars per env. Secret `MAPSHARE_KEY` provisioned via `wrangler secret put`.
 - `src/env.ts` — add `TS_TRACKS: KVNamespace`, `MAPSHARE_KEY: string`, `TRACK_LOOKBACK_HOURS: string`, `TRACK_NARRATIVE_BODY_MAX: string` to `Env` + zod schema.
 - `src/core/idempotency.ts` — add `"publish_track"` to `OpName` union.
@@ -47,11 +49,13 @@
 ### Task 1.0: Provision the `TS_TRACKS` KV namespace
 
 **Files:**
+
 - Modify: `wrangler.toml`
 
 - [ ] **Step 1: Create the KV namespaces in Cloudflare**
 
 Run, one at a time:
+
 ```
 unset GH_TOKEN
 pnpm wrangler kv namespace create TS_TRACKS
@@ -59,6 +63,7 @@ pnpm wrangler kv namespace create TS_TRACKS --preview
 pnpm wrangler kv namespace create TS_TRACKS --env staging
 pnpm wrangler kv namespace create TS_TRACKS --env production
 ```
+
 Each prints an `id = "..."` line. **Copy each ID** — Step 2 wires them into the toml.
 
 - [ ] **Step 2: Add the binding to wrangler.toml in 3 env blocks**
@@ -96,6 +101,7 @@ Expected: line showing `- TS_TRACKS: "<id>"` and no errors. Don't actually deplo
 - [ ] **Step 4: Commit**
 
 Use `git add wrangler.toml` then commit with message:
+
 ```
 chore(env): provision TS_TRACKS KV namespace per env
 
@@ -111,6 +117,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 1.1: Add new env vars to schema and test helper
 
 **Files:**
+
 - Modify: `src/env.ts`
 - Modify: `tests/helpers/env.ts`
 - Modify: `wrangler.toml`
@@ -132,17 +139,17 @@ Repeat in `[env.staging.vars]` (~line 92) and `[env.production.vars]` (~line 145
 Edit `src/env.ts`. In the `Env` interface, find the `MAPSHARE_BASE` line (~line 19) and add the new fields after it:
 
 ```ts
-  MAPSHARE_BASE: string;
-  TRACK_LOOKBACK_HOURS: string;
-  TRACK_NARRATIVE_BODY_MAX: string;
+MAPSHARE_BASE: string;
+TRACK_LOOKBACK_HOURS: string;
+TRACK_NARRATIVE_BODY_MAX: string;
 ```
 
 In the secrets section (after `IMAGE_API_KEY` ~line 52), add:
 
 ```ts
-  IMAGE_API_KEY: string;
-  MAPSHARE_KEY: string;
-  TS_TRACKS: KVNamespace;
+IMAGE_API_KEY: string;
+MAPSHARE_KEY: string;
+TS_TRACKS: KVNamespace;
 ```
 
 - [ ] **Step 3: Add fields to the zod schema**
@@ -206,6 +213,7 @@ Expected: all tests pass.
 - [ ] **Step 6: Set the `MAPSHARE_KEY` secret in production + staging**
 
 Run:
+
 ```
 unset GH_TOKEN
 echo -n "trailscribe" | pnpm wrangler secret put MAPSHARE_KEY --env production
@@ -217,6 +225,7 @@ Per project memory feedback_secret_pasting.md: always pipe via `echo -n` to stri
 - [ ] **Step 7: Commit**
 
 Stage `wrangler.toml`, `src/env.ts`, `tests/helpers/env.ts`. Commit message:
+
 ```
 chore(env): add MAPSHARE_KEY + TRACK_* vars for tracking session artifacts
 
@@ -236,6 +245,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 1.2: Capture the real KML fixture
 
 **Files:**
+
 - Create: `tests/fixtures/mapshare/pch-2026-05-02.kml`
 
 - [ ] **Step 1: Create the fixture directory**
@@ -245,6 +255,7 @@ Run: `mkdir -p tests/fixtures/mapshare`
 - [ ] **Step 2: Fetch the canonical fixture from MapShare**
 
 Run:
+
 ```
 curl -sS "https://share.garmin.com/Feed/Share/trailscribe?d1=2026-05-02T15:00Z&d2=2026-05-02T17:00Z" \
   -o tests/fixtures/mapshare/pch-2026-05-02.kml
@@ -261,6 +272,7 @@ Expected: ~37000 bytes (33-40 KB range).
 - [ ] **Step 4: Commit**
 
 Stage the fixture file. Commit message:
+
 ```
 test: add real MapShare KML fixture from 2026-05-02 PCH session
 
@@ -277,6 +289,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 1.3: Define `KmlPing` type + `MapShareError` class
 
 **Files:**
+
 - Create: `src/adapters/location/mapshare.ts`
 
 - [ ] **Step 1: Create the file with the type and error class only**
@@ -326,6 +339,7 @@ Expected: clean exit.
 - [ ] **Step 3: Commit**
 
 Stage `src/adapters/location/mapshare.ts`. Commit message:
+
 ```
 feat(mapshare): KmlPing interface + MapShareError class
 
@@ -340,6 +354,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 1.4: Write `parsePings` — failing tests first
 
 **Files:**
+
 - Create: `tests/mapshare.test.ts`
 
 - [ ] **Step 1: Write the failing tests**
@@ -476,9 +491,7 @@ export function parsePings(kml: string): KmlPing[] {
 }
 
 function readStringField(block: string, name: string): string | null {
-  const re = new RegExp(
-    `<Data name="${name}">\\s*<value>([\\s\\S]*?)<\\/value>\\s*<\\/Data>`,
-  );
+  const re = new RegExp(`<Data name="${name}">\\s*<value>([\\s\\S]*?)<\\/value>\\s*<\\/Data>`);
   const m = re.exec(block);
   return m ? m[1].trim() : null;
 }
@@ -501,6 +514,7 @@ Expected: 7 passed.
 - [ ] **Step 5: Commit**
 
 Stage `src/adapters/location/mapshare.ts` and `tests/mapshare.test.ts`. Commit message:
+
 ```
 feat(mapshare): parsePings — regex-based KML breadcrumb parser
 
@@ -518,6 +532,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 1.5: Write `fetchMapShareKml` — failing tests first
 
 **Files:**
+
 - Modify: `tests/mapshare.test.ts`
 - Modify: `src/adapters/location/mapshare.ts`
 
@@ -537,10 +552,14 @@ describe("fetchMapShareKml", () => {
 
   test("composes the URL from MAPSHARE_BASE + MAPSHARE_KEY + ISO timestamps", async () => {
     const env = makeTestEnv();
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response("<kml/>", { status: 200 }),
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("<kml/>", { status: 200 }));
+    await fetchMapShareKml(
+      env,
+      Date.parse("2026-05-02T15:00:00Z"),
+      Date.parse("2026-05-02T17:00:00Z"),
     );
-    await fetchMapShareKml(env, Date.parse("2026-05-02T15:00:00Z"), Date.parse("2026-05-02T17:00:00Z"));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const calledUrl = fetchMock.mock.calls[0][0] as string;
     expect(calledUrl).toBe(
@@ -551,26 +570,20 @@ describe("fetchMapShareKml", () => {
   test("returns the response body on 200", async () => {
     const env = makeTestEnv();
     const expectedBody = "<kml>payload</kml>";
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(expectedBody, { status: 200 }),
-    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(expectedBody, { status: 200 }));
     const body = await fetchMapShareKml(env, 0, 1);
     expect(body).toBe(expectedBody);
   });
 
   test("throws MapShareError on non-200 status", async () => {
     const env = makeTestEnv();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response("not found", { status: 404 }),
-    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("not found", { status: 404 }));
     await expect(fetchMapShareKml(env, 0, 1)).rejects.toBeInstanceOf(MapShareError);
   });
 
   test("MapShareError exposes status code", async () => {
     const env = makeTestEnv();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response("server error", { status: 503 }),
-    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("server error", { status: 503 }));
     try {
       await fetchMapShareKml(env, 0, 1);
       expect.fail("should have thrown");
@@ -643,6 +656,7 @@ Expected: all tests pass.
 - [ ] **Step 6: Commit**
 
 Stage `src/adapters/location/mapshare.ts` and `tests/mapshare.test.ts`. Commit message:
+
 ```
 feat(mapshare): fetchMapShareKml — KML feed fetcher
 
@@ -661,6 +675,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 2.1: `haversineKm` — distance between two points
 
 **Files:**
+
 - Create: `src/core/track-metrics.ts`
 - Create: `tests/track-metrics.test.ts`
 
@@ -684,7 +699,7 @@ describe("haversineKm", () => {
   });
 
   test("known PCH-fixture leg: ping 1 to ping 2 ~ 0.16 km", () => {
-    const km = haversineKm(34.026825, -118.760255, 34.026440, -118.761820);
+    const km = haversineKm(34.026825, -118.760255, 34.02644, -118.76182);
     expect(km).toBeGreaterThan(0.13);
     expect(km).toBeLessThan(0.18);
   });
@@ -710,12 +725,7 @@ const EARTH_RADIUS_KM = 6371;
  * Haversine formula. Sufficient accuracy for trail-distance work — within
  * ~0.5% of geodesic methods over the < 1000 km ranges we care about.
  */
-export function haversineKm(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
-): number {
+export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
@@ -735,6 +745,7 @@ Expected: 3 passed.
 - [ ] **Step 5: Commit**
 
 Stage both files. Commit message:
+
 ```
 feat(track-metrics): haversineKm — pure distance helper
 
@@ -749,6 +760,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 2.2: `totalDistanceKm` — sum of consecutive ping distances
 
 **Files:**
+
 - Modify: `src/core/track-metrics.ts`
 - Modify: `tests/track-metrics.test.ts`
 
@@ -815,6 +827,7 @@ Expected: 6 passed.
 - [ ] **Step 5: Commit**
 
 Stage both files. Commit message:
+
 ```
 feat(track-metrics): totalDistanceKm
 
@@ -829,6 +842,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 2.3: `elevationProfile` — gain/loss/min/max with smoothing
 
 **Files:**
+
 - Modify: `src/core/track-metrics.ts`
 - Modify: `tests/track-metrics.test.ts`
 
@@ -909,7 +923,10 @@ export interface ElevationProfile {
  */
 export function elevationProfile(pings: KmlPing[]): ElevationProfile {
   if (pings.length === 0) return { gainM: 0, lossM: 0, minM: 0, maxM: 0 };
-  const smoothed = medianSmooth(pings.map((p) => p.alt), 5);
+  const smoothed = medianSmooth(
+    pings.map((p) => p.alt),
+    5,
+  );
 
   let gainM = 0;
   let lossM = 0;
@@ -944,6 +961,7 @@ Expected: 10 passed.
 - [ ] **Step 5: Commit**
 
 Commit message:
+
 ```
 feat(track-metrics): elevationProfile with 5-point median smoothing
 
@@ -959,6 +977,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 2.4: `paceStats` — speed quantiles
 
 **Files:**
+
 - Modify: `src/core/track-metrics.ts`
 - Modify: `tests/track-metrics.test.ts`
 
@@ -1042,6 +1061,7 @@ Expected: 13 passed.
 - [ ] **Step 5: Commit**
 
 Commit message:
+
 ```
 feat(track-metrics): paceStats — avg, p50, p95 speed quantiles
 
@@ -1053,6 +1073,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 2.5: `routeShape` — out-and-back / loop / point-to-point
 
 **Files:**
+
 - Modify: `src/core/track-metrics.ts`
 - Modify: `tests/track-metrics.test.ts`
 
@@ -1143,6 +1164,7 @@ Expected: 17 passed.
 - [ ] **Step 5: Commit**
 
 Commit message:
+
 ```
 feat(track-metrics): routeShape classifier
 
@@ -1158,6 +1180,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 2.6: `activityHint` — speed-distribution classifier
 
 **Files:**
+
 - Modify: `src/core/track-metrics.ts`
 - Modify: `tests/track-metrics.test.ts`
 
@@ -1241,7 +1264,11 @@ export function activityHint(pings: KmlPing[]): ActivityHint {
   if (moving.length === 0) return "mixed";
 
   const counts: Record<Exclude<ActivityHint, "mixed">, number> = {
-    walk: 0, hike: 0, run: 0, bike: 0, drive: 0,
+    walk: 0,
+    hike: 0,
+    run: 0,
+    bike: 0,
+    drive: 0,
   };
   for (const p of moving) {
     if (p.velocityKmh < 5) counts.walk++;
@@ -1251,8 +1278,9 @@ export function activityHint(pings: KmlPing[]): ActivityHint {
     else counts.drive++;
   }
 
-  const sorted = (Object.entries(counts) as Array<[Exclude<ActivityHint, "mixed">, number]>)
-    .sort(([, a], [, b]) => b - a);
+  const sorted = (Object.entries(counts) as Array<[Exclude<ActivityHint, "mixed">, number]>).sort(
+    ([, a], [, b]) => b - a,
+  );
   const [topName, topCount] = sorted[0];
   if (topCount / moving.length >= 0.4) return topName;
   return "mixed";
@@ -1267,6 +1295,7 @@ Expected: 23 passed.
 - [ ] **Step 5: Commit**
 
 Commit message:
+
 ```
 feat(track-metrics): activityHint speed-band classifier
 
@@ -1278,6 +1307,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 2.7: `computeMetrics` — aggregate everything for the LLM input
 
 **Files:**
+
 - Modify: `src/core/track-metrics.ts`
 - Modify: `tests/track-metrics.test.ts`
 
@@ -1379,6 +1409,7 @@ Expected: all suites pass.
 - [ ] **Step 5: Commit**
 
 Commit message:
+
 ```
 feat(track-metrics): computeMetrics aggregator
 
@@ -1395,6 +1426,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 3.1: `TrackSessionRecord` + `storeTrackRecord` KV writer
 
 **Files:**
+
 - Create: `src/core/tracking.ts`
 - Create: `tests/tracking.test.ts`
 
@@ -1474,6 +1506,7 @@ Expected: 1 passed.
 - [ ] **Step 5: Commit**
 
 Commit message:
+
 ```
 feat(tracking): TrackSessionRecord + storeTrackRecord KV writer
 
@@ -1488,6 +1521,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 3.2: `"publish_track"` op name
 
 **Files:**
+
 - Modify: `src/core/idempotency.ts`
 
 - [ ] **Step 1: Add the op name**
@@ -1524,6 +1558,7 @@ Expected: all tests pass.
 - [ ] **Step 3: Commit**
 
 Commit message:
+
 ```
 feat(idempotency): register publish_track op name
 
@@ -1539,6 +1574,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 3.3: `generateTrackNarrative` — LLM extension
 
 **Files:**
+
 - Modify: `src/core/narrative.ts`
 - Modify: `tests/tracking.test.ts`
 
@@ -1561,14 +1597,19 @@ describe("generateTrackNarrative", () => {
     const env = makeTestEnv();
     vi.mocked(chatCompletion).mockResolvedValue({
       id: "x",
-      choices: [{
-        message: { role: "assistant", content: JSON.stringify({
-          title: "PCH and back",
-          haiku: "Sand under wet shoes\nWaves take the line we ran past\nBack uphill, sun high",
-          body: "A short out-and-back along PCH and the beach.",
-        }) },
-        finish_reason: "stop",
-      }],
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: JSON.stringify({
+              title: "PCH and back",
+              haiku: "Sand under wet shoes\nWaves take the line we ran past\nBack uphill, sun high",
+              body: "A short out-and-back along PCH and the beach.",
+            }),
+          },
+          finish_reason: "stop",
+        },
+      ],
       usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
     });
 
@@ -1654,9 +1695,7 @@ const SYSTEM_PROMPT_TRACK = [
   '- "body": <=1200 characters. Describe the route, place, conditions, and pace. Use long stops as paragraph breaks. Do not invent companions, motivations, or destinations not present in the metrics or place names.',
 ].join("\n");
 
-export async function generateTrackNarrative(
-  input: TrackNarrativeInput,
-): Promise<NarrativeOutput> {
+export async function generateTrackNarrative(input: TrackNarrativeInput): Promise<NarrativeOutput> {
   const userPrompt = buildTrackPrompt(input);
   const model = input.env.LLM_MODEL || "anthropic/claude-sonnet-4-6";
 
@@ -1686,7 +1725,9 @@ export async function generateTrackNarrative(
   }
   const validated = TrackContentSchema.safeParse(parsed);
   if (!validated.success) {
-    const issues = validated.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+    const issues = validated.error.issues
+      .map((i) => `${i.path.join(".")}: ${i.message}`)
+      .join("; ");
     throw new NarrativeError(`Track narrative failed schema: ${issues}`);
   }
   return {
@@ -1708,7 +1749,9 @@ function buildTrackPrompt(input: TrackNarrativeInput): string {
   lines.push(`- Duration: ${(m.durationSeconds / 60).toFixed(0)} minutes`);
   lines.push(`- Elevation gain: ${m.elevation.gainM.toFixed(0)} m`);
   lines.push(`- Activity: ${m.activityHint}, route shape: ${m.routeShape}`);
-  lines.push(`- Average speed: ${m.pace.avgKmh.toFixed(1)} km/h, p95: ${m.pace.p95Kmh.toFixed(1)} km/h`);
+  lines.push(
+    `- Average speed: ${m.pace.avgKmh.toFixed(1)} km/h, p95: ${m.pace.p95Kmh.toFixed(1)} km/h`,
+  );
   if (input.startPlace) lines.push(`Start: ${input.startPlace}`);
   if (input.endPlace) lines.push(`End: ${input.endPlace}`);
   if (input.midpointPlace) lines.push(`Midpoint: ${input.midpointPlace}`);
@@ -1728,6 +1771,7 @@ Expected: clean exit.
 - [ ] **Step 5: Commit**
 
 Commit message:
+
 ```
 feat(narrative): generateTrackNarrative — LLM track-mode
 
@@ -1743,6 +1787,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 3.4: `publishTrackPost` — frontmatter + GitHub commit
 
 **Files:**
+
 - Modify: `src/adapters/publish/github-pages.ts`
 - Modify: `tests/tracking.test.ts`
 
@@ -1756,12 +1801,18 @@ import { publishTrackPost } from "../src/adapters/publish/github-pages.js";
 describe("publishTrackPost", () => {
   test("commits markdown with type:track frontmatter via existing publishPost path", async () => {
     const env = makeTestEnv();
-    const fetchMock = vi.spyOn(globalThis, "fetch")
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response("not found", { status: 404 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        content: { sha: "abc", path: "_posts/2026-05-02-pch.md", html_url: "x" },
-        commit: { sha: "deadbeef" },
-      }), { status: 200 }));
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            content: { sha: "abc", path: "_posts/2026-05-02-pch.md", html_url: "x" },
+            commit: { sha: "deadbeef" },
+          }),
+          { status: 200 },
+        ),
+      );
 
     const result = await publishTrackPost({
       title: "PCH and back",
@@ -1841,12 +1892,21 @@ export async function publishTrackPost(args: PublishTrackPostArgs): Promise<Publ
 
   const baseSlug = slugify(title, now);
   const { path, slug: finalSlug } = await findFreePath(env, env.JOURNAL_POST_PATH_TEMPLATE, {
-    yyyy, mm, dd, baseSlug,
+    yyyy,
+    mm,
+    dd,
+    baseSlug,
   });
 
   const markdown = renderTrackMarkdown({
-    title, haiku, body,
-    metrics, endLat, endLon, endPlace, weather,
+    title,
+    haiku,
+    body,
+    metrics,
+    endLat,
+    endLon,
+    endPlace,
+    weather,
   });
 
   const putResp = await putContents(env, path, markdown, title, delay);
@@ -1901,6 +1961,7 @@ Expected: clean exit.
 - [ ] **Step 5: Commit**
 
 Commit message:
+
 ```
 feat(publish): publishTrackPost — track-shaped journal markdown
 
@@ -1917,6 +1978,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 3.5: `handleStopTrack` orchestrator
 
 **Files:**
+
 - Modify: `src/core/tracking.ts`
 - Modify: `tests/tracking.test.ts`
 
@@ -1999,10 +2061,15 @@ describe("handleStopTrack — end to end", () => {
     expect(replyArgs[1][0]).toContain("trailscribe-journal");
 
     const sessionId = await sessionIdFor("300052030374220", stopEvent.timeStamp);
-    const stored = await env.TS_TRACKS.get(`track:300052030374220:${sessionId}`, "json") as TrackSessionRecord;
+    const stored = (await env.TS_TRACKS.get(
+      `track:300052030374220:${sessionId}`,
+      "json",
+    )) as TrackSessionRecord;
     expect(stored).not.toBeNull();
     expect(stored.pingCount).toBe(14);
-    expect(stored.journalUrl).toBe("https://brockamer.github.io/trailscribe-journal/2026/05/02/pch.html");
+    expect(stored.journalUrl).toBe(
+      "https://brockamer.github.io/trailscribe-journal/2026/05/02/pch.html",
+    );
   });
 
   test("empty KML: logs warning, sends 'no breadcrumbs' reply, no publish", async () => {
@@ -2025,11 +2092,15 @@ describe("handleStopTrack — end to end", () => {
     const env = makeTestEnv();
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
     vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
-      title: "x", haiku: "a\nb\nc", body: "y",
+      title: "x",
+      haiku: "a\nb\nc",
+      body: "y",
       usage: { prompt_tokens: 1, completion_tokens: 1 },
     });
     const publishSpy = vi.spyOn(publishMod, "publishTrackPost").mockResolvedValue({
-      url: "https://x", path: "p", sha: "s",
+      url: "https://x",
+      path: "p",
+      sha: "s",
     });
 
     const event: GarminEvent = {
@@ -2167,9 +2238,7 @@ function formatTrackReply(metrics: TrackMetrics, url: string): string {
   const km = metrics.distanceKm.toFixed(1);
   const gainM = Math.round(metrics.elevation.gainM);
   const minutes = Math.round(metrics.durationSeconds / 60);
-  const duration = minutes >= 60
-    ? `${Math.floor(minutes / 60)}h${minutes % 60}m`
-    : `${minutes}min`;
+  const duration = minutes >= 60 ? `${Math.floor(minutes / 60)}h${minutes % 60}m` : `${minutes}min`;
   return `Track posted: ${km}km, ${gainM}m gain, ${duration}\n${url}`;
 }
 ```
@@ -2185,6 +2254,7 @@ Expected: clean exit.
 - [ ] **Step 5: Commit**
 
 Commit message:
+
 ```
 feat(tracking): handleStopTrack orchestrator
 
@@ -2202,6 +2272,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ### Task 3.6: Webhook routing — `messageCode === 12` calls `handleStopTrack`
 
 **Files:**
+
 - Modify: `src/app.ts`
 - Modify: `tests/app.test.ts`
 
@@ -2225,13 +2296,15 @@ describe("Worker /garmin/ipc — Stop Track routing", () => {
   test("messageCode 12 invokes handleStopTrack", async () => {
     const stopEvent = {
       Version: "4.0",
-      Events: [{
-        imei: "123456789012345",
-        messageCode: 12,
-        timeStamp: Date.parse("2026-05-02T16:24:30Z"),
-        point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
-        status: { autonomous: 0, lowBattery: 0, intervalChange: 0, resetDetected: 0 },
-      }],
+      Events: [
+        {
+          imei: "123456789012345",
+          messageCode: 12,
+          timeStamp: Date.parse("2026-05-02T16:24:30Z"),
+          point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
+          status: { autonomous: 0, lowBattery: 0, intervalChange: 0, resetDetected: 0 },
+        },
+      ],
     };
     const res = await postIpc(stopEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
     expect(res.status).toBe(200);
@@ -2243,13 +2316,15 @@ describe("Worker /garmin/ipc — Stop Track routing", () => {
   test("messageCode 10 (Start Track) does NOT invoke handleStopTrack", async () => {
     const startEvent = {
       Version: "4.0",
-      Events: [{
-        imei: "123456789012345",
-        messageCode: 10,
-        timeStamp: Date.now(),
-        point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
-        status: { autonomous: 0, lowBattery: 0, intervalChange: 120, resetDetected: 0 },
-      }],
+      Events: [
+        {
+          imei: "123456789012345",
+          messageCode: 10,
+          timeStamp: Date.now(),
+          point: { latitude: 0, longitude: 0, altitude: 0, gpsFix: 0, course: 0, speed: 0 },
+          status: { autonomous: 0, lowBattery: 0, intervalChange: 120, resetDetected: 0 },
+        },
+      ],
     };
     const res = await postIpc(startEvent, { bearer: env.GARMIN_INBOUND_TOKEN });
     expect(res.status).toBe(200);
@@ -2274,39 +2349,39 @@ import { handleStopTrack } from "./core/tracking.js";
 Find the `if (event.messageCode !== 3)` block (around line 118) and modify it:
 
 ```ts
-  if (event.messageCode !== 3) {
-    if (event.messageCode === 4) {
-      log({ event: "sos_received_ignored", level: "warn", imei: event.imei, key });
-    } else if (event.messageCode === 12) {
-      try {
-        await handleStopTrack(event, env, key);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        log({
-          event: "stop_track_handler_error",
-          level: "error",
-          imei: event.imei,
-          error: msg,
-          key,
-        });
-      }
-    } else {
-      const isTrack =
-        event.messageCode === 0 ||
-        event.messageCode === 10 ||
-        event.messageCode === 11 ||
-        event.messageCode === 12;
+if (event.messageCode !== 3) {
+  if (event.messageCode === 4) {
+    log({ event: "sos_received_ignored", level: "warn", imei: event.imei, key });
+  } else if (event.messageCode === 12) {
+    try {
+      await handleStopTrack(event, env, key);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       log({
-        event: "non_free_text",
-        level: "info",
+        event: "stop_track_handler_error",
+        level: "error",
         imei: event.imei,
-        messageCode: event.messageCode,
+        error: msg,
         key,
-        ...(isTrack && logTrackPayloads(env) ? { payload: event } : {}),
       });
     }
-    return;
+  } else {
+    const isTrack =
+      event.messageCode === 0 ||
+      event.messageCode === 10 ||
+      event.messageCode === 11 ||
+      event.messageCode === 12;
+    log({
+      event: "non_free_text",
+      level: "info",
+      imei: event.imei,
+      messageCode: event.messageCode,
+      key,
+      ...(isTrack && logTrackPayloads(env) ? { payload: event } : {}),
+    });
   }
+  return;
+}
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -2325,6 +2400,7 @@ Expected: clean.
 - [ ] **Step 6: Commit**
 
 Commit message:
+
 ```
 feat(app): route messageCode 12 to handleStopTrack
 
@@ -2349,6 +2425,7 @@ Run: `git push -u origin <current-branch-name>`
 - [ ] **Step 2: Open the PR**
 
 Run gh pr create with title `feat: tracking session artifacts (Mode B — MapShare pull-on-close)` and a body that:
+
 - references the spec at docs/superpowers/specs/2026-05-01-tracking-session-artifacts-design.md (PR #164)
 - summarizes the trigger model (mc 12 webhook), data source (MapShare KML), storage (TS_TRACKS KV)
 - lists the three cuts and what each delivered
@@ -2364,6 +2441,7 @@ Run gh pr create with title `feat: tracking session artifacts (Mode B — MapSha
 ## Self-Review
 
 **Spec coverage check:**
+
 - §0 empirical finding: not implemented; informational only.
 - §1 goal: covered by full pipeline.
 - §2 in-scope: all bullets covered (mc 12 routes, fetch + derive + publish, KV persistence, reply).
@@ -2386,6 +2464,7 @@ Run gh pr create with title `feat: tracking session artifacts (Mode B — MapSha
 **Placeholder scan:** No "TBD"/"TODO"/"similar to" in steps. All code blocks contain real code. All test blocks have full assertions.
 
 **Type consistency check:**
+
 - `KmlPing` defined in Task 1.3, used consistently in 1.4, 2.x, 3.x.
 - `TrackMetrics` defined in Task 2.7, imported in narrative.ts (Task 3.3), publishTrackPost (Task 3.4), tracking.ts (Task 3.5).
 - `TrackSessionRecord` defined Task 3.1, used in Task 3.5.

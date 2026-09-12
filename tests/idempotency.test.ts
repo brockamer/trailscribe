@@ -114,7 +114,11 @@ describe("withCheckpoint — first-call vs replay", () => {
   });
 
   test("multiple ops accumulate independently in completedOps and opResults", async () => {
-    await withCheckpoint(env, KEY, "narrative", async () => ({ title: "T", haiku: "H", body: "B" }));
+    await withCheckpoint(env, KEY, "narrative", async () => ({
+      title: "T",
+      haiku: "H",
+      body: "B",
+    }));
     await withCheckpoint(env, KEY, "publish", async () => ({ url: "U" }));
 
     const rec = await readRecord(env, KEY);
@@ -130,9 +134,9 @@ describe("withCheckpoint — first-call vs replay", () => {
     const circular: Record<string, unknown> = {};
     circular.self = circular;
 
-    await expect(
-      withCheckpoint(env, KEY, "narrative", async () => circular),
-    ).rejects.toThrow(/non-JSON-serializable/);
+    await expect(withCheckpoint(env, KEY, "narrative", async () => circular)).rejects.toThrow(
+      /non-JSON-serializable/,
+    );
 
     // Record was not corrupted by the failed op.
     const rec = await readRecord(env, KEY);
@@ -140,9 +144,9 @@ describe("withCheckpoint — first-call vs replay", () => {
   });
 
   test("fn returning undefined throws (use null for 'no result')", async () => {
-    await expect(
-      withCheckpoint(env, KEY, "reply", async () => undefined),
-    ).rejects.toThrow(/undefined/);
+    await expect(withCheckpoint(env, KEY, "reply", async () => undefined)).rejects.toThrow(
+      /undefined/,
+    );
   });
 
   test("preserves completedAt when called after markCompleted (idempotent terminal state)", async () => {

@@ -7,12 +7,7 @@ const EARTH_RADIUS_KM = 6371;
  * Haversine formula. Sufficient accuracy for trail-distance work — within
  * ~0.5% of geodesic methods over the < 1000 km ranges we care about.
  */
-export function haversineKm(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
-): number {
+export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
@@ -28,12 +23,7 @@ export function totalDistanceKm(pings: KmlPing[]): number {
   if (pings.length < 2) return 0;
   let km = 0;
   for (let i = 1; i < pings.length; i++) {
-    km += haversineKm(
-      pings[i - 1].lat,
-      pings[i - 1].lon,
-      pings[i].lat,
-      pings[i].lon,
-    );
+    km += haversineKm(pings[i - 1].lat, pings[i - 1].lon, pings[i].lat, pings[i].lon);
   }
   return km;
 }
@@ -138,13 +128,7 @@ export function routeShape(pings: KmlPing[]): RouteShape {
   return "point-to-point";
 }
 
-export type ActivityHint =
-  | "walk"
-  | "hike"
-  | "run"
-  | "bike"
-  | "drive"
-  | "mixed";
+export type ActivityHint = "walk" | "hike" | "run" | "bike" | "drive" | "mixed";
 
 /**
  * Classify activity by the band that holds the most non-zero pings.
@@ -177,9 +161,9 @@ export function activityHint(pings: KmlPing[]): ActivityHint {
     else counts.drive++;
   }
 
-  const sorted = (
-    Object.entries(counts) as Array<[Exclude<ActivityHint, "mixed">, number]>
-  ).sort(([, a], [, b]) => b - a);
+  const sorted = (Object.entries(counts) as Array<[Exclude<ActivityHint, "mixed">, number]>).sort(
+    ([, a], [, b]) => b - a,
+  );
   const [topName, topCount] = sorted[0];
   if (topCount / moving.length >= 0.4) return topName;
   return "mixed";

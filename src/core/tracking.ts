@@ -193,8 +193,42 @@ export async function handleStopTrack(
     });
     const sessionId = await sha256Hex(`${event.imei}:${closedAt}`);
 
-    const rawKml = await fetchMapShareKml(env, startedAt, closedAt);
-    const pings = parsePings(rawKml);
+    // The MapShare fetch is the single likeliest failure after a device swap:
+    // MAPSHARE_KEY (page slug) and MAPSHARE_PASSWORD (access code) are bound to
+    // the Garmin device/account, and a replacement unit can be issued a fresh
+    // default page. Without this catch a 401 here throws past the publish guard
+    // below, reaches safeOrchestrate, and the device gets nothing at all — the
+    // exact silence this whole change exists to remove.
+    let rawKml: string;
+    let pings: ReturnType<typeof parsePings>;
+    try {
+      rawKml = await fetchMapShareKml(env, startedAt, closedAt);
+      pings = parsePings(rawKml);
+    } catch (err) {
+      log({
+        event: "track_fetch_failed",
+        level: "error",
+        imei: event.imei,
+        idemKey,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      try {
+        await sendReply(
+          event.imei,
+          [trackErrorReply(FETCH_ERROR_PREFIX, err, intervalRecord)],
+          env,
+        );
+      } catch (replyErr) {
+        log({
+          event: "track_fetch_error_reply_failed",
+          level: "error",
+          imei: event.imei,
+          idemKey,
+          error: replyErr instanceof Error ? replyErr.message : String(replyErr),
+        });
+      }
+      throw err;
+    }
 
     if (pings.length === 0) {
       log({ event: "track_no_pings", level: "warn", imei: event.imei, idemKey });
@@ -281,18 +315,58 @@ export async function handleStopTrack(
       env,
     });
 
-    const result = await publishTrackPost({
-      title: narrative.title,
-      haiku: narrative.haiku,
-      body: narrative.body,
-      metrics,
-      endLat: endPing.lat,
-      endLon: endPing.lon,
-      startPlace: typeof startPlace === "string" ? startPlace : undefined,
-      endPlace: typeof endPlace === "string" ? endPlace : undefined,
-      weather: typeof weather === "string" ? weather : undefined,
-      env,
-    });
+    let result: Awaited<ReturnType<typeof publishTrackPost>>;
+    try {
+      result = await publishTrackPost({
+        title: narrative.title,
+        haiku: narrative.haiku,
+        body: narrative.body,
+        metrics,
+        endLat: endPing.lat,
+        endLon: endPing.lon,
+        startPlace: typeof startPlace === "string" ? startPlace : undefined,
+        endPlace: typeof endPlace === "string" ? endPlace : undefined,
+        weather: typeof weather === "string" ? weather : undefined,
+        env,
+      });
+    } catch (err) {
+      // Unlike the refusal branches above, this is NOT a checkpointed skip —
+      // we deliberately rethrow (see below) so the outer `publish_track` op
+      // stays uncompleted and a Garmin retry gets a fresh publish attempt
+      // (the `track_narrative` checkpoint above means that retry won't pay
+      // for another LLM call). Before rethrowing, tell the device: without
+      // this, a bad MapShare code, an expired GitHub token, and a dead
+      // satellite link all looked identical from the field — total silence.
+      // `safeOrchestrate` (app.ts) still logs + markFailed on the rethrow.
+      log({
+        event: "track_publish_failed",
+        level: "error",
+        imei: event.imei,
+        idemKey,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // Best-effort: if the reply itself fails (dead link, bad API key), we
+      // must not let THAT rejection replace `err` below — the idempotency
+      // record's `error` field (what a replay/operator reads) would then
+      // show the IPC failure instead of the actual publish cause, which is
+      // worse than the silent-void bug this whole change exists to fix.
+      try {
+        await sendReply(
+          event.imei,
+          [trackErrorReply(PUBLISH_ERROR_PREFIX, err, intervalRecord)],
+          env,
+        );
+      } catch (replyErr) {
+        log({
+          event: "track_publish_error_reply_failed",
+          level: "warn",
+          imei: event.imei,
+          idemKey,
+          error: replyErr instanceof Error ? replyErr.message : String(replyErr),
+        });
+      }
+      throw err;
+    }
 
     await storeTrackRecord(env, {
       sessionId,
@@ -329,6 +403,28 @@ function withIntervalHint(
 ): string {
   if (!interval) return base;
   return `${base} (interval: ${formatInterval(interval.intervalSec)})`;
+}
+
+const MAX_SMS_CHARS = 160;
+const PUBLISH_ERROR_PREFIX = "Track publish failed: ";
+const FETCH_ERROR_PREFIX = "Track failed, MapShare: ";
+
+/**
+ * Build the visible error SMS for a publish failure. `sendReply` hard-throws
+ * above 160 chars (the Iridium cap), so the underlying error message is
+ * truncated to whatever room is left after the fixed prefix and the optional
+ * `(interval: Xh)` tag — computed exactly, not guessed, so this can never
+ * push the interval-hint call over the limit.
+ */
+function trackErrorReply(
+  prefix: string,
+  err: unknown,
+  interval: TrackIntervalRecord | null,
+): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  const hintLen = interval ? ` (interval: ${formatInterval(interval.intervalSec)})`.length : 0;
+  const msgBudget = Math.max(0, MAX_SMS_CHARS - prefix.length - hintLen);
+  return withIntervalHint(`${prefix}${msg.slice(0, msgBudget)}`, interval);
 }
 
 function formatTrackReply(metrics: TrackMetrics, url: string): string {

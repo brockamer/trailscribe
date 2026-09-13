@@ -60,7 +60,7 @@ IMAGE_API_KEY=
 # ---- MapShare KML feed (tracking session artifacts) ----
 # Per-tenant Garmin MapShare slug; the path component appended to MAPSHARE_BASE.
 # Find at explore.garmin.com → MapShare → Page name.
-MAPSHARE_KEY=HTS69RDNH2
+MAPSHARE_KEY=trailscribe
 
 # Access code that protects the MapShare KML feed (HTTP Basic Auth password;
 # username is ignored). Set in explore.garmin.com → MapShare → Access Code.

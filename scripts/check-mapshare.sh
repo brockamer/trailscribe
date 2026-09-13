@@ -8,10 +8,10 @@
 # The access code is read with `read -s` (never echoed, never in your shell history,
 # never passed as an argv that shows up in `ps`).
 #
-# Usage:  ./scripts/check-mapshare.sh [slug]        (slug defaults to "HTS69RDNH2")
+# Usage:  ./scripts/check-mapshare.sh [slug]        (slug defaults to "trailscribe")
 set -uo pipefail
 
-SLUG="${1:-HTS69RDNH2}"
+SLUG="${1:-trailscribe}"
 BASE="https://share.garmin.com"
 FEED="$BASE/Feed/Share/$SLUG"
 

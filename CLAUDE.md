@@ -177,7 +177,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 
 - **jared** manages the board: https://github.com/users/brockamer/projects/3 (see `docs/project-board.md`).
 - No active plan. Last shipped work was Mode B hardening (epic #187) through 2026-05-18. Phase 3 (DO + D1, epic #99) is the next promotion candidate; `!snap`/`!snapimg` (#150) and ledger-cost (#162) are the two most-developed loose issues.
-- Git: `origin` = `https://github.com/brockamer/trailscribe.git`, default branch `main`.
+- Git: `origin` = `git@github.com:brockamer/trailscribe.git` (SSH on this laptop; the HTTPS form documented before 2026-09-13 was the dev.lan checkout), default branch `main`.
 - Commit sign-off: `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>` (update the model name as sessions change; keep the line).
 
 ## Ground rules

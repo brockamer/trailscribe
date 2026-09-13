@@ -59,15 +59,18 @@ case "$CODE_HTTP" in
     fi
     ;;
   302)
-    # Seen 2026-09-12 on the custom-name slug "trailscribe": the access code is
-    # ACCEPTED (a wrong code still gets 401) but the feed redirects to the site
-    # root and then the login page. The Worker follows the redirect, parses the
-    # login HTML as KML, finds no placemarks, and refuses the track. The
-    # auto-generated slug (Garmin Explore -> MapShare -> MapShare Address)
-    # kept working with the same code.
+    # Seen 2026-09-12/13: the access code is ACCEPTED (a wrong code still gets
+    # 401) but the feed redirects to the site root and then the login page.
+    # Cause both times: the MapShare toggle was OFF in Garmin Explore ->
+    # MapShare (device user's account). The Worker follows the redirect,
+    # parses the login HTML as KML, finds no placemarks, and refuses the
+    # track. Turn MapShare on and accept the consent prompt; also confirm
+    # the address shown there matches MAPSHARE_KEY.
     echo "[2/2] access code accepted but the feed REDIRECTED (HTTP 302)."
-    echo "      This slug no longer serves its feed. Try the auto-generated"
-    echo "      MapShare slug instead:  $0 <auto-slug>"
+    echo "      MapShare is almost certainly switched OFF for this account, or"
+    echo "      this slug is no longer the account's MapShare address."
+    echo "      Fix: Garmin Explore -> MapShare -> toggle On (+ consent), and"
+    echo "      check the address there matches MAPSHARE_KEY."
     ;;
   401|403)
     echo "[2/2] access code REJECTED (HTTP $CODE_HTTP)."

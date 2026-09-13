@@ -141,7 +141,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 - `GITHUB_JOURNAL_BRANCH` — `main`
 - `IMAGE_API_KEY` — image-gen provider API key (Replicate token in α; `!postimg` only)
 - `ADDRESS_BOOK_JSON` — alias map for `!share`/`!blast` (Phase 2; e.g. `{"aliases":{"home":"...","all":"a@x,b@y"}}`)
-- `MAPSHARE_KEY` — per-tenant MapShare slug (path component appended to `MAPSHARE_BASE`); `trailscribe` for prod
+- `MAPSHARE_KEY` — per-tenant MapShare slug (path component appended to `MAPSHARE_BASE`); `HTS69RDNH2` (the auto-generated slug) for prod and staging since 2026-09-13. The custom name `trailscribe` stopped serving its feed on 2026-09-12 (correct access code → HTTP 302 to the login page; wrong code → 401), so the auto-generated slug is the durable value
 - `MAPSHARE_PASSWORD` — MapShare access code (Basic Auth password; empty user). Set in Garmin Explore → MapShare → Access Code. Empty string = unprotected feed (no auth header).
 
 **Vars (non-secret):**

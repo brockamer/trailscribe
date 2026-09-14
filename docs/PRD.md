@@ -2,7 +2,7 @@
 
 **Status:** Signed off 2026-04-22. Phase 0 (scaffolding) shipped 2026-04-24. Phase 1 (α-MVP, six commands end-to-end on production) shipped 2026-04-26 with the prod-traffic close gate (#111) verified 2026-04-27. **Currently:** Phase 2 — extended commands. Plan: `plans/phase-2-extended-commands.md`.
 **Owner:** Brock Amer
-**Updated:** 2026-04-28
+**Updated:** 2026-09-14 (§6 Cost Model amended — image-path cost ceiling raised to $0.20/image; text-path target and ceiling unchanged. Operator sign-off per CLAUDE.md "PRD is canonical".)
 **Scope:** α-MVP (Phase 1) is the canonical scope of this document. Phase 2 (the eight deferred commands) is detailed in `plans/phase-2-extended-commands.md`; Phase 3+ referenced here for alignment, not specified in full.
 
 ---
@@ -21,7 +21,7 @@ TrailScribe is an AI-native serverless agent that transforms satellite messages 
 
 - **One command** replaces a manual sequence that previously required cell coverage.
 - **AI narrative generation** turns GPS + short note into a publishable blog entry.
-- **Under $0.05 per transaction** — total cost for the entire enriched workflow, less than a single premium satellite message.
+- **Under $0.05 per transaction for text workflows** — less than a single premium satellite message. Image-bearing commands (`!postimg`, and the planned `!snapimg`) carry a separate ceiling of $0.28/tx to cover a dedicated image-generation call; see §6.
 - **Zero configuration in the field** — all integrations pre-wired; no device-side setup during the trip.
 - **Bandwidth-respecting** — replies capped at two SMS (≤320 chars) including cost suffix.
 
@@ -321,7 +321,27 @@ If the same webhook replays after partial completion:
 
 ## 6. Cost Model
 
-### Target: <$0.05 per transaction, $0.03 typical
+> **Amended 2026-09-14** (operator sign-off, per CLAUDE.md "PRD is canonical. No scope creep without PRD update + sign-off"): the image-generation cost ceiling is raised to **$0.20 per image**, replacing the original flat $0.05/tx figure for image-bearing commands. Text-path commands are unaffected — their target and hard ceiling are unchanged.
+
+### Text-path target: <$0.05 per transaction, $0.03 typical
+
+Applies to `!post`, `!mail`, `!todo`, `!ping`, `!help`, `!cost`, and every other command whose external calls are LLM-text-only or free (`!where`, `!weather`, `!drop`, `!brief`, `!ai`, `!camp`, `!share`, `!blast`).
+
+### Image-path target: <$0.23 per transaction; hard ceiling $0.28
+
+Applies to `!postimg` and the planned `!snapimg` (#150). These run the same narrative LLM call as `!post` **plus** an image-generation call, so they get their own budget rather than inheriting the text-path number.
+
+**Arithmetic.** The figures are derived additively, not by scaling the text-path ratio — scaling the total would imply the image component itself could drift above the authorized cap, which it may not:
+
+| Component            | Typical   | Hard ceiling                      |
+| -------------------- | --------- | --------------------------------- |
+| Image generation     | —         | **$0.20** (authorized cap, fixed) |
+| Narrative LLM call   | $0.03     | $0.08                             |
+| **Image-path total** | **$0.23** | **$0.28**                         |
+
+The $0.20 image cap is a ceiling on the _provider price of the configured model_, not a runtime gate — see the enforcement note below.
+
+**Enforcement status.** No code path compares a dollar amount against any of these figures. The only runtime spend gate is `DAILY_TOKEN_BUDGET` (`src/core/budget.ts`), which counts **LLM tokens**, and image generation consumes none — so image spend is currently governed by model selection and the idempotency checkpoint alone, not by a ledger gate. `IMAGE_COST_PER_CALL_USD` is a bookkeeping rate used to record cost for `!cost`; it caps nothing. Every figure in this section is a design target enforced by review, not by the running Worker.
 
 ### Per-command cost breakdown (estimated)
 
@@ -334,7 +354,13 @@ If the same webhook replays after partial completion:
 | `!help` | —            | —                     | —         | —           | —           | $0.0002  | **~$0.0002**     |
 | `!cost` | —            | —                     | —         | —           | —           | $0.0002  | **~$0.0002**     |
 
-**Headline:** `!post` dominates cost. Non-AI commands are effectively free.
+Image-bearing commands sit on the separate image-path budget above:
+
+| Command    | LLM          | Image gen       | Publish           | CF Infra | **Total**                         |
+| ---------- | ------------ | --------------- | ----------------- | -------- | --------------------------------- |
+| `!postimg` | $0.020–0.030 | ≤$0.20 (capped) | $0 (GitHub Pages) | $0.001   | **≤$0.23 typical, $0.28 ceiling** |
+
+**Headline:** on the text path `!post` dominates cost, and non-AI commands are effectively free. On the image path the image-generation call dominates by an order of magnitude, so model selection — not prompt length — is the cost lever.
 
 ### LLM configuration
 
@@ -343,7 +369,7 @@ If the same webhook replays after partial completion:
 - **Model:** `anthropic/claude-sonnet-4-6` (OpenRouter format `<provider>/<model>`). Swapped back from the brief `openai/gpt-5-mini` direction (2026-04-22 → 2026-04-25) after P1-21 burn-in proved gpt-5-mini is a _reasoning model_ that consumes all completion tokens on chain-of-thought before producing the JSON output — caused empty-content failures on shorter prompts (no-GPS edge case). Claude Sonnet 4.6 is a non-reasoning model: structured JSON output is reliable within the configured `max_tokens` budget (currently 600), no chain-of-thought token consumption.
 - **Output mode:** JSON mode with schema `{ title: string ≤60ch, haiku: string ≤80ch, body: string ≤500ch }`.
 - **Prompt:** Concise system prompt with explicit length directives ("Respond in under 150 tokens", "haiku must be exactly 5-7-5").
-- **Target token use:** ≤300 tokens per `!post` narrative (prompt + response). Actual $/tx depends on the current model's pricing — will be set in env (`LLM_INPUT_COST_PER_1K`, `LLM_OUTPUT_COST_PER_1K`) from the OpenRouter or model-provider pricing page at deploy time and updated when prices change. **Design assumes cost remains under $0.05/tx; alert if drift above $0.03 sustained.**
+- **Target token use:** ≤300 tokens per `!post` narrative (prompt + response). Actual $/tx depends on the current model's pricing — will be set in env (`LLM_INPUT_COST_PER_1K`, `LLM_OUTPUT_COST_PER_1K`) from the OpenRouter or model-provider pricing page at deploy time and updated when prices change. **Design assumes the narrative-LLM cost remains under $0.05/tx on the text path ($0.08/tx hard ceiling on the image path — see §6); alert if drift above $0.03 sustained.**
 
 ### Token accounting (ground truth)
 
@@ -386,7 +412,8 @@ If the same webhook replays after partial completion:
 
 ### Operational KPIs (track monthly)
 
-- **Per-transaction cost** (target <$0.05; hard ceiling $0.08)
+- **Per-transaction cost, text path** (`!post`, `!mail`, `!todo`, `!ping`, `!help`, `!cost`, `!where`, `!weather`, `!drop`, `!brief`, `!ai`, `!camp`, `!share`, `!blast`) — target <$0.05; hard ceiling $0.08
+- **Per-transaction cost, image path** (`!postimg`, and `!snapimg` once #150 ships) — target <$0.23; hard ceiling $0.28 (§6). Directly measurable today: the ledger records text and image cost in separate buckets per transaction (`recordTransaction` + `recordImageTransaction`, #173), so `!cost` output can be checked against this KPI without new instrumentation.
 - **Delivery success rate** — inbound-received vs. reply-delivered (target ≥99% excluding Iridium/Garmin outages)
 - **Command usage frequency** — per-command counts; informs Phase 2 scope
 - **Idempotency hit rate** — should be <5% of inbound volume in steady state (higher = Garmin/Iridium retries = investigate)

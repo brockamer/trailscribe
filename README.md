@@ -102,10 +102,15 @@ use case and we'll talk about it.
 
 ## What it costs
 
-Design target: **under $0.05 per transaction, ~$0.03 typical**. Cheaper than
-a single premium satellite message in most plans. The dominant cost is the
-AI call on `!post`/`!postimg`/`!ai`/`!camp`/`!brief`; non-AI commands are
-effectively free.
+Design target for text commands: **under $0.05 per transaction, ~$0.03
+typical**. Cheaper than a single premium satellite message in most plans.
+The dominant cost there is the AI call on `!post`/`!ai`/`!camp`/`!brief`;
+non-AI commands are effectively free.
+
+`!postimg` (and the planned `!snapimg`) run an image-generation call on top
+of that same narrative call, so they carry their own, higher budget: **under
+$0.23/tx typical, $0.28/tx hard ceiling**, with the image itself capped at
+$0.20.
 
 A daily token budget caps spend at a configurable ceiling (default
 ≈150 narratives/day) and short-circuits AI calls when exceeded so a runaway

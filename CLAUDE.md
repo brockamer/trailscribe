@@ -22,7 +22,7 @@ Living context file for Claude Code. Keep concise; update as decisions are made.
 
 - **Personas (canonical, from product decks):** Natalie (field botanist, Eastern Sierra), Marcus (expedition guide, PNW/Alaska/Patagonia), Yuki (solo bikepacker/storyteller, Iceland/Mongolia/Patagonia). See PRD §1.
 - **Hard constraints:** Garmin IPC Inbound messages are 160 chars max. Reply budget 320 chars (two SMS). Idempotency matters — Garmin retries 2/4/8/16/32/64/128s then pauses 12h × 5d.
-- **Cost target:** <$0.05 per transaction, $0.03 typical. Dominated by the LLM on `!post`; non-AI commands are effectively free.
+- **Cost target:** text path <$0.05/tx, $0.03 typical (dominated by the LLM narrative call; non-AI commands are effectively free). Image path (`!postimg`, planned `!snapimg`) <$0.23/tx target, $0.28/tx hard ceiling — image-gen capped at $0.20/image plus the same narrative call. Raised from a flat $0.05 on 2026-09-14; see PRD §6. **None of these are enforced at runtime** — the only spend gate is `DAILY_TOKEN_BUDGET`, which counts tokens, and images consume none.
 - **Not a safety system.** SOS must go through Garmin native.
 
 ## Command grammar

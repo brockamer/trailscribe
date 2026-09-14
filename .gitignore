@@ -36,5 +36,9 @@ CLAUDE.local.md
 tmp/
 
 
-# Jared session locks (machine-local PIDs, written by /jared-start)
+# Jared session locks (machine-local, written by /jared-start).
+# Not merely untidy: jared performs no PID-liveness check, so a committed
+# lock reads as a live session on every fresh clone and blocks /jared-start
+# (REFUSE_BLEG) until cleared by hand. Tracked upstream as jared #376, which
+# proposes relocating the locks inside the git dir; drop this entry if that ships.
 .jared/

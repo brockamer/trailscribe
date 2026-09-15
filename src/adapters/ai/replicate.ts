@@ -45,9 +45,11 @@ export class ImageGenError extends Error {
 }
 
 /**
- * Generate one image via the configured provider (Replicate Flux schnell for
- * the first cut — locked by P2-17 to keep `!postimg` under the PRD §7 $0.05
- * ceiling without a premium-class exception).
+ * Generate one image via the configured provider (Replicate Flux schnell is
+ * the configured default — chosen at P2-17 for cost and latency, not forced by
+ * a ceiling: the per-image budget was raised to $0.20 on 2026-09-14 (PRD §6),
+ * well above Flux schnell's realized ~$0.003/image, leaving headroom to swap in
+ * a premium-class model without a further PRD amendment).
  *
  * Uses Replicate's `Prefer: wait` header for synchronous predictions — Flux
  * schnell completes well under Workers' subrequest budget. If a future model

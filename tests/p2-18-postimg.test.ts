@@ -250,7 +250,10 @@ describe("P2-18 !postimg — image-gen failure fallback", () => {
     await postIpc(envelope("!postimg fallback test", { gps: { lat: LAT, lon: LON } }));
 
     const [, messages] = sendReplyMock.mock.calls[0];
-    expect(messages[0]).toContain("image gen failed; text-only");
+    // #235: the old wording ("image gen failed; text-only") reported a failure
+    // without telling the operator what to do about it, from a device with no
+    // other feedback channel.
+    expect(messages[0]).toContain("no image — retry !postimg");
 
     const calls = fetchSpy.mock.calls.map((c) => String(c[0]));
     // No GraphQL mutation in the fallback path.

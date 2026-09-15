@@ -6,11 +6,9 @@ describe("buildImagePrompt — determinism", () => {
     const inputs = {
       caption: "dawn light on the cirque",
       place: "Sierra Nevada, CA",
-      lat: 37.1682,
-      lon: -118.5891,
       altitudeM: 3810,
       localTime: "07:42 — early morning",
-      weather: "scattered clouds, 9C, light wind",
+      weatherCode: 2,
     };
     expect(buildImagePrompt(inputs)).toBe(buildImagePrompt(inputs));
   });
@@ -22,44 +20,77 @@ describe("buildImagePrompt — telemetry profile snapshots", () => {
       buildImagePrompt({
         caption: "dawn light on the cirque",
         place: "Sierra Nevada, CA",
-        lat: 37.1682,
-        lon: -118.5891,
         altitudeM: 3810,
         localTime: "07:42 — early morning",
-        weather: "scattered clouds, 9C, light wind",
+        weatherCode: 2,
       }),
     ).toMatchInlineSnapshot(
-      `"Photographic field journal illustration: dawn light on the cirque. Location: Sierra Nevada, CA. Coordinates: 37.1682, -118.5891. Altitude: 3810 m. Local time: 07:42 — early morning. Weather: scattered clouds, 9C, light wind. Realistic, plausible scene grounded in the telemetry above. Lighting and shadows match the local time of day. No text, captions, watermarks, signs, or readable lettering anywhere in the image. Do not invent or label specific named landmarks unless explicitly stated above."`,
+      `"A photorealistic photograph from a backcountry field journal. Render the mood and setting evoked by this note, not a literal depiction of the objects or words in it: dawn light on the cirque. Location: Sierra Nevada, CA. Soft, filtered daylight with scattered clouds and gently diffused shadows. Local time: 07:42 — early morning; lighting and shadows match that time of day. Altitude: 3810 m. Shot on a real camera: natural imperfections, true-to-life color and texture, no illustration or painterly style. No readable text, signage, or watermarks; do not invent or label specific named landmarks beyond what is given."`,
     );
   });
 
-  test("coastal-bluff profile (no altitude)", () => {
+  test("coastal-bluff profile (no altitude, fog)", () => {
     expect(
       buildImagePrompt({
         caption: "fog rolling in over the headland",
         place: "Marin Headlands, CA",
-        lat: 37.8324,
-        lon: -122.5,
         localTime: "16:10 — late afternoon",
-        weather: "marine layer, 14C",
+        weatherCode: 45,
       }),
     ).toMatchInlineSnapshot(
-      `"Photographic field journal illustration: fog rolling in over the headland. Location: Marin Headlands, CA. Coordinates: 37.8324, -122.5000. Local time: 16:10 — late afternoon. Weather: marine layer, 14C. Realistic, plausible scene grounded in the telemetry above. Lighting and shadows match the local time of day. No text, captions, watermarks, signs, or readable lettering anywhere in the image. Do not invent or label specific named landmarks unless explicitly stated above."`,
+      `"A photorealistic photograph from a backcountry field journal. Render the mood and setting evoked by this note, not a literal depiction of the objects or words in it: fog rolling in over the headland. Location: Marin Headlands, CA. Flat, diffused light through fog, muted colors and low-contrast edges. Local time: 16:10 — late afternoon; lighting and shadows match that time of day. Shot on a real camera: natural imperfections, true-to-life color and texture, no illustration or painterly style. No readable text, signage, or watermarks; do not invent or label specific named landmarks beyond what is given."`,
     );
   });
 
-  test("desert-flank profile (caption + telemetry only, no place)", () => {
+  test("desert-flank profile (no place, clear sky)", () => {
     expect(
       buildImagePrompt({
         caption: "Joshua trees at golden hour",
-        lat: 33.8734,
-        lon: -115.9009,
         altitudeM: 1100,
         localTime: "18:45 — golden hour",
-        weather: "clear, 28C, calm",
+        weatherCode: 0,
       }),
     ).toMatchInlineSnapshot(
-      `"Photographic field journal illustration: Joshua trees at golden hour. Coordinates: 33.8734, -115.9009. Altitude: 1100 m. Local time: 18:45 — golden hour. Weather: clear, 28C, calm. Realistic, plausible scene grounded in the telemetry above. Lighting and shadows match the local time of day. No text, captions, watermarks, signs, or readable lettering anywhere in the image. Do not invent or label specific named landmarks unless explicitly stated above."`,
+      `"A photorealistic photograph from a backcountry field journal. Render the mood and setting evoked by this note, not a literal depiction of the objects or words in it: Joshua trees at golden hour. Bright, clear sunlight with crisp, well-defined shadows. Local time: 18:45 — golden hour; lighting and shadows match that time of day. Altitude: 1100 m. Shot on a real camera: natural imperfections, true-to-life color and texture, no illustration or painterly style. No readable text, signage, or watermarks; do not invent or label specific named landmarks beyond what is given."`,
+    );
+  });
+});
+
+describe("buildImagePrompt — the #235 regressions", () => {
+  test("never says 'illustration' as the medium — that word produced cartoons", () => {
+    const out = buildImagePrompt({ caption: "x", place: "Malibu, California", weatherCode: 2 });
+    expect(out).toContain("A photorealistic photograph");
+    expect(out).not.toContain("field journal illustration");
+    // the only surviving mention is the negative form, telling the model to avoid it
+    expect(out).toContain("no illustration or painterly style");
+  });
+
+  test("frames the caption as mood, not as a literal object list", () => {
+    const out = buildImagePrompt({ caption: "crushing tasks and heavy sticky note kanban" });
+    expect(out).toContain("not a literal depiction of the objects or words in it");
+  });
+
+  test("never emits raw coordinates — they cost prompt budget a model cannot use", () => {
+    const out = buildImagePrompt({
+      caption: "x",
+      place: "Malibu, California",
+      weatherCode: 2,
+      altitudeM: 12,
+    });
+    expect(out).not.toContain("Coordinates:");
+    expect(out).not.toMatch(/-?\d+\.\d{4}/);
+  });
+
+  test("weather renders as light quality, never as raw numbers", () => {
+    expect(buildImagePrompt({ caption: "x", weatherCode: 0 })).toContain("crisp, well-defined");
+    expect(buildImagePrompt({ caption: "x", weatherCode: 71 })).toContain("snow light");
+    expect(buildImagePrompt({ caption: "x", weatherCode: 95 })).toContain("storm light");
+    expect(buildImagePrompt({ caption: "x", weatherCode: 3 })).not.toMatch(/°F|mph/);
+  });
+
+  test("an unmapped weather code still yields a usable light phrase", () => {
+    expect(buildImagePrompt({ caption: "x", weatherCode: 12345 })).toContain(
+      "Natural outdoor daylight.",
     );
   });
 });
@@ -67,39 +98,72 @@ describe("buildImagePrompt — telemetry profile snapshots", () => {
 describe("buildImagePrompt — graceful omission", () => {
   test("caption-only (no GPS, no enrichment)", () => {
     const out = buildImagePrompt({ caption: "test caption" });
-    expect(out).toContain("Photographic field journal illustration: test caption.");
-    expect(out).not.toContain("Coordinates:");
+    expect(out).toContain("A photorealistic photograph from a backcountry field journal.");
+    expect(out).toContain("it: test caption.");
     expect(out).not.toContain("Altitude:");
     expect(out).not.toContain("Location:");
     expect(out).not.toContain("Local time:");
-    expect(out).not.toContain("Weather:");
-    expect(out).toContain("Realistic, plausible scene");
-    expect(out).toContain("No text, captions, watermarks");
+  });
+
+  test("the lighting-matches-time clause is omitted when there is no time to match", () => {
+    // Before #235 this was unconditional boilerplate, and the data to ground
+    // it never reached the builder at all.
+    const noTime = buildImagePrompt({ caption: "x", place: "Malibu, California" });
+    expect(noTime).not.toContain("lighting and shadows match that time of day");
+
+    const withTime = buildImagePrompt({ caption: "x", localTime: "07:42 — early morning" });
+    expect(withTime).toContain("lighting and shadows match that time of day");
   });
 
   test("empty optional strings are treated as absent", () => {
-    const out = buildImagePrompt({
-      caption: "x",
-      place: "",
-      localTime: "",
-      weather: "",
-    });
+    const out = buildImagePrompt({ caption: "x", place: "", localTime: "" });
     expect(out).not.toContain("Location:");
     expect(out).not.toContain("Local time:");
-    expect(out).not.toContain("Weather:");
   });
 
-  test("lat without lon (or vice versa) omits coordinates", () => {
-    const onlyLat = buildImagePrompt({ caption: "x", lat: 37.0 });
-    expect(onlyLat).not.toContain("Coordinates:");
-    const onlyLon = buildImagePrompt({ caption: "x", lon: -118.0 });
-    expect(onlyLon).not.toContain("Coordinates:");
-  });
-
-  test("realism guards always present, regardless of telemetry availability", () => {
+  test("guards are always present, regardless of telemetry availability", () => {
     const minimal = buildImagePrompt({ caption: "x" });
-    expect(minimal).toContain("No text, captions, watermarks");
-    expect(minimal).toContain("Do not invent or label specific named landmarks");
-    expect(minimal).toContain("Lighting and shadows match the local time");
+    expect(minimal).toContain("No readable text, signage, or watermarks");
+    expect(minimal).toContain("do not invent or label specific named landmarks");
+    expect(minimal).toContain("Shot on a real camera");
+  });
+});
+
+describe("buildImagePrompt — night/day coherence (#235 review)", () => {
+  test("a clear sky at night does not ask for bright sunlight", () => {
+    // Before the review fix this produced "Bright, clear sunlight with crisp,
+    // well-defined shadows." alongside "02:00 — night" in the same prompt.
+    const out = buildImagePrompt({
+      caption: "camp set, stars out",
+      weatherCode: 0,
+      localTime: "02:00 — night",
+      isNight: true,
+    });
+    expect(out).not.toContain("Bright, clear sunlight");
+    expect(out).toContain("Clear night sky");
+    expect(out).toContain("02:00 — night");
+  });
+
+  test("the same code in daylight still asks for sunlight", () => {
+    const out = buildImagePrompt({
+      caption: "camp set",
+      weatherCode: 0,
+      localTime: "13:00 — midday",
+      isNight: false,
+    });
+    expect(out).toContain("Bright, clear sunlight");
+    expect(out).not.toContain("Clear night sky");
+  });
+
+  test("every WMO bucket has a night phrasing that never mentions sun", () => {
+    for (const code of [0, 2, 45, 55, 65, 73, 81, 97, 99999]) {
+      const out = buildImagePrompt({ caption: "x", weatherCode: code, isNight: true });
+      expect(out).not.toMatch(/sunlight|sunny|bright sun/i);
+    }
+  });
+
+  test("isNight defaults to day when unknown, rather than throwing", () => {
+    const out = buildImagePrompt({ caption: "x", weatherCode: 0 });
+    expect(out).toContain("Bright, clear sunlight");
   });
 });

@@ -11,6 +11,7 @@ import {
   markFailed,
 } from "./core/idempotency.js";
 import { log } from "./adapters/logging/worker-logs.js";
+import { imageGenerationInFlight } from "./core/image-pending.js";
 import { parseCommand } from "./core/grammar.js";
 import { orchestrate } from "./core/orchestrator.js";
 import { sendReply } from "./adapters/outbound/garmin-ipc-inbound.js";
@@ -186,6 +187,28 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
     return;
   }
 
+  // Concurrency lease (#235 review). `!postimg` holds this request open while
+  // polling Replicate — longer than Garmin is known to tolerate (~71s
+  // observed) before redelivering. `withCheckpoint` is read-then-write with no
+  // lock, so a redelivery landing mid-poll would run the pipeline a second
+  // time concurrently and could publish two journal posts and send two SMS for
+  // one command.
+  //
+  // Gated on the in-flight image marker, NOT on the record's `processing`
+  // status: that status cannot tell "still running" from "died partway", so
+  // leasing on it would also suppress the legitimate partial-progress replays
+  // P1-16 depends on.
+  if (await imageGenerationInFlight(env, key)) {
+    log({
+      event: "concurrent_replay_skipped",
+      level: "info",
+      imei: event.imei,
+      messageCode: event.messageCode,
+      key,
+    });
+    return;
+  }
+
   // First delivery (or partial-progress replay): seed/refresh the record.
   // Subsequent withCheckpoint calls and the terminal markCompleted/markFailed
   // overwrite this entry, preserving any completedOps/opResults from a prior
@@ -305,6 +328,9 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
   const hasFix = !!point && point.gpsFix !== 0 && !(point.latitude === 0 && point.longitude === 0);
   const lat = hasFix ? point.latitude : undefined;
   const lon = hasFix ? point.longitude : undefined;
+  // Altitude was never extracted before #235, so the image prompt's
+  // altitude/local-time clauses had no data behind them.
+  const altitude = hasFix ? point.altitude : undefined;
 
   // Intercept policy (PRD §8 D10): silent-drop messages that don't begin with
   // `!` so casual operator traffic to friends/family is invisible to TrailScribe.
@@ -341,7 +367,15 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
 
   let result: CommandResult;
   try {
-    result = await orchestrate(command, { env, imei: event.imei, lat, lon, idemKey: key });
+    result = await orchestrate(command, {
+      env,
+      imei: event.imei,
+      lat,
+      lon,
+      altitude,
+      timeStamp: event.timeStamp,
+      idemKey: key,
+    });
     log({
       event: "orchestrate_ok",
       level: "info",

@@ -22,7 +22,7 @@ Living context file for Claude Code. Keep concise; update as decisions are made.
 
 - **Personas (canonical, from product decks):** Natalie (field botanist, Eastern Sierra), Marcus (expedition guide, PNW/Alaska/Patagonia), Yuki (solo bikepacker/storyteller, Iceland/Mongolia/Patagonia). See PRD §1.
 - **Hard constraints:** Garmin IPC Inbound messages are 160 chars max. Reply budget 320 chars (two SMS). Idempotency matters — Garmin retries 2/4/8/16/32/64/128s then pauses 12h × 5d.
-- **Cost target:** <$0.05 per transaction, $0.03 typical. Dominated by the LLM on `!post`; non-AI commands are effectively free.
+- **Cost target:** text path <$0.05/tx, $0.03 typical (dominated by the LLM narrative call; non-AI commands are effectively free). Image path (`!postimg`, planned `!snapimg`) <$0.23/tx target, $0.28/tx hard ceiling — image-gen capped at $0.20/image plus the same narrative call. Raised from a flat $0.05 on 2026-09-14; see PRD §6. **None of these are enforced at runtime** — the only spend gate is `DAILY_TOKEN_BUDGET`, which counts tokens, and images consume none.
 - **Not a safety system.** SOS must go through Garmin native.
 
 ## Command grammar
@@ -177,7 +177,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 
 - **jared** manages the board: https://github.com/users/brockamer/projects/3 (see `docs/project-board.md`).
 - No active plan. Last shipped work was Mode B hardening (epic #187) through 2026-05-18. Phase 3 (DO + D1, epic #99) is the next promotion candidate; `!snap`/`!snapimg` (#150) and ledger-cost (#162) are the two most-developed loose issues.
-- Git: `origin` = `https://github.com/brockamer/trailscribe.git`, default branch `main`.
+- Git: `origin` = `git@github.com:brockamer/trailscribe.git` (SSH on this laptop; the HTTPS form documented before 2026-09-13 was the dev.lan checkout), default branch `main`.
 - Commit sign-off: `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>` (update the model name as sessions change; keep the line).
 
 ## Ground rules
@@ -202,5 +202,5 @@ plans/                          # per-milestone sprint plans (none active; all a
 5. `materials/Garmin IPC Inbound.txt` — Inbound API contract (X-API-Key, 160-char limit, error codes)
 6. `src/core/grammar.ts` — command parser (note: `src/agent/` does not exist)
 7. `docs/field-commands.md` — command UX reference (operator-facing)
-8. `docs/superpowers/specs/2026-05-01-tracking-session-artifacts-design.md` — Mode B tracking design
+8. `docs/superpowers/specs/archived/2026-09/2026-05-01-tracking-session-artifacts-design.md` — Mode B tracking design (archived 2026-09-13; plan alongside it under `plans/archived/2026-09/`)
 9. `docs/resume-2026-09.md` — state of play after the 2026-05 → 2026-09 dormancy

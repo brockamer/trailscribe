@@ -1,3 +1,7 @@
+---
+**Shipped in #168, #187 on 2026-09-11. Final decisions captured in issue body.**
+---
+
 # Tracking Session Artifacts Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

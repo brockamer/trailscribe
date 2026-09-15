@@ -95,11 +95,11 @@ The `## Depends on` body section, if present, is **prose context only**. The rel
 
 Three values. This is the canonical priority signal — labels do not encode priority.
 
-| Value      | Meaning                                                                                                                              |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **High**   | Directly advances the current strategic goal (currently: shipping Phase 1 α-MVP end-to-end). Should be addressed before Medium work. |
-| **Medium** | Quality, efficiency, or reliability improvement. Important but not blocking the strategic goal.                                      |
-| **Low**    | Nice-to-have, future-facing, or optional. Safe to defer indefinitely.                                                                |
+| Value      | Meaning                                                                                                                                                                                                                                         |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **High**   | Directly advances the current strategic goal (currently: keeping the shipped Phase 2 + Mode B surface healthy and the deploy path working; Phase 3 DO + D1, epic #99, is the next promotion candidate). Should be addressed before Medium work. |
+| **Medium** | Quality, efficiency, or reliability improvement. Important but not blocking the strategic goal.                                                                                                                                                 |
+| **Low**    | Nice-to-have, future-facing, or optional. Safe to defer indefinitely.                                                                                                                                                                           |
 
 **Rules:**
 
@@ -128,6 +128,7 @@ Active labels:
 | `reliability`   | Idempotency, retry, error handling — Garmin-critical surface    |
 | `field-ops`     | Garmin tenant, device, IMEI, account ownership                  |
 | `cost`          | Token budget, ledger, per-transaction cost tracking             |
+| `big ideas`     | Speculative / future-facing exploration, not yet committed work |
 
 The legacy `blocked` label was retired on 2026-04-24 in favor of the Blocked Status column.
 

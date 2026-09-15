@@ -1,3 +1,7 @@
+---
+**Shipped in #168, #187, #194 on 2026-09-11. Final decisions captured in issue body.**
+---
+
 # Tracking Session Artifacts — Design Spec
 
 **Status:** Draft, pending review. **Mode B (MapShare pull-on-close) confirmed canonical 2026-05-03.**

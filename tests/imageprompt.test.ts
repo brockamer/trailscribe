@@ -167,3 +167,46 @@ describe("buildImagePrompt — night/day coherence (#235 review)", () => {
     expect(out).toContain("Bright, clear sunlight");
   });
 });
+
+describe("buildImagePrompt — bare !postimg, narrative as subject (#150)", () => {
+  const NARRATIVE = "Low cloud over the point: grey light on the water, the cliffs soft-edged.";
+
+  test("with no caption, the narrative supplies the subject", () => {
+    const out = buildImagePrompt({
+      narrativeSubject: NARRATIVE,
+      place: "Malibu, California",
+      weatherCode: 2,
+    });
+    expect(out).toContain(NARRATIVE);
+    expect(out).toContain("A photorealistic photograph");
+    expect(out).toContain("Location: Malibu, California.");
+  });
+
+  test("the mood-framing qualifier is dropped for narrative subjects", () => {
+    // That qualifier exists to stop a human caption being rendered as a literal
+    // object list. The narrative is already prose describing a scene, so
+    // applying it would fight a problem that isn't there.
+    const out = buildImagePrompt({ narrativeSubject: NARRATIVE });
+    expect(out).not.toContain("not a literal depiction of the objects or words in it");
+  });
+
+  test("a caption still wins when both are present", () => {
+    const out = buildImagePrompt({ caption: "fog over the ridge", narrativeSubject: NARRATIVE });
+    expect(out).toContain("fog over the ridge");
+    expect(out).not.toContain(NARRATIVE);
+    expect(out).toContain("not a literal depiction of the objects or words in it");
+  });
+
+  test("guards and camera anchor still apply with no caption", () => {
+    const out = buildImagePrompt({ narrativeSubject: NARRATIVE });
+    expect(out).toContain("Shot on a real camera");
+    expect(out).toContain("No readable text, signage, or watermarks");
+  });
+
+  test("neither caption nor narrative still yields a well-formed prompt", () => {
+    const out = buildImagePrompt({ place: "Malibu, California", weatherCode: 0 });
+    expect(out).toContain("A photorealistic photograph");
+    expect(out).not.toMatch(/\s{2,}/);
+    expect(out).not.toContain("undefined");
+  });
+});

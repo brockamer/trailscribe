@@ -55,6 +55,16 @@ export async function handlePostImg(
 ): Promise<CommandResult> {
   const { env, imei, lat, lon, idemKey } = ctx;
 
+  // Bare `!postimg` with no fix has no signal at all: no caption to describe
+  // and no place/weather to ground a scene. Refuse before any LLM or image
+  // spend rather than buying a picture of nothing (#150). A captioned
+  // `!postimg` still works fixless — the caption carries it.
+  const hasCaption = cmd.caption !== undefined && cmd.caption.trim().length > 0;
+  if (!hasCaption && (lat === undefined || lon === undefined)) {
+    log({ event: "postimg_no_signal", level: "info", imei });
+    return { body: "Need GPS fix or a caption — try again outdoors." };
+  }
+
   const budget = await checkBudget(env, ESTIMATED_POST_TOKENS);
   if (!budget.allowed) {
     log({ event: "postimg_budget_rejected", level: "warn", imei, remaining: budget.remaining });
@@ -110,8 +120,15 @@ export async function handlePostImg(
       ? approximateLocalTime(ctx.timeStamp, lon)
       : undefined;
 
+  // Bare `!postimg` (#150): the narrative just written from telemetry becomes
+  // the image's subject, so the picture and the post describe one moment.
+  const narrativeSubject = hasCaption
+    ? undefined
+    : [narrative.title, narrative.body].filter((x) => x && x.trim().length > 0).join(": ");
+
   const imagePrompt = buildImagePrompt({
     caption: cmd.caption,
+    narrativeSubject,
     place: placeName,
     weatherCode,
     altitudeM: ctx.altitude,
@@ -119,57 +136,64 @@ export async function handlePostImg(
     isNight: solar?.isNight,
   });
 
-  const imageResult: ImageOpResult = await withCheckpoint(env, idemKey, "image", async () => {
-    // A prediction created by an earlier invocation of this same idempotency
-    // key is already paid for. Resume polling it rather than buying another
-    // (#235) — at flux-2-max prices a duplicate is real money, and Garmin
-    // retries the webhook on timeout.
-    const pending = await readPendingPrediction(env, idemKey);
-    try {
-      const r = await generateImage({
-        prompt: imagePrompt,
-        env,
-        resolution: "2 MP",
-        pollBudgetMs: IMAGE_POLL_BUDGET_MS,
-        resume: pending,
-        onPredictionCreated: (predictionId, getUrl) =>
-          writePendingPrediction(env, idemKey, { predictionId, getUrl }),
-      });
+  // If the metadata-only narrative produced nothing usable there is no subject
+  // to draw, so skip image-gen rather than spend on it. Mirrors post.ts's #124
+  // bare-!post fallback, which synthesizes a minimal title for the text post.
+  const haveSubject = hasCaption || (narrativeSubject ?? "").trim().length > 0;
 
-      return {
-        ok: true as const,
-        bytesB64: arrayBufferToBase64(r.bytes),
-        mimeType: r.mimeType,
-        costUsd: r.costUsd,
-        model: r.model,
-      };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      log({
-        event: "image_gen_failed",
-        level: "error",
-        imei,
-        error: msg,
-        timedOut: err instanceof ImageGenError ? err.timedOut : undefined,
-        predictionId: err instanceof ImageGenError ? err.predictionId : undefined,
-        providerResponse: err instanceof ImageGenError ? err.providerResponse : undefined,
+  const imageResult: ImageOpResult = !haveSubject
+    ? { ok: false as const, error: "no caption and empty telemetry narrative — skipped image-gen" }
+    : await withCheckpoint(env, idemKey, "image", async () => {
+        // A prediction created by an earlier invocation of this same idempotency
+        // key is already paid for. Resume polling it rather than buying another
+        // (#235) — at flux-2-max prices a duplicate is real money, and Garmin
+        // retries the webhook on timeout.
+        const pending = await readPendingPrediction(env, idemKey);
+        try {
+          const r = await generateImage({
+            prompt: imagePrompt,
+            env,
+            resolution: "2 MP",
+            pollBudgetMs: IMAGE_POLL_BUDGET_MS,
+            resume: pending,
+            onPredictionCreated: (predictionId, getUrl) =>
+              writePendingPrediction(env, idemKey, { predictionId, getUrl }),
+          });
+
+          return {
+            ok: true as const,
+            bytesB64: arrayBufferToBase64(r.bytes),
+            mimeType: r.mimeType,
+            costUsd: r.costUsd,
+            model: r.model,
+          };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          log({
+            event: "image_gen_failed",
+            level: "error",
+            imei,
+            error: msg,
+            timedOut: err instanceof ImageGenError ? err.timedOut : undefined,
+            predictionId: err instanceof ImageGenError ? err.predictionId : undefined,
+            providerResponse: err instanceof ImageGenError ? err.providerResponse : undefined,
+          });
+          // A timeout is not a verdict — the prediction is very likely still
+          // running, and is already paid for. Throwing here means withCheckpoint
+          // never persists it, so a later redelivery re-enters and `resume`s the
+          // same prediction instead of inheriting a cached "failed" forever.
+          // Terminal provider failures still checkpoint, since retrying them is
+          // just spend.
+          if (err instanceof ImageGenError && err.timedOut) throw err;
+          return { ok: false as const, error: msg };
+        }
+      }).catch((err: unknown) => {
+        // Text-only fallback for the un-checkpointed timeout path: the operator
+        // still gets their journal entry now, and a retry can still recover the
+        // image.
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false as const, error: msg };
       });
-      // A timeout is not a verdict — the prediction is very likely still
-      // running, and is already paid for. Throwing here means withCheckpoint
-      // never persists it, so a later redelivery re-enters and `resume`s the
-      // same prediction instead of inheriting a cached "failed" forever.
-      // Terminal provider failures still checkpoint, since retrying them is
-      // just spend.
-      if (err instanceof ImageGenError && err.timedOut) throw err;
-      return { ok: false as const, error: msg };
-    }
-  }).catch((err: unknown) => {
-    // Text-only fallback for the un-checkpointed timeout path: the operator
-    // still gets their journal entry now, and a retry can still recover the
-    // image.
-    const msg = err instanceof Error ? err.message : String(err);
-    return { ok: false as const, error: msg };
-  });
 
   // Only now is the `image` checkpoint durable, so the marker is safe to drop.
   // Clearing it inside the checkpointed fn (as first written) left a window in
@@ -278,7 +302,7 @@ export async function handlePostImg(
         lat,
         lon,
         command_type: "postimg",
-        free_text: cmd.caption,
+        free_text: cmd.caption ?? "",
       },
       env,
     );

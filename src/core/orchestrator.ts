@@ -25,6 +25,10 @@ export interface OrchestratorContext {
    * replay. Required from Phase 1 onward.
    */
   idemKey: string;
+  /** Device altitude in metres, when the fix carries one (#235). */
+  altitude?: number;
+  /** Garmin event timestamp in ms epoch, for local-time grounding (#235). */
+  timeStamp?: number;
 }
 
 /**

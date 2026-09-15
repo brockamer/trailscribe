@@ -54,7 +54,12 @@ export type OpName =
   | "blast"
   | "image"
   | "publish_track"
-  | "track_narrative";
+  | "track_narrative"
+  // Ledger writes are side effects too (#235 review): they were unguarded, so a
+  // re-delivered event whose narrative/image checkpoints cache-hit would still
+  // re-record the spend and double-count `!cost`.
+  | "ledger_text"
+  | "ledger_image";
 
 /**
  * Message-lifecycle record stored under `idem:<key>` (PRD §5).

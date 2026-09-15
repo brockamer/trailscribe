@@ -31,9 +31,36 @@ interface OpenMeteoResponse {
  * strips them in P1-01).
  */
 export async function currentWeather(lat: number, lon: number, env: Env): Promise<string> {
-  const key = `wx:${lat.toFixed(2)}:${lon.toFixed(2)}`;
+  return (await currentWeatherDetail(lat, lon, env)).text;
+}
+
+/**
+ * Weather with the raw WMO code preserved alongside the display string.
+ *
+ * `!postimg` needs the code, not the label: the image prompt renders light
+ * quality ("crisp, well-defined shadows") rather than data ("74°F, 8mph"),
+ * and regex-parsing the display string back into a code is exactly the kind
+ * of round-trip that rots (#235). `code` is undefined when the upstream call
+ * failed or when a pre-#235 cache entry is read back.
+ */
+export interface WeatherDetail {
+  text: string;
+  code?: number;
+}
+
+export async function currentWeatherDetail(
+  lat: number,
+  lon: number,
+  env: Env,
+): Promise<WeatherDetail> {
+  // Versioned key (#235 review). The value shape changed from a bare display
+  // string to JSON. Sharing one key across both shapes is not rollback-safe:
+  // pre-#235 code reading a v2 entry would hand raw JSON straight to the
+  // device as the weather string. Old code reads `wx:` and never sees these,
+  // so a rollback misses cleanly and re-fetches.
+  const key = `wx:v2:${lat.toFixed(2)}:${lon.toFixed(2)}`;
   const cached = await env.TS_CACHE.get(key);
-  if (cached !== null) return cached;
+  if (cached !== null) return parseCached(cached);
 
   const url =
     `${OPEN_METEO_BASE}?latitude=${lat}&longitude=${lon}` +
@@ -50,12 +77,12 @@ export async function currentWeather(lat: number, lon: number, env: Env): Promis
       reason: "network",
       error: e instanceof Error ? e.message : String(e),
     });
-    return FALLBACK;
+    return { text: FALLBACK };
   }
 
   if (!res.ok) {
     log({ event: "weather_failed", level: "warn", reason: "http", status: res.status });
-    return FALLBACK;
+    return { text: FALLBACK };
   }
 
   let data: OpenMeteoResponse;
@@ -63,16 +90,42 @@ export async function currentWeather(lat: number, lon: number, env: Env): Promis
     data = (await res.json()) as OpenMeteoResponse;
   } catch {
     log({ event: "weather_failed", level: "warn", reason: "bad_json" });
-    return FALLBACK;
+    return { text: FALLBACK };
   }
 
   const formatted = formatWeather(data);
   if (formatted === FALLBACK) {
     log({ event: "weather_failed", level: "warn", reason: "missing_fields" });
-    return FALLBACK;
+    return { text: FALLBACK };
   }
-  await env.TS_CACHE.put(key, formatted, { expirationTtl: CACHE_TTL_SECONDS });
-  return formatted;
+  const detail: WeatherDetail = { text: formatted, code: data.current?.weather_code };
+  await env.TS_CACHE.put(key, JSON.stringify(detail), { expirationTtl: CACHE_TTL_SECONDS });
+  return detail;
+}
+
+/**
+ * Read a cache entry written by either shape.
+ *
+ * Before #235 this cache held a bare display string; those entries live for
+ * up to an hour after deploy, so a naive `JSON.parse` would throw on every
+ * one of them. Anything that isn't a well-formed detail object is treated as
+ * legacy text with no code.
+ */
+function parseCached(raw: string): WeatherDetail {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof (parsed as WeatherDetail).text === "string"
+    ) {
+      const d = parsed as WeatherDetail;
+      return { text: d.text, code: typeof d.code === "number" ? d.code : undefined };
+    }
+  } catch {
+    // legacy bare-string entry — fall through
+  }
+  return { text: raw };
 }
 
 function formatWeather(data: OpenMeteoResponse): string {

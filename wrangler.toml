@@ -42,8 +42,8 @@ JOURNAL_URL_TEMPLATE = "https://brockamer.github.io/trailscribe-journal/{yyyy}/{
 JOURNAL_BASEURL = "/trailscribe-journal"
 # Image-gen (P2-17) — Replicate Flux schnell for the first cut.
 IMAGE_PROVIDER = "replicate"
-IMAGE_MODEL = "black-forest-labs/flux-schnell"
-IMAGE_COST_PER_CALL_USD = "0.003"
+IMAGE_MODEL = "black-forest-labs/flux-2-max"
+IMAGE_COST_PER_CALL_USD = "0.10"
 JOURNAL_IMAGE_PATH_TEMPLATE = "assets/images/{yyyy}-{mm}-{dd}-{slug}.{ext}"
 
 # KV namespaces — provisioned per env (dev main + dev preview + staging + production).
@@ -122,8 +122,8 @@ JOURNAL_POST_PATH_TEMPLATE = "_posts/{yyyy}-{mm}-{dd}-{slug}.md"
 JOURNAL_URL_TEMPLATE = "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html"
 JOURNAL_BASEURL = "/trailscribe-journal"
 IMAGE_PROVIDER = "replicate"
-IMAGE_MODEL = "black-forest-labs/flux-schnell"
-IMAGE_COST_PER_CALL_USD = "0.003"
+IMAGE_MODEL = "black-forest-labs/flux-2-max"
+IMAGE_COST_PER_CALL_USD = "0.10"
 JOURNAL_IMAGE_PATH_TEMPLATE = "assets/images/{yyyy}-{mm}-{dd}-{slug}.{ext}"
 
 [[env.staging.kv_namespaces]]
@@ -178,8 +178,8 @@ JOURNAL_POST_PATH_TEMPLATE = "_posts/{yyyy}-{mm}-{dd}-{slug}.md"
 JOURNAL_URL_TEMPLATE = "https://brockamer.github.io/trailscribe-journal/{yyyy}/{mm}/{dd}/{slug}.html"
 JOURNAL_BASEURL = "/trailscribe-journal"
 IMAGE_PROVIDER = "replicate"
-IMAGE_MODEL = "black-forest-labs/flux-schnell"
-IMAGE_COST_PER_CALL_USD = "0.003"
+IMAGE_MODEL = "black-forest-labs/flux-2-max"
+IMAGE_COST_PER_CALL_USD = "0.10"
 JOURNAL_IMAGE_PATH_TEMPLATE = "assets/images/{yyyy}-{mm}-{dd}-{slug}.{ext}"
 
 [[env.production.kv_namespaces]]

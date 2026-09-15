@@ -162,7 +162,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 - `JOURNAL_POST_PATH_TEMPLATE` — e.g. `_posts/{yyyy}-{mm}-{dd}-{slug}.md`
 - `JOURNAL_URL_TEMPLATE` — public URL pattern for committed posts; pinned by P1-20
 - `IMAGE_PROVIDER` — `replicate` for α (P2-17; `!postimg`)
-- `IMAGE_MODEL` — e.g. `black-forest-labs/flux-schnell`
+- `IMAGE_MODEL` — `black-forest-labs/flux-2-max` (swapped from `flux-schnell` in #235 after a real side-by-side bake-off; schnell rendered cartoons and literal lettered sticky notes, flux-2-max produced photorealistic output with blank notes). Billed per output-megapixel: `$0.04` fixed + `$0.03`/MP, so `$0.10` at the `resolution: "2 MP"` the adapter requests. **`IMAGE_COST_PER_CALL_USD` is only correct while that resolution is unchanged** — at 4 MP the same model costs ~$0.16.
 - `IMAGE_COST_PER_CALL_USD` — ledger pricing for image-gen; default `0.01`
 - `JOURNAL_IMAGE_PATH_TEMPLATE` — e.g. `assets/images/{yyyy}-{mm}-{dd}-{slug}.{ext}` (commits the binary alongside the markdown post; non-underscore so Jekyll serves it)
 

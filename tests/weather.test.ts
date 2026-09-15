@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi, type MockInstance } from "vitest";
-import { currentWeather } from "../src/adapters/location/weather.js";
+import { currentWeather, currentWeatherDetail } from "../src/adapters/location/weather.js";
 import { makeTestEnv } from "./helpers/env.js";
 import type { Env } from "../src/env.js";
 
@@ -37,14 +37,14 @@ function loggedEvents(): Array<Record<string, unknown>> {
 
 describe("currentWeather — cache", () => {
   test("cache hit: returns stored value, no fetch", async () => {
-    await env.TS_CACHE.put("wx:37.17:-118.59", "42°F, 8mph W, clear");
+    await env.TS_CACHE.put("wx:v2:37.17:-118.59", "42°F, 8mph W, clear");
     const result = await currentWeather(37.17, -118.59, env);
     expect(result).toBe("42°F, 8mph W, clear");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   test("cache key rounds to 2 decimals (~1km grid) so nearby positions share", async () => {
-    await env.TS_CACHE.put("wx:37.17:-118.59", "42°F, 8mph W, clear");
+    await env.TS_CACHE.put("wx:v2:37.17:-118.59", "42°F, 8mph W, clear");
     // Different sub-cell positions, same 2-decimal cell
     const result = await currentWeather(37.171, -118.589, env);
     expect(result).toBe("42°F, 8mph W, clear");
@@ -78,7 +78,7 @@ describe("currentWeather — Open-Meteo fetch", () => {
 
     expect(putSpy).toHaveBeenCalledTimes(1);
     const [cacheKey, , opts] = putSpy.mock.calls[0];
-    expect(String(cacheKey)).toBe("wx:37.17:-118.59");
+    expect(String(cacheKey)).toBe("wx:v2:37.17:-118.59");
     expect((opts as { expirationTtl?: number } | undefined)?.expirationTtl).toBe(3600);
   });
 
@@ -121,5 +121,67 @@ describe("currentWeather — error fallback", () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, { current: {} }));
     const result = await currentWeather(40, -100, env);
     expect(result).toBe("weather unavailable");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #235 — the cache value shape changed from a bare display string to JSON so
+// the raw WMO code survives for the image prompt. Two hazards come with that:
+// a legacy entry must not crash JSON.parse, and a rollback must not surface
+// raw JSON to the device.
+// ---------------------------------------------------------------------------
+
+describe("currentWeatherDetail — cache shape migration (#235)", () => {
+  test("round-trips text and the raw WMO code through the cache", async () => {
+    const env = makeTestEnv();
+    await env.TS_CACHE.put(
+      "wx:v2:37.17:-118.59",
+      JSON.stringify({ text: "42°F, 8mph W, clear", code: 0 }),
+    );
+    const got = await currentWeatherDetail(37.1682, -118.5891, env);
+    expect(got.text).toBe("42°F, 8mph W, clear");
+    expect(got.code).toBe(0);
+  });
+
+  test("a legacy bare-string entry is read as text, not thrown on", async () => {
+    const env = makeTestEnv();
+    await env.TS_CACHE.put("wx:v2:37.17:-118.59", "42°F, 8mph W, clear");
+    const got = await currentWeatherDetail(37.1682, -118.5891, env);
+    expect(got.text).toBe("42°F, 8mph W, clear");
+    expect(got.code).toBeUndefined();
+  });
+
+  test("legacy strings that happen to be valid JSON scalars still read as text", async () => {
+    // "null", "42" and "true" all parse successfully but are not detail
+    // objects — the shape check, not the try/catch, is what saves these.
+    for (const raw of ["null", "42", "true", '"quoted"', ""]) {
+      const env = makeTestEnv();
+      await env.TS_CACHE.put("wx:v2:37.17:-118.59", raw);
+      const got = await currentWeatherDetail(37.1682, -118.5891, env);
+      expect(got.text).toBe(raw);
+      expect(got.code).toBeUndefined();
+    }
+  });
+
+  test("the cache key is versioned, so a rollback to pre-#235 code misses cleanly", async () => {
+    // Old code reads `wx:<lat>:<lon>`; nothing writes that key any more, so a
+    // rollback re-fetches from Open-Meteo instead of handing raw JSON to the
+    // device as the weather string.
+    const env = makeTestEnv();
+    await env.TS_CACHE.put("wx:37.17:-118.59", "stale pre-#235 entry");
+    const putSpy = vi.spyOn(env.TS_CACHE, "put");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          current: { temperature_2m: 49, wind_speed_10m: 2, weather_code: 0 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    const got = await currentWeatherDetail(37.1682, -118.5891, env);
+    expect(got.text).not.toBe("stale pre-#235 entry");
+    expect(String(putSpy.mock.calls[0][0])).toBe("wx:v2:37.17:-118.59");
+    vi.restoreAllMocks();
   });
 });

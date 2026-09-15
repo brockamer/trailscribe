@@ -55,7 +55,9 @@ describe("generateImage — happy path", () => {
     expect(predUrl).toBe(`https://api.replicate.com/v1/models/${env.IMAGE_MODEL}/predictions`);
     const headers = (predInit as RequestInit).headers as Record<string, string>;
     expect(headers.Authorization).toBe(`Bearer ${env.IMAGE_API_KEY}`);
-    expect(headers.Prefer).toBe("wait");
+    // explicit since #235: bare "wait" already meant 60s, but naming it guards
+    // against a future change to Replicate's default.
+    expect(headers.Prefer).toBe("wait=60");
     const body = JSON.parse(String((predInit as RequestInit).body));
     expect(body.input.prompt).toBe("alpine cirque");
     expect(body.input.aspect_ratio).toBe("16:9");
@@ -167,5 +169,164 @@ describe("ImageGenError — shape", () => {
     expect(err.name).toBe("ImageGenError");
     expect(err.status).toBe(503);
     expect(err.providerResponse).toBe("service down");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #235 — poll-mode. A non-terminal status is Replicate saying "still running,
+// poll me", not a failure. Production 2026-09-13 threw on exactly this after
+// 61s and the device got "(image gen failed; text-only)".
+// ---------------------------------------------------------------------------
+
+const noSleep = () => Promise.resolve();
+
+function pending(status: "starting" | "processing", id = "pred-1"): Response {
+  return predictionResponse({
+    id,
+    status,
+    output: null,
+    error: null,
+    urls: { get: `https://api.replicate.com/v1/predictions/${id}` },
+  });
+}
+
+describe("generateImage — poll-mode (#235)", () => {
+  test("processing then succeeded → polls urls.get and returns the bytes", async () => {
+    fetchImpl
+      .mockResolvedValueOnce(pending("processing"))
+      .mockResolvedValueOnce(
+        predictionResponse({
+          id: "pred-1",
+          status: "succeeded",
+          output: ["https://replicate.delivery/ok.png"],
+        }),
+      )
+      .mockResolvedValueOnce(imageResponse(PNG_BYTES, "image/png"));
+
+    const result = await generateImage({ prompt: "x", env, fetchImpl, sleepImpl: noSleep });
+
+    expect(result.bytes.byteLength).toBe(PNG_BYTES.byteLength);
+    expect(fetchImpl.mock.calls[1][0]).toBe("https://api.replicate.com/v1/predictions/pred-1");
+  });
+
+  test("starting → processing → succeeded polls until terminal", async () => {
+    fetchImpl
+      .mockResolvedValueOnce(pending("starting"))
+      .mockResolvedValueOnce(pending("processing"))
+      .mockResolvedValueOnce(pending("processing"))
+      .mockResolvedValueOnce(
+        predictionResponse({
+          id: "pred-1",
+          status: "succeeded",
+          output: "https://replicate.delivery/ok.png",
+        }),
+      )
+      .mockResolvedValueOnce(imageResponse(PNG_BYTES));
+
+    const result = await generateImage({ prompt: "x", env, fetchImpl, sleepImpl: noSleep });
+    expect(result.bytes.byteLength).toBe(PNG_BYTES.byteLength);
+    expect(fetchImpl).toHaveBeenCalledTimes(5);
+  });
+
+  test("polling carries the bearer token but no Prefer header", async () => {
+    fetchImpl
+      .mockResolvedValueOnce(pending("processing"))
+      .mockResolvedValueOnce(
+        predictionResponse({ id: "pred-1", status: "succeeded", output: ["https://x/ok.png"] }),
+      )
+      .mockResolvedValueOnce(imageResponse(PNG_BYTES));
+
+    await generateImage({ prompt: "x", env, fetchImpl, sleepImpl: noSleep });
+
+    const pollInit = fetchImpl.mock.calls[1][1] as RequestInit;
+    const headers = pollInit.headers as Record<string, string>;
+    expect(headers.Authorization).toBe(`Bearer ${env.IMAGE_API_KEY}`);
+    expect(headers.Prefer).toBeUndefined();
+  });
+
+  test("terminal 'failed' during polling throws, and is not retried", async () => {
+    fetchImpl
+      .mockResolvedValueOnce(pending("processing"))
+      .mockResolvedValueOnce(
+        predictionResponse({ id: "pred-1", status: "failed", error: "NSFW detected" }),
+      );
+
+    await expect(
+      generateImage({ prompt: "x", env, fetchImpl, sleepImpl: noSleep }),
+    ).rejects.toMatchObject({ timedOut: false, predictionId: "pred-1" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  test("'aborted' is treated as terminal (was missing from the status union)", async () => {
+    fetchImpl
+      .mockResolvedValueOnce(pending("processing"))
+      .mockResolvedValueOnce(predictionResponse({ id: "pred-1", status: "aborted" }));
+
+    await expect(
+      generateImage({ prompt: "x", env, fetchImpl, sleepImpl: noSleep }),
+    ).rejects.toThrow(/aborted/);
+  });
+
+  test("exhausting the poll budget throws a distinct timedOut error carrying the prediction id", async () => {
+    // a fresh Response per call — a Response body can only be consumed once
+    fetchImpl.mockImplementation(() => Promise.resolve(pending("processing")));
+    let clock = 0;
+
+    await expect(
+      generateImage({
+        prompt: "x",
+        env,
+        fetchImpl,
+        sleepImpl: noSleep,
+        nowImpl: () => (clock += 20_000),
+        pollBudgetMs: 60_000,
+      }),
+    ).rejects.toMatchObject({ timedOut: true, predictionId: "pred-1" });
+  });
+
+  test("onPredictionCreated fires with the id and poll URL before any waiting", async () => {
+    fetchImpl
+      .mockResolvedValueOnce(pending("processing", "pred-abc"))
+      .mockResolvedValueOnce(
+        predictionResponse({ id: "pred-abc", status: "succeeded", output: ["https://x/ok.png"] }),
+      )
+      .mockResolvedValueOnce(imageResponse(PNG_BYTES));
+
+    const seen: Array<{ predictionId: string; getUrl: string }> = [];
+    await generateImage({
+      prompt: "x",
+      env,
+      fetchImpl,
+      sleepImpl: noSleep,
+      onPredictionCreated: (predictionId, getUrl) => {
+        seen.push({ predictionId, getUrl });
+      },
+    });
+
+    expect(seen).toEqual([
+      { predictionId: "pred-abc", getUrl: "https://api.replicate.com/v1/predictions/pred-abc" },
+    ]);
+  });
+
+  test("resume skips creation and polls the existing prediction (no double billing)", async () => {
+    fetchImpl
+      .mockResolvedValueOnce(
+        predictionResponse({ id: "pred-9", status: "succeeded", output: ["https://x/ok.png"] }),
+      )
+      .mockResolvedValueOnce(imageResponse(PNG_BYTES));
+
+    const result = await generateImage({
+      prompt: "x",
+      env,
+      fetchImpl,
+      sleepImpl: noSleep,
+      resume: { predictionId: "pred-9", getUrl: "https://api.replicate.com/v1/predictions/pred-9" },
+    });
+
+    expect(result.bytes.byteLength).toBe(PNG_BYTES.byteLength);
+    // First call must be the GET, never a POST create.
+    expect(fetchImpl.mock.calls[0][0]).toBe("https://api.replicate.com/v1/predictions/pred-9");
+    const init = fetchImpl.mock.calls[0][1] as RequestInit | undefined;
+    expect(init?.method ?? "GET").toBe("GET");
   });
 });

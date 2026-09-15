@@ -115,6 +115,26 @@ export async function handlePost(cmd: PostCommand, ctx: HandlePostContext): Prom
     };
   }
 
+  // Bill the LLM call that already happened, BEFORE attempting to publish
+  // (#213). recordTransaction used to run after the publish try/catch, so a
+  // failed publish silently lost the record of spend the provider had already
+  // charged for — under-reporting `!cost` and leaving the budget gate blind.
+  // `tracking.ts` has always done it in this order.
+  try {
+    await recordTransaction({
+      command: "post",
+      usage: narrative.usage,
+      env,
+    });
+  } catch (err) {
+    log({
+      event: "post_ledger_write_failed",
+      level: "warn",
+      imei,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   let publishResult: Awaited<ReturnType<typeof publishPost>>;
   try {
     publishResult = await withCheckpoint(env, idemKey, "publish", () =>
@@ -133,22 +153,8 @@ export async function handlePost(cmd: PostCommand, ctx: HandlePostContext): Prom
     return failPipeline(env, idemKey, "publish", err);
   }
 
-  // Ledger + context are best-effort: a failure here doesn't block the user
+  // Context append is best-effort: a failure here doesn't block the user
   // reply (which is what they actually care about).
-  try {
-    await recordTransaction({
-      command: "post",
-      usage: narrative.usage,
-      env,
-    });
-  } catch (err) {
-    log({
-      event: "post_ledger_write_failed",
-      level: "warn",
-      imei,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
 
   try {
     await appendEvent(

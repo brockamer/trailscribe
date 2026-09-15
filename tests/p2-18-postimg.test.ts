@@ -366,3 +366,73 @@ describe("P2-18 — !cost breakout", () => {
     expect(messages[0]).toMatch(/^0 req · 0\.0k tok · \$0\.00 \(since \d{4}-\d{2}-01\)$/);
   });
 });
+
+describe("P2-18 !postimg — bare, no caption (#150)", () => {
+  test("no GPS fix and no caption: refuses before any LLM or image spend", async () => {
+    // The guard exists because a bare !postimg without a fix has no signal at
+    // all — nothing to describe and nothing to ground a scene in. At ~$0.10 an
+    // image, refusing beats buying a picture of nothing.
+    fetchSpy = vi.fn(async (url: URL | RequestInfo) => {
+      throw new Error(`no network call expected, got: ${String(url)}`);
+    });
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!postimg"));
+
+    const [, messages] = sendReplyMock.mock.calls[0];
+    expect(messages[0]).toContain("Need GPS fix or a caption");
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    // Nothing billed.
+    const snap = await monthlyTotals(env);
+    expect(snap.by_command["postimg"]?.requests ?? 0).toBe(0);
+    expect(snap.image_requests ?? 0).toBe(0);
+  });
+
+  test("a caption still works with no GPS fix — the caption carries it", async () => {
+    fetchSpy = vi.fn(async (url: URL | RequestInfo, init?: RequestInit) => {
+      const u = typeof url === "string" ? url : url.toString();
+      if (u.includes("openrouter.ai") || u.includes("/chat/completions")) {
+        return jsonResponse(narrativeResponse());
+      }
+      if (u.includes("api.replicate.com") && u.endsWith("predictions")) {
+        return jsonResponse({
+          id: "pred_x",
+          status: "succeeded",
+          output: "https://replicate.delivery/output/img-x.webp",
+        });
+      }
+      if (u.includes("replicate.delivery/output")) return imageResponse();
+      if (u.includes("api.github.com/graphql")) {
+        const reqBody = JSON.parse((init?.body as string) ?? "{}") as { query: string };
+        if (reqBody.query.includes("createCommitOnBranch")) {
+          return jsonResponse({
+            data: {
+              createCommitOnBranch: {
+                commit: { oid: "abc123commit", url: "https://github.com/x/y/commit/abc" },
+              },
+            },
+          });
+        }
+        return jsonResponse({
+          data: { repository: { ref: { target: { oid: "deadbeefoid" } } } },
+        });
+      }
+      if (u.includes("api.github.com/repos")) {
+        // GET = "does this path already exist?" -> 404 (new post). PUT = create.
+        const method = (init?.method ?? "GET").toUpperCase();
+        return method === "GET"
+          ? jsonResponse({ message: "Not Found" }, 404)
+          : jsonResponse({ content: { html_url: "https://example.test/post" } }, 201);
+      }
+      throw new Error(`unmatched fetch: ${u}`);
+    });
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!postimg fog over the ridge"));
+
+    const [, messages] = sendReplyMock.mock.calls[0];
+    expect(messages[0]).not.toContain("Need GPS fix");
+    expect(messages[0]).toMatch(/^Posted: /);
+  });
+});

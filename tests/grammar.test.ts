@@ -205,6 +205,14 @@ describe("parseCommand — rejects unknown / malformed input", () => {
     expect(parseCommand("!post  ")).toEqual({ type: "post" });
   });
 
+  test("parses bare !postimg — telemetry-only image post (#150)", () => {
+    // Mirrors bare !post (#124): with no caption the narrative is written from
+    // telemetry alone and becomes the image's subject.
+    expect(parseCommand("!postimg")).toEqual({ type: "postimg" });
+    expect(parseCommand("!postimg  ")).toEqual({ type: "postimg" });
+    expect(parseCommand("!POSTIMG")).toEqual({ type: "postimg" });
+  });
+
   test("returns undefined for !todo without a task", () => {
     expect(parseCommand("!todo  ")).toBeUndefined();
   });
@@ -221,7 +229,7 @@ describe("parseCommand — rejects unknown / malformed input", () => {
     expect(parseCommand("!ai")).toBeUndefined();
     expect(parseCommand("!camp")).toBeUndefined();
     expect(parseCommand("!blast")).toBeUndefined();
-    expect(parseCommand("!postimg")).toBeUndefined();
+    // !postimg left this group in #150 — it now parses bare, like !post.
   });
 
   test("returns undefined for malformed !share", () => {

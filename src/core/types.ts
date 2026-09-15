@@ -21,7 +21,7 @@ export type ParsedCommand =
   | { type: "camp"; query: string }
   | { type: "share"; to: string; note: string }
   | { type: "blast"; note: string }
-  | { type: "postimg"; caption: string };
+  | { type: "postimg"; caption?: string };
 
 /** Commands whose reply-budget accounting draws from the AI ledger. */
 export const AI_COMMANDS: ReadonlySet<ParsedCommand["type"]> = new Set([

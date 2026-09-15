@@ -95,8 +95,9 @@ export function parseCommand(message: string): ParsedCommand | undefined {
       return { type: "blast", note: rest };
     }
     case "postimg": {
-      if (!rest) return undefined;
-      return { type: "postimg", caption: rest };
+      // Bare `!postimg` (#150) mirrors bare `!post` (#124): with no caption the
+      // narrative is written from telemetry alone and seeds the image prompt.
+      return rest ? { type: "postimg", caption: rest } : { type: "postimg" };
     }
     default:
       return undefined;

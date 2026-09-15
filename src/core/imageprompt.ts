@@ -1,5 +1,12 @@
 export interface ImagePromptInputs {
-  caption: string;
+  /** Operator caption from `!postimg <caption>`. Absent for bare `!postimg`. */
+  caption?: string;
+  /**
+   * Fallback subject for bare `!postimg` (#150) — the narrative the LLM just
+   * wrote from telemetry. Used only when `caption` is absent; a caption always
+   * wins, since it is what the operator actually asked for.
+   */
+  narrativeSubject?: string;
   /** Reverse-geocoded place name (no specific landmark naming required). */
   place?: string;
   altitudeM?: number;
@@ -117,7 +124,19 @@ function nightLightQuality(code: number): string {
  * diffusion model cannot use; the place name does that work.
  */
 export function buildImagePrompt(inputs: ImagePromptInputs): string {
-  const parts: string[] = [PHOTO_LEAD, `${CAPTION_FRAME} ${inputs.caption.trim()}.`];
+  const parts: string[] = [PHOTO_LEAD];
+
+  const caption = inputs.caption?.trim();
+  const narrative = inputs.narrativeSubject?.trim();
+  if (caption !== undefined && caption.length > 0) {
+    // A human caption may name objects it does not want drawn, so it gets the
+    // mood-framing qualifier.
+    parts.push(`${CAPTION_FRAME} ${caption}.`);
+  } else if (narrative !== undefined && narrative.length > 0) {
+    // The narrative is already prose describing a scene — framing it as "mood,
+    // not objects" would fight a problem that isn't present.
+    parts.push(narrative.endsWith(".") ? narrative : `${narrative}.`);
+  }
 
   if (inputs.place !== undefined && inputs.place.length > 0) {
     parts.push(`Location: ${inputs.place}.`);

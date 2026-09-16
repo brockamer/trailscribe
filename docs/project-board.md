@@ -40,6 +40,29 @@ This document describes the conventions so anyone (human or Claude session) can 
 
 **Bootstrapped by Jared on 2026-04-23. Restructured 2026-04-24** to mirror the findajob board's 5-column workflow.
 
+## Jared config
+
+- voice: ste
+
+Jared renders every dialogue surface in ASD-STE100 Simplified Technical English
+(the controlled language maintained by the AeroSpace and Defence Industries
+Association of Europe, Issue 8) rather than in the Jared Dunn character voice.
+Chosen 2026-09-16.
+
+The lane rule is unchanged and independent of this knob: **board writes are plain
+technical prose under every value.** Issue bodies, session notes, close comments,
+body-edit diffs, PR descriptions and commit messages do not change register. Only
+Jared's side of the live conversation does.
+
+Note: `ste` is not `disabled`. `disabled` removes the character and leaves prose
+with no rule set; `ste` substitutes a specification — approved-word dictionary with
+one meaning per word, approved verb forms only (no `-ing` as verb or noun), 20-word
+procedural and 25-word descriptive sentence caps, six-sentence paragraphs, active
+voice, and no idiom or metaphor. Machine strings, technical names, file paths,
+`#N` references and script output pass through verbatim.
+
+Spec: `skills/jared/references/voice-ste.md` in `brockamer/jared`.
+
 ## Division of labor — board vs. PRD vs. canonical docs
 
 Drift is the main failure mode. Every fact has exactly one home. On conflict, the canonical home wins.

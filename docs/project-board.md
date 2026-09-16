@@ -63,6 +63,28 @@ voice, and no idiom or metaphor. Machine strings, technical names, file paths,
 
 Spec: `skills/jared/references/voice-ste.md` in `brockamer/jared`.
 
+### Current-state operator docs
+
+- Docs: CLAUDE.md, docs/PRD.md, docs/architecture.md
+
+These are the three documents that describe TrailScribe's **current** behaviour, as
+opposed to its history or its plan. `jared groom` soft-gates on them: when a merged PR
+touched the code surface but none of the three, the sweep raises a doc-sync advisory. It
+is an advisory, not a block — a PR that genuinely changes no documented behaviour is
+allowed to say so and move on.
+
+**The `Code surface:` bullet is deliberately omitted.** `_parse_operator_docs` defaults
+it to `src/**`, which is exactly what we want, and writing it out is unsafe here:
+Prettier escapes a bare `src/**` in a Markdown bullet to `src/\*\*` (it reads `**` as
+bold), and the parser consumes bullet values verbatim — no unescaping, no backtick
+stripping. Either the escaped form or a code-span form would produce a pattern that
+`fnmatch` never matches, giving a doc-sync gate that silently passes forever. Same family
+as the Prettier non-convergence trap in `CLAUDE.md`. Letting the default supply the value
+keeps Prettier away from it entirely.
+
+Adopted 2026-09-16 (#206), using the project-configurable convention jared shipped in
+`brockamer/jared#163`. The original request was #176, closed as superseded.
+
 ## Division of labor — board vs. PRD vs. canonical docs
 
 Drift is the main failure mode. Every fact has exactly one home. On conflict, the canonical home wins.

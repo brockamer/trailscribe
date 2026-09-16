@@ -141,7 +141,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 - `GITHUB_JOURNAL_BRANCH` — `main`
 - `IMAGE_API_KEY` — image-gen provider API key (Replicate token in α; `!postimg` only)
 - `ADDRESS_BOOK_JSON` — alias map for `!share`/`!blast` (Phase 2; e.g. `{"aliases":{"home":"...","all":"a@x,b@y"}}`)
-- `MAPSHARE_KEY` — per-tenant MapShare slug (path component appended to `MAPSHARE_BASE`); `trailscribe` for prod
+- `MAPSHARE_KEY` — per-tenant MapShare slug (path component appended to `MAPSHARE_BASE`); `trailscribe` for prod and staging. It is the **device user's** (`trailscribeapp@gmail.com`) MapShare address; the admin account's is `trailscribeadmin` (renamed 2026-09-13 — it had been holding `trailscribe`, which made the name "not available" to the device user). **If the feed answers HTTP 302 with the correct access code (a wrong code still gets 401), the MapShare toggle is OFF** in Garmin Explore → MapShare on the device user's account, not a bad secret — turn it on and accept the consent prompt. Seen twice on 2026-09-12/13. An unknown slug answers 200 with an empty feed, so a stale `MAPSHARE_KEY` looks like "no breadcrumbs", not an error.
 - `MAPSHARE_PASSWORD` — MapShare access code (Basic Auth password; empty user). Set in Garmin Explore → MapShare → Access Code. Empty string = unprotected feed (no auth header).
 
 **Vars (non-secret):**

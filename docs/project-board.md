@@ -73,14 +73,18 @@ touched the code surface but none of the three, the sweep raises a doc-sync advi
 is an advisory, not a block — a PR that genuinely changes no documented behaviour is
 allowed to say so and move on.
 
-**The `Code surface:` bullet is deliberately omitted.** `_parse_operator_docs` defaults
-it to `src/**`, which is exactly what we want, and writing it out is unsafe here:
-Prettier escapes a bare `src/**` in a Markdown bullet to `src/\*\*` (it reads `**` as
-bold), and the parser consumes bullet values verbatim — no unescaping, no backtick
-stripping. Either the escaped form or a code-span form would produce a pattern that
-`fnmatch` never matches, giving a doc-sync gate that silently passes forever. Same family
-as the Prettier non-convergence trap in `CLAUDE.md`. Letting the default supply the value
-keeps Prettier away from it entirely.
+**The `Code surface:` bullet is omitted on purpose.** `_parse_operator_docs` defaults it
+to `src/**`, which is what we want, so the bullet adds nothing. Writing it out used to be
+actively unsafe: Prettier rewrites a bare `src/**` in a Markdown bullet to `src/\*\*`
+(it reads `**` as bold) and the parser consumed bullet values verbatim, producing a
+pattern `fnmatch` never matches — a gate that silently reported nothing forever. That was
+fixed upstream in `brockamer/jared#381`, which unescapes bullet values before matching, so
+the explicit bullet is safe again as of 2026-09-16. It stays omitted because the default
+is correct and one less line is one less thing to keep in sync.
+
+Worth knowing if this ever needs re-testing: the Prettier escape **does not reproduce in a
+minimal file**. A short scratch document formats unchanged; it only appears in real
+documents that carry other `**` emphasis.
 
 Adopted 2026-09-16 (#206), using the project-configurable convention jared shipped in
 `brockamer/jared#163`. The original request was #176, closed as superseded.

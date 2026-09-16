@@ -3,7 +3,7 @@
 Living context file for Claude Code. Keep concise; update as decisions are made.
 
 **Canonical PRD:** `docs/PRD.md` (source of truth for product scope, architecture, and phased plan — read it first).
-**Input materials:** `materials/` (PDFs + spec + deep research report + Garmin IPC docs — read via `materials/*.txt` for extracted text).
+**Input materials:** `materials/` (PDFs + spec + deep research report + Garmin IPC docs). **Only the PDFs are tracked** — `.gitignore:25` ignores `materials/*.txt`, so the extracted text does not survive a fresh clone. Regenerate on demand with `pdftotext -layout "materials/<name>.pdf" out.txt` (a harmless `xref num ... not found` warning on stderr does not affect the output).
 
 ## Commands
 
@@ -171,6 +171,8 @@ plans/                          # per-milestone sprint plans (none active; all a
 - **IPC Outbound v2.0.8** (device → us): HTTPS POST. Schema V2/V3/V4 (α uses V2). Fields we need: `imei` (15-digit), `messageCode` (3=Free Text), `freeText`, `timeStamp` (ms epoch), `point{latitude,longitude,altitude}`, `addresses[]`, `status{lowBattery,...}`. Auth via OAuth bearer OR static token (α uses static bearer). **Must respond 200** or Garmin retries at 2/4/8/16/32/64/128s then 12h pauses × 5 days → suspension.
 - **IPC Inbound v3.1.1** (us → device): POST `{base}/api/Messaging/Message`. Auth: `X-API-Key` header. Body: `{ Messages: [{ Recipients: [imei], Sender, Timestamp: "/Date(ms)/", Message }] }`. **Message body 160 chars MAX** (Iridium hard limit — 422 on overage). Returns `{ count: N }`.
 - **Tier requirement:** IPC Outbound + Inbound are **Professional/Enterprise only**. Consumer inReach does not expose these APIs — gates the whole architecture (see PRD §8 D2).
+- **Message Codes Table** (IPC Outbound rev 2.0.8, p.9 — the authoritative list). Codes TrailScribe routes: `0` Position Report, `3` Free Text, `4` Declare SOS, `10` Start Track, `11` Track Interval, `12` Stop Track. Codes the device also emits that we silent-drop by design: `2` Locate Response, `13` Unknown Index, `14`–`16` Puck Message 1–3, `17` Map Share, **`20` Mail Check**, **`21` Am I Alive**, `24`–`63` Pre-defined Message, `64`–`69` encrypted/binary classes, `3099` Canned Message.
+- **mc=20 ("Mail Check") is the device polling for queued inbound messages** (confirmed 2026-09-16 from the spec table, closing #207). It is routine housekeeping, not an error — silent-drop is correct. **Diagnostic value:** because Iridium cannot push, a reply only reaches the device when the device asks for it, so mc=20 arrival timestamps mark exactly when the mailbox was checked. That is the missing timeline in the open "Worker hands off in <6s but the Mini 3 Plus takes up to 75s" question.
 - **Device autonomously flaps tracking interval based on motion** (Mini 3 Plus confirmed 2026-05-17 during #197 investigation): `status.intervalChange` toggles between the configured interval (e.g. 120s) and a long stationary-saver value (observed 14400s = 4hr) when the device detects no motion, then reverts when motion resumes. Emitted as mc=11 ("Track Interval") with the new value in `status.intervalChange` (seconds; 0 = unchanged). Short or mostly-stationary sessions can therefore hit MapShare with very few breadcrumbs even when the UI shows a fast interval. **MapShare KML and IPC Outbound mc=0 stream are independent** — MapShare may carry more pings than IPC Outbound delivers for the same window. See #201 for decoding/persisting the current interval to use in refusal SMS hints.
 
 ## Workflow

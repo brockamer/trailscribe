@@ -9,6 +9,8 @@ import {
   routeShape,
   activityHint,
   computeMetrics,
+  isStationary,
+  STATIONARY_KM,
 } from "../src/core/track-metrics.js";
 import { parsePings } from "../src/adapters/location/mapshare.js";
 import type { KmlPing } from "../src/adapters/location/mapshare.js";
@@ -225,5 +227,32 @@ describe("computeMetrics", () => {
     expect(m.pingCount).toBe(0);
     expect(m.distanceKm).toBe(0);
     expect(m.durationSeconds).toBe(0);
+  });
+});
+
+describe("isStationary (#223)", () => {
+  // Shape of the first replacement-device track, 2026-09-12: 4 pings over
+  // 4h17m, three at 0.0 km/h, ~0.019 km total. Coordinates are synthetic.
+  test("the recorded 2026-09-12 shape is stationary", () => {
+    const base = 4 * 3600 + 17 * 60;
+    const pings: KmlPing[] = [
+      { ...makePing(0, 10), lat: 34.0, velocityKmh: 0 },
+      { ...makePing(base / 3, 10), lat: 34.00005, velocityKmh: 0 },
+      { ...makePing((2 * base) / 3, 10), lat: 34.0001, velocityKmh: 0 },
+      { ...makePing(base, 10), lat: 34.00017, velocityKmh: 5 },
+    ];
+    const m = computeMetrics(pings);
+    expect(m.distanceKm).toBeGreaterThan(0.015);
+    expect(m.distanceKm).toBeLessThan(0.025);
+    expect(isStationary(m)).toBe(true);
+  });
+
+  test("a real outing (PCH fixture) is not stationary", () => {
+    expect(isStationary(computeMetrics(parsePings(FIXTURE_KML)))).toBe(false);
+  });
+
+  test("threshold is exclusive: exactly STATIONARY_KM is not stationary", () => {
+    expect(isStationary({ distanceKm: STATIONARY_KM })).toBe(false);
+    expect(isStationary({ distanceKm: STATIONARY_KM - 0.001 })).toBe(true);
   });
 });

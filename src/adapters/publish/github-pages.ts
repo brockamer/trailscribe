@@ -1,5 +1,5 @@
-import type { Env } from "../../env.js";
-import type { TrackMetrics } from "../../core/track-metrics.js";
+import { journalLocationPrecision, type Env, type LocationPrecision } from "../../env.js";
+import { isStationary, type TrackMetrics } from "../../core/track-metrics.js";
 import { formatHaiku, kmToMi, mToFt } from "../../core/units.js";
 
 const RETRY_DELAYS_MS = [1000, 4000, 16000] as const;
@@ -140,6 +140,7 @@ export async function publishPost(args: PublishPostArgs): Promise<PublishPostRes
         lon,
         placeName,
         weather,
+        precision: journalLocationPrecision(env),
       }),
   });
 }
@@ -268,16 +269,33 @@ interface RenderArgs {
   lon?: number;
   placeName?: string;
   weather?: string;
+  precision: LocationPrecision;
+}
+
+/**
+ * The `location:` frontmatter line at the published precision (#223), or
+ * undefined when there is nothing to publish. `omit` keeps only the coarse
+ * place name; the journal's post-meta template renders that cleanly.
+ */
+function renderLocation(a: {
+  lat?: number;
+  lon?: number;
+  place?: string;
+  precision: LocationPrecision;
+}): string | undefined {
+  if (a.lat === undefined || a.lon === undefined) return undefined;
+  const place = a.place ? `place: ${quoteYaml(a.place)}` : undefined;
+  if (a.precision === "omit") return place ? `location: { ${place} }` : undefined;
+  const coords = `lat: ${a.lat.toFixed(a.precision)}, lon: ${a.lon.toFixed(a.precision)}`;
+  return `location: { ${place ? `${coords}, ${place}` : coords} }`;
 }
 
 function renderMarkdown(a: RenderArgs): string {
   const lines: string[] = ["---"];
   lines.push(`title: ${quoteYaml(a.title)}`);
   lines.push(`date: ${a.date}`);
-  if (a.lat !== undefined && a.lon !== undefined) {
-    const place = a.placeName !== undefined ? `, place: ${quoteYaml(a.placeName)}` : "";
-    lines.push(`location: { lat: ${a.lat}, lon: ${a.lon}${place} }`);
-  }
+  const location = renderLocation({ ...a, place: a.placeName });
+  if (location) lines.push(location);
   if (a.weather !== undefined) {
     lines.push(`weather: ${quoteYaml(a.weather)}`);
   }
@@ -395,6 +413,7 @@ export async function publishPostWithImage(
     lon,
     placeName,
     weather,
+    precision: journalLocationPrecision(env),
     imagePath,
     baseurl: env.JOURNAL_BASEURL,
   });
@@ -536,10 +555,8 @@ function renderMarkdownWithImage(a: RenderArgsWithImage): string {
   lines.push(`title: ${quoteYaml(a.title)}`);
   lines.push(`date: ${a.date}`);
   lines.push(`image: ${imageUrl}`);
-  if (a.lat !== undefined && a.lon !== undefined) {
-    const place = a.placeName !== undefined ? `, place: ${quoteYaml(a.placeName)}` : "";
-    lines.push(`location: { lat: ${a.lat}, lon: ${a.lon}${place} }`);
-  }
+  const location = renderLocation({ ...a, place: a.placeName });
+  if (location) lines.push(location);
   if (a.weather !== undefined) {
     lines.push(`weather: ${quoteYaml(a.weather)}`);
   }
@@ -605,6 +622,9 @@ export async function publishTrackPost(args: PublishTrackPostArgs): Promise<Publ
         startPlace,
         endPlace,
         weather,
+        // A stationary session's end fix is a dwelling or a campsite, and it
+        // publishes unattended from the field. No setting re-enables it.
+        precision: isStationary(metrics) ? "omit" : journalLocationPrecision(env),
       }),
   });
 }
@@ -619,6 +639,7 @@ function renderTrackMarkdown(a: {
   startPlace?: string;
   endPlace?: string;
   weather?: string;
+  precision: LocationPrecision;
 }): string {
   const m = a.metrics;
   const lines: string[] = ["---"];
@@ -640,8 +661,13 @@ function renderTrackMarkdown(a: {
   }
   lines.push(`  pings: ${m.pingCount}`);
   lines.push(`  close_reason: stop`);
-  const place = a.endPlace !== undefined ? `, place: ${quoteYaml(a.endPlace)}` : "";
-  lines.push(`location: { lat: ${a.endLat}, lon: ${a.endLon}${place} }`);
+  const location = renderLocation({
+    lat: a.endLat,
+    lon: a.endLon,
+    place: a.endPlace,
+    precision: a.precision,
+  });
+  if (location) lines.push(location);
   if (a.weather !== undefined) lines.push(`weather: ${quoteYaml(a.weather)}`);
   lines.push(`tags: [trailscribe, track]`);
   lines.push("---");

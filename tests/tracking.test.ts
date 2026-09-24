@@ -24,6 +24,7 @@ import * as weatherMod from "../src/adapters/location/weather.js";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { GarminEvent } from "../src/core/types.js";
+import type { TrackMetrics } from "../src/core/track-metrics.js";
 
 vi.mock("../src/adapters/ai/openrouter.js");
 vi.mock("../src/adapters/outbound/garmin-ipc-inbound.js", () => ({
@@ -385,8 +386,88 @@ describe("publishTrackPost", () => {
     expect(decoded).toContain("route_shape: out-and-back");
     expect(decoded).toContain('start_place: "Malibu, CA"');
     expect(decoded).toContain('end_place: "Malibu, CA"');
+    // Default JOURNAL_LOCATION_PRECISION=3 (#223).
+    expect(decoded).toContain('location: { lat: 34.027, lon: -118.760, place: "Malibu, CA" }');
     // Haiku rendered with CommonMark soft-breaks (#195).
     expect(decoded).toContain("a  \nb  \nc");
+  });
+});
+
+describe("publishTrackPost — published location (#223)", () => {
+  const MOVING_METRICS: TrackMetrics = {
+    pingCount: 14,
+    startedAt: Date.parse("2026-05-02T15:51:30Z"),
+    closedAt: Date.parse("2026-05-02T16:24:30Z"),
+    durationSeconds: 1980,
+    distanceKm: 2.5,
+    pace: { avgKmh: 5, p50Kmh: 4, p95Kmh: 12 },
+    elevation: { gainM: 35, lossM: 35, minM: 0, maxM: 35 },
+    routeShape: "out-and-back",
+    activityHint: "mixed",
+  };
+
+  // The 2026-09-12 shape: 4 pings, 4h17m45s, 0.019 km.
+  const STATIONARY_METRICS: TrackMetrics = {
+    ...MOVING_METRICS,
+    pingCount: 4,
+    durationSeconds: 15465,
+    closedAt: MOVING_METRICS.startedAt + 15465 * 1000,
+    distanceKm: 0.019,
+    routeShape: "loop",
+    activityHint: "hike",
+  };
+
+  async function publishedMarkdown(
+    metrics: TrackMetrics,
+    precision: string,
+    endPlace?: string,
+  ): Promise<string> {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("not found", { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ content: { sha: "a", path: "p", html_url: "x" }, commit: { sha: "c" } }),
+          { status: 200 },
+        ),
+      );
+    await publishTrackPost({
+      title: "Where I stopped",
+      haiku: "a\nb\nc",
+      body: "B",
+      metrics,
+      endLat: 34.026912,
+      endLon: -118.760301,
+      startPlace: endPlace,
+      endPlace,
+      env: makeTestEnv({ JOURNAL_LOCATION_PRECISION: precision }),
+    });
+    const body = JSON.parse((fetchMock.mock.calls[1][1]?.body ?? "{}") as string);
+    fetchMock.mockRestore();
+    return atob(body.content);
+  }
+
+  test("stationary session omits coordinates even when precision is 6", async () => {
+    const md = await publishedMarkdown(STATIONARY_METRICS, "6", "Malibu, CA");
+    expect(md).toContain('location: { place: "Malibu, CA" }');
+    expect(md).not.toContain("lat:");
+    expect(md).not.toContain("lon:");
+  });
+
+  test("stationary session with no place name publishes no location key", async () => {
+    const md = await publishedMarkdown(STATIONARY_METRICS, "3");
+    expect(md).not.toContain("location:");
+  });
+
+  test("moving session honours the configured precision", async () => {
+    const md = await publishedMarkdown(MOVING_METRICS, "4", "Malibu, CA");
+    expect(md).toContain('location: { lat: 34.0269, lon: -118.7603, place: "Malibu, CA" }');
+  });
+
+  test("moving session with 'omit' keeps only the place name", async () => {
+    const md = await publishedMarkdown(MOVING_METRICS, "omit", "Malibu, CA");
+    expect(md).toContain('location: { place: "Malibu, CA" }');
+    expect(md).not.toContain("lat:");
   });
 });
 

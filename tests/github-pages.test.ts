@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { publishPost, PublishError, slugify } from "../src/adapters/publish/github-pages.js";
+import {
+  publishPost,
+  publishPostWithImage,
+  PublishError,
+  slugify,
+} from "../src/adapters/publish/github-pages.js";
 import type { Env } from "../src/env.js";
 import { makeTestEnv } from "./helpers/env.js";
 
@@ -155,7 +160,8 @@ describe("publishPost — happy path", () => {
     expect(decoded).toContain("---");
     expect(decoded).toContain('title: "Lake Sabrina"');
     expect(decoded).toContain("date: 2026-04-25T17:30:00.000Z");
-    expect(decoded).toContain('location: { lat: 37.1682, lon: -118.5891, place: "Lake Sabrina" }');
+    // Default JOURNAL_LOCATION_PRECISION=3 (#223): ~100 m, rounded.
+    expect(decoded).toContain('location: { lat: 37.168, lon: -118.589, place: "Lake Sabrina" }');
     expect(decoded).toContain('weather: "Clear · 8C"');
     expect(decoded).toContain("tags: [trailscribe]");
     // Haiku rendered with CommonMark soft-breaks (two trailing spaces) so the
@@ -215,8 +221,97 @@ describe("publishPost — frontmatter conditional keys", () => {
       content: string;
     };
     const decoded = decodeUtf8(putBody.content);
-    expect(decoded).toContain("location: { lat: 37, lon: -118 }");
+    expect(decoded).toContain("location: { lat: 37.000, lon: -118.000 }");
     expect(decoded).not.toContain("place:");
+  });
+});
+
+describe("published coordinate precision (#223)", () => {
+  function mockPutOk() {
+    fetchSpy.mockResolvedValueOnce(new Response(null, { status: 404 })).mockResolvedValueOnce(
+      jsonResponse({
+        content: { sha: "blob-sha", path: "p", html_url: "x" },
+        commit: { sha: "csh" },
+      }),
+    );
+  }
+
+  function putMarkdown(): string {
+    const putBody = JSON.parse((fetchSpy.mock.calls[1][1] as RequestInit).body as string) as {
+      content: string;
+    };
+    return decodeUtf8(putBody.content);
+  }
+
+  const post = (overrides: Partial<Env>, placeName?: string) =>
+    publishPost({
+      title: "Precision",
+      haiku: "a\nb\nc",
+      body: "x",
+      lat: 37.168249,
+      lon: -118.589137,
+      placeName,
+      env: makeTestEnv({ ...env, ...overrides }),
+      now: () => NOW,
+    });
+
+  test("precision is configurable: 5 → five decimals", async () => {
+    mockPutOk();
+    await post({ JOURNAL_LOCATION_PRECISION: "5" }, "Lake Sabrina");
+    expect(putMarkdown()).toContain(
+      'location: { lat: 37.16825, lon: -118.58914, place: "Lake Sabrina" }',
+    );
+  });
+
+  test("omit → location keeps the coarse place name, drops lat/lon", async () => {
+    mockPutOk();
+    await post({ JOURNAL_LOCATION_PRECISION: "omit" }, "Lake Sabrina");
+    const md = putMarkdown();
+    expect(md).toContain('location: { place: "Lake Sabrina" }');
+    expect(md).not.toContain("lat:");
+    expect(md).not.toContain("lon:");
+  });
+
+  test("omit with no place name → location key omitted entirely", async () => {
+    mockPutOk();
+    await post({ JOURNAL_LOCATION_PRECISION: "omit" });
+    const md = putMarkdown();
+    expect(md).not.toContain("location:");
+    expect(md).not.toContain("lat:");
+  });
+
+  test("!postimg path honours the same setting", async () => {
+    fetchSpy
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(
+        jsonResponse({ data: { repository: { ref: { target: { oid: "h" } } } } }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ data: { createCommitOnBranch: { commit: { oid: "c1", url: "u" } } } }),
+      );
+
+    await publishPostWithImage({
+      title: "Precision",
+      haiku: "a\nb\nc",
+      body: "x",
+      lat: 37.168249,
+      lon: -118.589137,
+      placeName: "Lake Sabrina",
+      env: makeTestEnv({ ...env, JOURNAL_LOCATION_PRECISION: "omit" }),
+      now: () => NOW,
+      image: {
+        bytes: new Uint8Array([1, 2, 3]).buffer,
+        mimeType: "image/png",
+        pathTemplate: "assets/images/{yyyy}-{mm}-{dd}-{slug}.{ext}",
+      },
+    });
+
+    const vars = JSON.parse((fetchSpy.mock.calls[2][1] as RequestInit).body as string) as {
+      variables: { input: { fileChanges: { additions: Array<{ contents: string }> } } };
+    };
+    const md = decodeUtf8(vars.variables.input.fileChanges.additions[0].contents);
+    expect(md).toContain('location: { place: "Lake Sabrina" }');
+    expect(md).not.toContain("lat:");
   });
 });
 

@@ -2,7 +2,7 @@
 
 **Status:** Signed off 2026-04-22. Phase 0 (scaffolding) shipped 2026-04-24. Phase 1 (α-MVP, six commands end-to-end on production) shipped 2026-04-26 with the prod-traffic close gate (#111) verified 2026-04-27. **Currently:** Phase 2 — extended commands. Plan: `plans/phase-2-extended-commands.md`.
 **Owner:** Brock Amer
-**Updated:** 2026-09-14 (§6 Cost Model amended — image-path cost ceiling raised to $0.20/image; text-path target and ceiling unchanged. Operator sign-off per CLAUDE.md "PRD is canonical".)
+**Updated:** 2026-09-24 (§8 D11 added — published location precision, `JOURNAL_LOCATION_PRECISION`, #223). Previous: 2026-09-14 (§6 Cost Model amended — image-path cost ceiling raised to $0.20/image; text-path target and ceiling unchanged. Operator sign-off per CLAUDE.md "PRD is canonical".)
 **Scope:** α-MVP (Phase 1) is the canonical scope of this document. Phase 2 (the eight deferred commands) is detailed in `plans/phase-2-extended-commands.md`; Phase 3+ referenced here for alignment, not specified in full.
 
 ---
@@ -462,6 +462,10 @@ Image-bearing commands sit on the separate image-path budget above:
 ### Resolved 2026-04-29
 
 - **D10. Intercept policy.** The Worker silent-drops messages whose `freeText` does not start with `!` (after trim) — no IPC Inbound reply, structured `intercept_skipped` log only, idempotency key recorded so Garmin retries short-circuit. `!`-prefixed messages with unknown verbs still receive `"Try !help"` so command typos remain recoverable. Decided 2026-04-29 (#122) after operator surfaced clutter from "Try !help" replies to casual messages during the #111 production turn-on. Recipient-gating (option 3 in #122 — only reply when device's `addresses[]` includes the TrailScribe contact) was deferred — revisit only if field experience surfaces a case where an `!`-prefixed message accidentally addressed to a non-TrailScribe contact produces unwanted replies.
+
+### Resolved 2026-09-24
+
+- **D11. Published location precision.** The journal (D5) is public and track posts publish unattended from the field, so a post must never carry a coordinate that resolves to a dwelling. On 2026-09-12 a 4h17m stationary track published a six-decimal (~0.1 m) end fix; it was redacted by hand in `trailscribe-journal@ac111ea`. New var `JOURNAL_LOCATION_PRECISION`: `0`–`6` decimal places, or `omit` for the place name only; default `3` (~100 m). Unset or malformed falls back to `3`, never to full precision, because `parseEnv()` is not on the request path. It applies to every publish path (`!post`, `!postimg`, track) and to the coordinates the `!post` narrative prompt sees, since the post body is public too. A stationary track session — total path under `STATIONARY_KM` (0.2 km) — always omits coordinates, and no setting overrides that: the case the fix exists for is the unattended one. Justification for a new env var: the right precision is a per-deployment privacy choice, not a code constant. Coordinates are rounded (`toFixed`), not truncated; both lose the same precision. Forward-only: earlier posts are unchanged. (#223)
 
 ### Original decision text (for reference)
 

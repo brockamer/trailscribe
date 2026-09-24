@@ -202,7 +202,10 @@ describe("P1-16 !post — happy path with GPS", () => {
       content: string;
     };
     const markdown = Buffer.from(putBody.content, "base64").toString("utf-8");
-    expect(markdown).toContain(`location: { lat: ${NATALIE_LAT}, lon: ${NATALIE_LON}`);
+    // Default JOURNAL_LOCATION_PRECISION=3 (#223).
+    expect(markdown).toContain(
+      `location: { lat: ${NATALIE_LAT.toFixed(3)}, lon: ${NATALIE_LON.toFixed(3)}`,
+    );
 
     const snap = await monthlyTotals(env);
     expect(snap.requests).toBe(1);

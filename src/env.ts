@@ -36,6 +36,7 @@ export interface Env {
   JOURNAL_POST_PATH_TEMPLATE: string;
   JOURNAL_URL_TEMPLATE: string;
   JOURNAL_BASEURL: string;
+  JOURNAL_LOCATION_PRECISION: string;
   IMAGE_PROVIDER: string;
   IMAGE_MODEL: string;
   IMAGE_COST_PER_CALL_USD: string;
@@ -105,6 +106,8 @@ export const EnvSchema = z.object({
   // pages (served under `/<repo-name>/`) resolve correctly. Empty string for
   // sites at the domain root.
   JOURNAL_BASEURL: z.string(),
+  // Decimal places for coordinates in published posts, or "omit" (#223).
+  JOURNAL_LOCATION_PRECISION: z.string().regex(/^([0-6]|omit)$/i, "0–6 or 'omit'"),
   IMAGE_PROVIDER: z.enum(["replicate"]),
   IMAGE_MODEL: z.string().min(1),
   IMAGE_COST_PER_CALL_USD: z.string(),
@@ -193,6 +196,23 @@ export function ipcInboundDryRun(env: Env): boolean {
  */
 export function logTrackPayloads(env: Env): boolean {
   return env.LOG_TRACK_PAYLOADS.toLowerCase() === "true";
+}
+
+/** Decimal places for published coordinates, or "omit" to publish the place name only. */
+export type LocationPrecision = number | "omit";
+
+const DEFAULT_LOCATION_PRECISION = 3;
+
+/**
+ * Parse JOURNAL_LOCATION_PRECISION (#223). Unset or malformed falls back to 3
+ * decimal places (~100 m) — never to full precision.
+ */
+export function journalLocationPrecision(env: Env): LocationPrecision {
+  // parseEnv() is not on the request path, so a missing [vars] entry arrives here as undefined.
+  const raw = (env.JOURNAL_LOCATION_PRECISION ?? "").trim().toLowerCase();
+  if (raw === "omit") return "omit";
+  if (/^[0-6]$/.test(raw)) return Number(raw);
+  return DEFAULT_LOCATION_PRECISION;
 }
 
 /** Parse DAILY_TOKEN_BUDGET (0 = unlimited). */

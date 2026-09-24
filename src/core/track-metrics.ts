@@ -181,6 +181,18 @@ export interface TrackMetrics {
   activityHint: ActivityHint;
 }
 
+/**
+ * Total path length below which a session never went anywhere. Sized for the
+ * sparse fixes of the device's stationary saver: dense fixes on a parked device
+ * can accumulate GPS jitter past it, and the session then reads as moving.
+ */
+export const STATIONARY_KM = 0.2;
+
+/** True when the session covered less ground than {@link STATIONARY_KM}. */
+export function isStationary(m: Pick<TrackMetrics, "distanceKm">): boolean {
+  return m.distanceKm < STATIONARY_KM;
+}
+
 /** Aggregate every metric the narrative pipeline needs into one record. */
 export function computeMetrics(pings: KmlPing[]): TrackMetrics {
   if (pings.length === 0) {

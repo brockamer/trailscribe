@@ -28,6 +28,22 @@ Keep the device's per-message **Include Location** toggle **off** for routine `!
 | `!share`   | `!share to:<addr\|alias> <note>`                                   | One-off enriched email via Resend to a single recipient. `<addr\|alias>` is either a literal email or an alias from the address book (`ADDRESS_BOOK_JSON`).                                                                                                                                                                                                                                                                                                         |
 | `!blast`   | `!blast <note>`                                                    | Broadcast enriched email to the address book's `all` group. Per-recipient errors tolerated; reply summarizes successes vs. failures.                                                                                                                                                                                                                                                                                                                                |
 
+## Location in published posts
+
+The journal repository and its GitHub Pages site are public. Every post TrailScribe publishes — `!post`, `!postimg`, and the track post written when you stop tracking on the device — can carry a `location:` entry in its frontmatter:
+
+- **Place name.** Town, locality or peak, plus state, from reverse geocoding (for example `Malibu, California`). Never a street address.
+- **Coordinates.** Rounded to `JOURNAL_LOCATION_PRECISION` decimal places. The default, `3`, is about 100 m: it shows the area, not the building. Set it to `omit` to publish the place name alone.
+- **Track posts use the last fix of the session** — where you stopped tracking, not where you started.
+- **A stationary track never publishes coordinates**, whatever the setting. A session that covered less than 200 m (`STATIONARY_KM` in `src/core/track-metrics.ts`) is stationary; a long stop at one point is most likely a home or a camp. Its post keeps the place name only.
+- **The `!post` / `!postimg` narrative is written from the same rounded coordinates**, so the body cannot quote a finer fix than the frontmatter.
+
+Not covered by the setting:
+
+- Track posts also publish `start_place` / `end_place`, start time, duration, distance and elevation gain.
+- Device replies, `!where`, and `!share` / `!blast` emails carry exact coordinates in their Maps links. They go to you or to recipients you chose, not to the public site.
+- Posts published before 2026-09-24 carry full six-decimal coordinates. A later redaction commit does not remove them from the repository history.
+
 ## Notes
 
 - **Case-insensitive.** `!Todo` and `!todo` behave the same; the leading exclamation mark is required.

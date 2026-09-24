@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Env } from "../env.js";
+import { journalLocationPrecision, type Env } from "../env.js";
 import { chatCompletion } from "../adapters/ai/openrouter.js";
 import { log } from "../adapters/logging/worker-logs.js";
 import type { TrackMetrics } from "./track-metrics.js";
@@ -235,7 +235,13 @@ function buildUserPrompt(input: NarrativeInput): string {
   }
 
   if (input.placeName !== undefined && input.lat !== undefined && input.lon !== undefined) {
-    lines.push(`Location: ${input.placeName} (${input.lat.toFixed(4)}, ${input.lon.toFixed(4)})`);
+    // The body is published, so the model never sees finer coordinates than the frontmatter carries.
+    const p = journalLocationPrecision(input.env);
+    lines.push(
+      p === "omit"
+        ? `Location: ${input.placeName}`
+        : `Location: ${input.placeName} (${input.lat.toFixed(p)}, ${input.lon.toFixed(p)})`,
+    );
   }
 
   if (input.weather !== undefined) {

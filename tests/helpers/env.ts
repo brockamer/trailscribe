@@ -78,6 +78,7 @@ export function makeTestEnv(overrides: Partial<Env> = {}): Env {
     IPC_INBOUND_SENDER: "trailscribe@resend.dev",
     IPC_INBOUND_DRY_RUN: "false",
     LOG_TRACK_PAYLOADS: "false",
+    JOURNAL_LOCATION_PRECISION: "3",
     RESEND_FROM_EMAIL: "trailscribe@resend.dev",
     RESEND_FROM_NAME: "TrailScribe",
     JOURNAL_POST_PATH_TEMPLATE: "_posts/{yyyy}-{mm}-{dd}-{slug}.md",

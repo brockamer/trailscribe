@@ -132,8 +132,31 @@ describe("generateNarrative — prompt composition", () => {
     };
     const userMsg = body.messages.find((m) => m.role === "user")?.content ?? "";
     expect(userMsg).toContain(`Note: ${NATALIE_NOTE}`);
-    expect(userMsg).toContain("Location: Lake Sabrina, Inyo County, CA (37.1682, -118.5891)");
+    // Published precision (#223): the body is public, so the model never sees
+    // coordinates finer than the frontmatter will carry.
+    expect(userMsg).toContain("Location: Lake Sabrina, Inyo County, CA (37.168, -118.589)");
     expect(userMsg).toContain("Weather: Clear · 8°C · wind 12 km/h W");
+  });
+
+  test("JOURNAL_LOCATION_PRECISION=omit → Location line carries the place name only", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
+
+    await generateNarrative({
+      note: NATALIE_NOTE,
+      lat: 37.1682,
+      lon: -118.5891,
+      placeName: "Lake Sabrina, Inyo County, CA",
+      env: makeTestEnv({ ...env, JOURNAL_LOCATION_PRECISION: "omit" }),
+    });
+
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    const userMsg = body.messages.find((m) => m.role === "user")?.content ?? "";
+    expect(userMsg).toContain("Location: Lake Sabrina, Inyo County, CA");
+    expect(userMsg).not.toContain("37.");
+    expect(userMsg).not.toContain("-118");
   });
 
   test("without GPS → prompt OMITS Location line entirely (no '(0, 0)' placeholder)", async () => {

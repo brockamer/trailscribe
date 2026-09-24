@@ -182,8 +182,9 @@ export interface TrackMetrics {
 }
 
 /**
- * Total path length below which a session never went anywhere. Jitter across
- * the few fixes the device's stationary saver emits stays well under it.
+ * Total path length below which a session never went anywhere. Sized for the
+ * sparse fixes of the device's stationary saver: dense fixes on a parked device
+ * can accumulate GPS jitter past it, and the session then reads as moving.
  */
 export const STATIONARY_KM = 0.2;
 

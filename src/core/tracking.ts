@@ -198,11 +198,12 @@ export async function handleStopTrack(
   idemKey: string,
 ): Promise<void> {
   // Outer `publish_track` checkpoint owns the all-or-nothing publish lifecycle
-  // (publish + store + reply) per spec §6.1. Inner `track_narrative` checkpoint
-  // (added per #172) bounds LLM cost on deterministic-failure retries: after a
-  // successful narrative call, a downstream publish/reply failure won't burn
-  // another Sonnet call when Garmin retries the webhook (2/4/8/16/32/64/128s
-  // then 12h × 5d). Mirrors the per-op pattern in commands/post.ts.
+  // (publish + store + reply) per spec §6.1. It completes only after the
+  // success reply, so each side effect inside it has its own inner checkpoint
+  // that a Garmin retry (2/4/8/16/32/64/128s then 12h × 5d) skips once done:
+  // `track_narrative` (#172, no second LLM call), `track_ledger` (no second
+  // spend entry) and `track_publish` (#219, no second journal post).
+  // Mirrors the per-op pattern in commands/postimg.ts.
   await withCheckpoint(env, idemKey, "publish_track", async () => {
     const closedAt = event.timeStamp;
     // The session window is bounded by a recorded mc 10 (Start Track) only.
@@ -387,49 +388,78 @@ export async function handleStopTrack(
       });
     }
 
-    const narrative = await withCheckpoint(env, idemKey, "track_narrative", () =>
-      generateTrackNarrative({
-        metrics,
-        sampling,
-        startPlace: typeof startPlace === "string" ? startPlace : undefined,
-        endPlace: typeof endPlace === "string" ? endPlace : undefined,
-        weatherSummary: typeof weather === "string" ? weather : undefined,
-        env,
-      }),
-    );
-
-    await recordTransaction({
-      command: "track",
-      usage: narrative.usage,
-      env,
-    });
-
-    let result: Awaited<ReturnType<typeof publishTrackPost>>;
+    // One guard for every stage from the narrative to the record store (#219):
+    // any throw sends the device an error SMS, then rethrows so the outer
+    // `publish_track` op stays incomplete and a Garmin retry resumes. Each
+    // stage with an external side effect has its own checkpoint, so the retry
+    // skips what already happened: no second LLM call (#172), no second ledger
+    // entry, no second journal post. Without the SMS, a bad MapShare code, an
+    // expired GitHub token and a dead satellite link all looked identical from
+    // the field — total silence. `safeOrchestrate` (app.ts) still logs +
+    // markFailed on the rethrow.
+    //
+    // The success reply stays outside the guard. If it throws, the error SMS
+    // would most likely fail the same way, and "failed" would be false: the
+    // post is live. The bare rethrow leaves `publish_track` incomplete, so the
+    // retry sends the success SMS again.
+    let journalUrl: string | null = null;
     try {
-      result = await publishTrackPost({
-        title: narrative.title,
-        haiku: narrative.haiku,
-        body: narrative.body,
-        metrics,
-        sampling,
-        endLat: endPing.lat,
-        endLon: endPing.lon,
-        startPlace: typeof startPlace === "string" ? startPlace : undefined,
-        endPlace: typeof endPlace === "string" ? endPlace : undefined,
-        weather: typeof weather === "string" ? weather : undefined,
-        env,
+      const narrative = await withCheckpoint(env, idemKey, "track_narrative", () =>
+        generateTrackNarrative({
+          metrics,
+          sampling,
+          startPlace: typeof startPlace === "string" ? startPlace : undefined,
+          endPlace: typeof endPlace === "string" ? endPlace : undefined,
+          weatherSummary: typeof weather === "string" ? weather : undefined,
+          env,
+        }),
+      );
+
+      await withCheckpoint(env, idemKey, "track_ledger", async () => {
+        await recordTransaction({
+          command: "track",
+          usage: narrative.usage,
+          env,
+        });
+        return null;
+      });
+
+      const post = await withCheckpoint(env, idemKey, "track_publish", () =>
+        publishTrackPost({
+          title: narrative.title,
+          haiku: narrative.haiku,
+          body: narrative.body,
+          metrics,
+          sampling,
+          endLat: endPing.lat,
+          endLon: endPing.lon,
+          startPlace: typeof startPlace === "string" ? startPlace : undefined,
+          endPlace: typeof endPlace === "string" ? endPlace : undefined,
+          weather: typeof weather === "string" ? weather : undefined,
+          env,
+        }),
+      );
+      journalUrl = post.url;
+
+      await storeTrackRecord(env, {
+        sessionId,
+        imei: event.imei,
+        startedAt: metrics.startedAt,
+        closedAt: metrics.closedAt,
+        closeReason: "stop",
+        pingCount: metrics.pingCount,
+        distanceKm: metrics.distanceKm,
+        elevationGainM: metrics.elevation.gainM,
+        durationSeconds: metrics.durationSeconds,
+        journalUrl: post.url,
+        rawKml,
       });
     } catch (err) {
-      // Unlike the refusal branches above, this is NOT a checkpointed skip —
-      // we deliberately rethrow (see below) so the outer `publish_track` op
-      // stays uncompleted and a Garmin retry gets a fresh publish attempt
-      // (the `track_narrative` checkpoint above means that retry won't pay
-      // for another LLM call). Before rethrowing, tell the device: without
-      // this, a bad MapShare code, an expired GitHub token, and a dead
-      // satellite link all looked identical from the field — total silence.
-      // `safeOrchestrate` (app.ts) still logs + markFailed on the rethrow.
+      // A store failure comes after the commit, so "publish failed" would be
+      // false there; say the post is live and only the record is missing.
+      const posted = journalUrl !== null;
       log({
-        event: "track_publish_failed",
+        event: posted ? "track_store_failed" : "track_publish_failed",
         level: "error",
         imei: event.imei,
         idemKey,
@@ -438,18 +468,25 @@ export async function handleStopTrack(
       // Best-effort: if the reply itself fails (dead link, bad API key), we
       // must not let THAT rejection replace `err` below — the idempotency
       // record's `error` field (what a replay/operator reads) would then
-      // show the IPC failure instead of the actual publish cause, which is
-      // worse than the silent-void bug this whole change exists to fix.
+      // show the IPC failure instead of the actual cause, which is worse than
+      // the silent-void bug this guard exists to fix.
       try {
         await sendReply(
           event.imei,
-          [trackErrorReply(PUBLISH_ERROR_PREFIX, err, intervalRecord)],
+          [
+            trackErrorReply(
+              posted ? STORE_ERROR_PREFIX : PUBLISH_ERROR_PREFIX,
+              err,
+              intervalRecord,
+            ),
+          ],
           env,
         );
       } catch (replyErr) {
+        // `error`, not `warn`: this is the case where the device gets nothing.
         log({
           event: "track_publish_error_reply_failed",
-          level: "warn",
+          level: "error",
           imei: event.imei,
           idemKey,
           error: replyErr instanceof Error ? replyErr.message : String(replyErr),
@@ -458,29 +495,15 @@ export async function handleStopTrack(
       throw err;
     }
 
-    await storeTrackRecord(env, {
-      sessionId,
-      imei: event.imei,
-      startedAt: metrics.startedAt,
-      closedAt: metrics.closedAt,
-      closeReason: "stop",
-      pingCount: metrics.pingCount,
-      distanceKm: metrics.distanceKm,
-      elevationGainM: metrics.elevation.gainM,
-      durationSeconds: metrics.durationSeconds,
-      journalUrl: result.url,
-      rawKml,
-    });
-
     await sendReply(
       event.imei,
-      [formatTrackReply(metrics, result.url, sampling, intervalRecord)],
+      [formatTrackReply(metrics, journalUrl, sampling, intervalRecord)],
       env,
     );
     // Clear the start marker so the next Stop Track without a fresh mc 10
     // falls back to the lookback heuristic rather than re-using this session.
     await clearSessionStart(env, event.imei);
-    return { sessionId, journalUrl: result.url };
+    return { sessionId, journalUrl };
   });
 }
 
@@ -498,6 +521,7 @@ function withIntervalHint(base: string, interval: TrackIntervalRecord | null): s
 
 const MAX_SMS_CHARS = 160;
 const PUBLISH_ERROR_PREFIX = "Track publish failed: ";
+const STORE_ERROR_PREFIX = "Track posted, save failed: ";
 const FETCH_ERROR_PREFIX = "Track failed, MapShare: ";
 
 /**

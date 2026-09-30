@@ -55,6 +55,11 @@ export type OpName =
   | "image"
   | "publish_track"
   | "track_narrative"
+  // Inner checkpoints of `publish_track` (#219). The outer op completes only
+  // after the success reply, so without these a reply that failed after the
+  // commit made a replay post the journal entry and record the spend again.
+  | "track_ledger"
+  | "track_publish"
   // Ledger writes are side effects too (#235 review): they were unguarded, so a
   // re-delivered event whose narrative/image checkpoints cache-hit would still
   // re-record the spend and double-count `!cost`.

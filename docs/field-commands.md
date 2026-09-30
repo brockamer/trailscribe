@@ -56,6 +56,16 @@ When TrailScribe sees that the fixes are too sparse for the speeds the device re
 - The post frontmatter carries `distance_is_lower_bound: true` and `estimated_distance_mi`, the distance implied by the device's own speeds.
 - The narrative is told the data is sparse and must not describe pauses that the data cannot show.
 
+## Tracking sessions: error replies
+
+When a Stop Track cannot finish, the device gets one of these replies instead of silence:
+
+- `Track failed, MapShare: …` — TrailScribe could not read the MapShare feed. Nothing was published.
+- `Track publish failed: …` — the narrative, the cost record or the journal commit failed. Nothing was published.
+- `Track posted, save failed: …` — the journal post is live. Only TrailScribe's own session record was not saved.
+
+If Garmin delivers the same Stop Track again, TrailScribe resumes from the step that failed. Steps that already finished do not run again, so a re-delivery never makes a second journal post or a second charge for the narrative. You can then get two replies for one Stop Track: the error, then `Track posted: …`.
+
 ## Notes
 
 - **Case-insensitive.** `!Todo` and `!todo` behave the same; the leading exclamation mark is required.

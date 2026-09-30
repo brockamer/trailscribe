@@ -115,7 +115,7 @@ Five columns, left to right. An issue moves rightward as it progresses.
 | Column          | Meaning                                                                                                                                                                                                                              | Expected count |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- |
 | **Backlog**     | Captured but not yet scheduled. Triaged (has Priority) but not actively planned this cycle.                                                                                                                                          | Unbounded      |
-| **Up Next**     | Scheduled to be picked up next. The on-deck queue. When In Progress frees up, the top of Up Next moves over.                                                                                                                         | 1–3 items      |
+| **Up Next**     | Scheduled to be picked up next, in work order. When In Progress frees up, the top of Up Next moves over.                                                                                                                             | Up to 8 items  |
 | **In Progress** | Actively being worked on right now.                                                                                                                                                                                                  | 1–3 items      |
 | **Blocked**     | Was pulled to In Progress and then hit an unanticipated stoppage. Has a `## Blocked by` body section naming the unblock owner and the specific event being waited on. Returns to In Progress when unblocked or to Backlog if punted. | 0–2 items      |
 | **Done**        | Closed issues. Auto-populated when an issue closes.                                                                                                                                                                                  | Growing        |
@@ -123,7 +123,7 @@ Five columns, left to right. An issue moves rightward as it progresses.
 **Rules:**
 
 - In Progress should stay small. More than ~3 items means focus is scattered.
-- Up Next should be ordered — top item is what gets worked next. Priority field breaks ties within the column.
+- Up Next is ordered by board position, and that position is the work order: a bare `/jared:jared-start` pulls the top item (jared ≥ 0.33 lists Up Next by position). Priority does not reorder it. Up Next holds at most 8 items, jared's default cap (`SKILL.md` § WIP limits).
 - Nothing in In Progress without Priority set.
 - When an issue closes, it moves to Done automatically.
 - An issue with unmet `blockedBy` dependencies is **not** "Blocked" — it's just queued. Items move to Blocked only after being pulled to In Progress and hitting a stoppage.
@@ -144,11 +144,11 @@ The `## Depends on` body section, if present, is **prose context only**. The rel
 
 Three values. This is the canonical priority signal — labels do not encode priority.
 
-| Value      | Meaning                                                                                                                                                                                                                                         |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **High**   | Directly advances the current strategic goal (currently: keeping the shipped Phase 2 + Mode B surface healthy and the deploy path working; Phase 3 DO + D1, epic #99, is the next promotion candidate). Should be addressed before Medium work. |
-| **Medium** | Quality, efficiency, or reliability improvement. Important but not blocking the strategic goal.                                                                                                                                                 |
-| **Low**    | Nice-to-have, future-facing, or optional. Safe to defer indefinitely.                                                                                                                                                                           |
+| Value      | Meaning                                                                                                                                                                                                                                   |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **High**   | Directly advances the current strategic goal (currently: milestone #10, Field reliability — correct replies, posts and tracks from the field; then #152 `!call`; then Phase 3 DO + D1, epic #99). Should be addressed before Medium work. |
+| **Medium** | Quality, efficiency, or reliability improvement. Important but not blocking the strategic goal.                                                                                                                                           |
+| **Low**    | Nice-to-have, future-facing, or optional. Safe to defer indefinitely.                                                                                                                                                                     |
 
 **Rules:**
 

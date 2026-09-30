@@ -8,6 +8,7 @@ import { computeMetrics, samplingAssessment } from "./track-metrics.js";
 import { generateTrackNarrative } from "./narrative.js";
 import { publishTrackPost } from "../adapters/publish/github-pages.js";
 import { sendReply } from "../adapters/outbound/garmin-ipc-inbound.js";
+import { buildReply, SMS_MAX } from "./reply.js";
 import { recordTransaction } from "./ledger.js";
 import { log } from "../adapters/logging/worker-logs.js";
 import { reverseGeocode } from "../adapters/location/geocode.js";
@@ -505,7 +506,11 @@ export async function handleStopTrack(
 
     await sendReply(
       event.imei,
-      [formatTrackReply(metrics, journalUrl, sampling, intervalRecord)],
+      buildReply({
+        body: formatTrackReply(metrics, sampling, intervalRecord),
+        journalUrl,
+        env,
+      }),
       env,
     );
     // Clear the start marker so the next Stop Track without a fresh mc 10
@@ -527,7 +532,6 @@ function withIntervalHint(base: string, interval: TrackIntervalRecord | null): s
   return `${base} (interval: ${formatInterval(interval.intervalSec)})`;
 }
 
-const MAX_SMS_CHARS = 160;
 const PUBLISH_ERROR_PREFIX = "Track publish failed: ";
 const STORE_ERROR_PREFIX = "Track posted, save failed: ";
 const FETCH_ERROR_PREFIX = "Track failed, MapShare: ";
@@ -546,13 +550,12 @@ function trackErrorReply(
 ): string {
   const msg = err instanceof Error ? err.message : String(err);
   const hintLen = interval ? ` (interval: ${formatInterval(interval.intervalSec)})`.length : 0;
-  const msgBudget = Math.max(0, MAX_SMS_CHARS - prefix.length - hintLen);
+  const msgBudget = Math.max(0, SMS_MAX - prefix.length - hintLen);
   return withIntervalHint(`${prefix}${msg.slice(0, msgBudget)}`, interval);
 }
 
 function formatTrackReply(
   metrics: TrackMetrics,
-  url: string,
   sampling: SamplingAssessment,
   interval: TrackIntervalRecord | null,
 ): string {
@@ -565,5 +568,5 @@ function formatTrackReply(
   const gainFt = Math.round(mToFt(metrics.elevation.gainM));
   const minutes = Math.round(metrics.durationSeconds / 60);
   const duration = minutes >= 60 ? `${Math.floor(minutes / 60)}h${minutes % 60}m` : `${minutes}min`;
-  return `Track posted: ${mi}mi${note}, ${gainFt}ft gain, ${duration}\n${url}`;
+  return `Track posted: ${mi}mi${note}, ${gainFt}ft gain, ${duration}`;
 }

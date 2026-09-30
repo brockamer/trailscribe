@@ -220,6 +220,40 @@ describe("sendReply — retry semantics (5xx/429)", () => {
   });
 });
 
+describe("sendReply — success log (#249)", () => {
+  const URL =
+    "https://brockamer.github.io/trailscribe-journal/2026/09/27/alpenglow-over-the-sawtooth-crest-after-a-long-col-10.html";
+
+  test("logs every delivered page in full, with its index, so a device report can be matched", async () => {
+    fetchSpy.mockResolvedValue(jsonResponse(200, { count: 1 }));
+    const pages = ["Posted: Title(1/2)", `${URL} (live in ~1 min)(2/2)`];
+
+    await sendReply("123456789012345", pages, env, { delay: noDelay });
+
+    const sent = loggedEvents().filter((e) => e.event === "reply_sent");
+    expect(sent).toHaveLength(2);
+    expect(sent.map((e) => [e.page, e.pages, e.text])).toEqual([
+      [1, 2, pages[0]],
+      [2, 2, pages[1]],
+    ]);
+    expect(sent[1].imei).toBe("123456789012345");
+  });
+
+  test("a page that fails is not logged as sent", async () => {
+    fetchSpy.mockResolvedValue(jsonResponse(422, { Message: "bad" }));
+    await expect(sendReply("123456789012345", ["pong"], env, { delay: noDelay })).rejects.toThrow();
+    expect(loggedEvents().filter((e) => e.event === "reply_sent")).toHaveLength(0);
+  });
+
+  test("dry-run logs full page text, not an 80-char preview that cuts the URL", async () => {
+    env = makeTestEnv({ IPC_INBOUND_DRY_RUN: "true" });
+    const page = `${URL} (live in ~1 min)`;
+    await sendReply("123456789012345", [page], env, { delay: noDelay });
+    const dryRun = loggedEvents().find((e) => e.event === "ipc_inbound_dry_run");
+    expect(dryRun?.pages_text).toEqual([page]);
+  });
+});
+
 describe("sendReply — dry-run flag", () => {
   test("IPC_INBOUND_DRY_RUN=true: no fetch, returns count=pages, emits ipc_inbound_dry_run log", async () => {
     env = makeTestEnv({ IPC_INBOUND_DRY_RUN: "true" });

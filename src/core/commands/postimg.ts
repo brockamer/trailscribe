@@ -315,9 +315,9 @@ export async function handlePostImg(
     });
   }
 
-  const baseReply = `Posted: ${narrative.title} · ${publishResult.url}`;
+  const baseReply = `Posted: ${narrative.title}`;
   const body = imageCommitted ? baseReply : `${baseReply} (no image — retry !postimg)`;
-  return { body };
+  return { body, journalUrl: publishResult.url };
 }
 
 async function failPipeline(

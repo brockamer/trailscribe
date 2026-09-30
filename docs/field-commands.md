@@ -66,6 +66,14 @@ When a Stop Track cannot finish, the device gets one of these replies instead of
 
 If Garmin delivers the same Stop Track again, TrailScribe resumes from the step that failed. The MapShare read, the narrative, the cost record and the journal post do not run again once they have finished, so a re-delivery never makes a second journal post, a second charge for the narrative, or a different distance. You can then get two replies for one Stop Track: the error, then `Track posted: …`.
 
+## Journal links: wait one minute before you open them
+
+`!post`, `!postimg` and a closed track session reply with the URL of the new journal post, followed by `(live in ~1 min)`. TrailScribe sends the reply when the post is committed to the journal repository. GitHub Pages then builds the site, which takes 30–143 s (#249). If you open the link before the build is complete, you get a 404. Wait, then open the link again. The page does not change after the build.
+
+The URL is always sent whole in one message. When the title and the URL do not fit together in 160 characters, the reply is two messages: the first has the title or the track numbers, the second has the URL.
+
+Each message that TrailScribe sends is recorded in the Worker log as a `reply_sent` event with the full text. To compare what the device received with what TrailScribe sent, search the Workers Logs for `reply_sent` and the IMEI.
+
 ## Notes
 
 - **Case-insensitive.** `!Todo` and `!todo` behave the same; the leading exclamation mark is required.

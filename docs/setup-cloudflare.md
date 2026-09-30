@@ -371,7 +371,8 @@ Two ways to enable it:
 
 When ON, `sendReply` short-circuits the Garmin POST and emits a structured
 `ipc_inbound_dry_run` log line (visible in `wrangler tail --env staging`)
-showing IMEI, sender, page count, total chars, and a per-page preview.
+showing IMEI, sender, page count, total chars, and the full text of each page
+(`pages_text`). Real sends log one `reply_sent` line per delivered page instead.
 
 **Production is locked.** `parseEnv` throws at Worker startup if
 `TRAILSCRIBE_ENV=production` AND `IPC_INBOUND_DRY_RUN=true` — production must

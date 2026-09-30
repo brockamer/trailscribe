@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { buildReply, SMS_MAX } from "../src/core/reply.js";
+import { buildReply, JOURNAL_LIVE_HINT, SMS_MAX } from "../src/core/reply.js";
+import { slugify } from "../src/adapters/publish/github-pages.js";
 import type { Env } from "../src/env.js";
 import { makeTestEnv } from "./helpers/env.js";
 
@@ -129,5 +130,78 @@ describe("buildReply — assertion guard", () => {
         }
       }
     }
+  });
+});
+
+/**
+ * #249 — a journal URL must reach the device whole, in one SMS, with a hint
+ * that the page is not live until GitHub Pages finishes building (30–143 s).
+ * Worst case: a 60-char narrative title slugs to 50 chars, plus the `-10`
+ * collision suffix from `findFreePath`, under the production URL template —
+ * 117 chars of URL.
+ */
+describe("buildReply — journal link (#249)", () => {
+  const LONG_TITLE = "Alpenglow over the Sawtooth crest after a long, cold climb!";
+  const WORST_URL = `https://brockamer.github.io/trailscribe-journal/2026/09/27/${slugify(LONG_TITLE, new Date(0))}-10.html`;
+  const SHORT_URL = "https://brockamer.github.io/trailscribe-journal/2026/09/27/fog.html";
+
+  /** The URL appears whole in exactly one page, and is never cut by a marker. */
+  function expectUrlIntact(pages: string[], url: string): void {
+    expect(pages.filter((p) => p.includes(url))).toHaveLength(1);
+  }
+
+  test("worst-case URL is 117 chars (guards the arithmetic below)", () => {
+    expect(LONG_TITLE.length).toBeLessThanOrEqual(60);
+    expect(WORST_URL.length).toBe(117);
+  });
+
+  test("short body + short URL → one page: body, URL on its own line, live hint", () => {
+    const out = buildReply({ body: "Posted: Fog", journalUrl: SHORT_URL, env: envWith() });
+    expect(out).toEqual([`Posted: Fog\n${SHORT_URL}${JOURNAL_LIVE_HINT}`]);
+  });
+
+  test("worst-case title + URL → two pages, URL whole on the last page with the hint", () => {
+    const out = buildReply({
+      body: `Posted: ${LONG_TITLE}`,
+      journalUrl: WORST_URL,
+      env: envWith(),
+    });
+    expect(out).toHaveLength(2);
+    for (const page of out) expect(page.length).toBeLessThanOrEqual(SMS_MAX);
+    expectUrlIntact(out, WORST_URL);
+    expect(out[0]).toBe(`Posted: ${LONG_TITLE}(1/2)`);
+    expect(out[1]).toBe(`${WORST_URL}${JOURNAL_LIVE_HINT}(2/2)`);
+  });
+
+  test("worst case with the cost suffix on: every page fits, suffix on the last page", () => {
+    const out = buildReply({
+      body: `Posted: ${LONG_TITLE}`,
+      journalUrl: WORST_URL,
+      costUsdMtd: 12.34,
+      env: envWith({ APPEND_COST_SUFFIX: "true" }),
+    });
+    for (const page of out) expect(page.length).toBeLessThanOrEqual(SMS_MAX);
+    expectUrlIntact(out, WORST_URL);
+    expect(out[out.length - 1]).toContain(JOURNAL_LIVE_HINT);
+    expect(out[out.length - 1]).toContain("· $12.34");
+  });
+
+  test("!postimg no-image note in the body survives the worst case", () => {
+    const body = `Posted: ${LONG_TITLE} (no image — retry !postimg)`;
+    const out = buildReply({ body, journalUrl: WORST_URL, env: envWith() });
+    for (const page of out) expect(page.length).toBeLessThanOrEqual(SMS_MAX);
+    expectUrlIntact(out, WORST_URL);
+    expect(out.join("")).toContain("(no image — retry !postimg)");
+  });
+
+  test("an over-long body is truncated on page 1; the URL page is untouched", () => {
+    const out = buildReply({ body: "x".repeat(400), journalUrl: WORST_URL, env: envWith() });
+    expect(out).toHaveLength(2);
+    expect(out[0].length).toBe(SMS_MAX);
+    expect(out[1]).toBe(`${WORST_URL}${JOURNAL_LIVE_HINT}(2/2)`);
+  });
+
+  test("no journalUrl → behaviour unchanged (no hint)", () => {
+    expect(buildReply({ body: "pong", env: envWith() })).toEqual(["pong"]);
   });
 });

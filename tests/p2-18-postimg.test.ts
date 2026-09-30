@@ -183,7 +183,7 @@ describe("P2-18 !postimg — happy path", () => {
     await postIpc(envelope("!postimg sunset at sabrina", { gps: { lat: LAT, lon: LON } }));
 
     const [, messages] = sendReplyMock.mock.calls[0];
-    expect(messages[0]).toMatch(/^Posted: Sabrina Sunset · /);
+    expect(messages[0]).toMatch(/^Posted: Sabrina Sunset\nhttps:\/\/\S+\.html \(live in ~1 min\)$/);
     expect(messages[0]).not.toContain("image gen failed");
 
     // The createCommit mutation carries TWO additions in a single request.

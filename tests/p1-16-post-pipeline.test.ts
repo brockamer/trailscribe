@@ -457,3 +457,37 @@ describe("P1-16 !post — narrative failure", () => {
     expect(messages[0]).toMatch(/^Error: /);
   });
 });
+
+describe("P1-16 !post — journal link reaches the device whole (#249)", () => {
+  test("longest title: URL whole in one SMS with the live hint, every page ≤160", async () => {
+    const longTitle = "Alpenglow over the Sawtooth crest after a long, cold climb!";
+    const response = structuredClone(NARRATIVE_RESPONSE);
+    response.choices[0].message.content = JSON.stringify({
+      title: longTitle,
+      haiku: "a\nb\nc",
+      body: "Body.",
+    });
+    fetchSpy = makeFetchRouter([
+      { match: (u) => u.includes("openrouter.ai"), respond: () => jsonResponse(response) },
+      {
+        match: (u, i) => u.includes("api.github.com") && i?.method === "GET",
+        respond: () => new Response(null, { status: 404 }),
+      },
+      {
+        match: (u, i) => u.includes("api.github.com") && i?.method === "PUT",
+        respond: () => jsonResponse(PUBLISH_RESPONSE),
+      },
+    ]);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    const res = await postIpc(envelope("!post Long climb to the crest."));
+    expect(res.status).toBe(200);
+
+    const [, pages] = sendReplyMock.mock.calls[0];
+    for (const page of pages) expect(page.length).toBeLessThanOrEqual(160);
+    const url = pages.join("").match(/https:\/\/\S+?\.html/)?.[0];
+    expect(url).toMatch(/alpenglow-over-the-sawtooth-crest-after-a-long-col\.html$/);
+    expect(pages.filter((p) => p.includes(url!))).toHaveLength(1);
+    expect(pages.join("")).toContain("(live in ~1 min)");
+  });
+});

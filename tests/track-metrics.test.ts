@@ -10,7 +10,10 @@ import {
   activityHint,
   computeMetrics,
   isStationary,
+  isAtRest,
   STATIONARY_KM,
+  MIN_MOVING_SHARE,
+  MIN_MOVING_PINGS,
   samplingAssessment,
   UNDERSAMPLED_SPEED_RATIO,
   UNDERSAMPLED_MIN_GAP_S,
@@ -305,5 +308,91 @@ describe("samplingAssessment (#230)", () => {
     const a = samplingAssessment(pings, computeMetrics(pings));
     expect(a.speedRatio).toBeLessThan(UNDERSAMPLED_SPEED_RATIO);
     expect(a.undersampled).toBe(false);
+  });
+});
+
+/**
+ * The recorded 2026-09-12 parked session (#222): 4 pings over 4h17m, three at
+ * 0.0 km/h and one at 5.0 km/h (the pickup to stop tracking), ~0.019 km total.
+ * Coordinates are synthetic.
+ */
+const PARKED_PINGS: KmlPing[] = (() => {
+  const base = 4 * 3600 + 17 * 60;
+  return [
+    { ...makePing(0, 10), lat: 34.0, velocityKmh: 0 },
+    { ...makePing(base / 3, 10), lat: 34.00005, velocityKmh: 0 },
+    { ...makePing((2 * base) / 3, 10), lat: 34.0001, velocityKmh: 0 },
+    { ...makePing(base, 10), lat: 34.00017, velocityKmh: 5 },
+  ];
+})();
+
+/** Pings ~1.1 km apart along a meridian, so the footprint is never at rest. */
+function spreadPings(velocities: number[]): KmlPing[] {
+  return velocities.map((v, i) => ({
+    ...makePing(i * 600, 10),
+    lat: 34.0 + i * 0.01,
+    velocityKmh: v,
+  }));
+}
+
+describe("stationary classification (#222)", () => {
+  test("the recorded parked session is at rest", () => {
+    expect(totalDistanceKm(PARKED_PINGS)).toBeCloseTo(0.019, 3);
+    expect(isAtRest(PARKED_PINGS)).toBe(true);
+  });
+
+  test("the recorded parked session classifies as stationary, not a hike on a loop", () => {
+    const m = computeMetrics(PARKED_PINGS);
+    expect(m.activityHint).toBe("stationary");
+    expect(m.routeShape).toBe("stationary");
+    expect(activityHint(PARKED_PINGS)).toBe("stationary");
+    expect(routeShape(PARKED_PINGS)).toBe("stationary");
+  });
+
+  test("the #230 walk is short but moving, so it is not at rest", () => {
+    expect(isAtRest(FOG_LOOP_PINGS)).toBe(false);
+    const m = computeMetrics(FOG_LOOP_PINGS);
+    expect(m.activityHint).toBe("walk");
+    expect(m.routeShape).not.toBe("stationary");
+  });
+
+  test("D11 coordinate omission stays geometry-only: the #230 walk is still isStationary", () => {
+    expect(isStationary(computeMetrics(FOG_LOOP_PINGS))).toBe(true);
+  });
+
+  test("moving share is exclusive: exactly MIN_MOVING_SHARE is not at rest", () => {
+    const pings = PARKED_PINGS.map((p, i) => ({ ...p, velocityKmh: i < 2 ? 3 : 0 }));
+    expect(2 / pings.length).toBe(MIN_MOVING_SHARE);
+    expect(isAtRest(pings)).toBe(false);
+  });
+
+  test("a footprint of STATIONARY_KM or more is never at rest, whatever the speeds", () => {
+    const pings = spreadPings([0, 0, 0, 0]);
+    expect(totalDistanceKm(pings)).toBeGreaterThan(STATIONARY_KM);
+    expect(isAtRest(pings)).toBe(false);
+    expect(activityHint(pings)).toBe("mixed");
+  });
+
+  test("fewer than two pings is never at rest", () => {
+    expect(isAtRest([])).toBe(false);
+    expect(isAtRest([makePing(0, 0)])).toBe(false);
+  });
+
+  test("the parked session is not flagged as under-sampled", () => {
+    const a = samplingAssessment(PARKED_PINGS, computeMetrics(PARKED_PINGS));
+    expect(a.speedRatio).toBeGreaterThan(UNDERSAMPLED_SPEED_RATIO);
+    expect(a.maxGapSeconds).toBeGreaterThan(UNDERSAMPLED_MIN_GAP_S);
+    expect(a.undersampled).toBe(false);
+  });
+});
+
+describe("activityHint minimum moving pings (#222)", () => {
+  test("one moving ping cannot name a band", () => {
+    expect(MIN_MOVING_PINGS).toBe(2);
+    expect(activityHint(spreadPings([0, 0, 7, 0, 0, 0]))).toBe("mixed");
+  });
+
+  test("MIN_MOVING_PINGS moving pings name a band", () => {
+    expect(activityHint(spreadPings([0, 7, 7, 0, 0, 0]))).toBe("hike");
   });
 });

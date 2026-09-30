@@ -101,17 +101,64 @@ function percentile(sortedAsc: number[], q: number): number {
   return sortedAsc[lo] + (sortedAsc[hi] - sortedAsc[lo]) * (idx - lo);
 }
 
-export type RouteShape = "out-and-back" | "loop" | "point-to-point";
+/**
+ * Total path length below which a session never went anywhere. Sized for the
+ * sparse fixes of the device's stationary saver: dense fixes on a parked device
+ * can accumulate GPS jitter past it, and the session then reads as moving.
+ */
+export const STATIONARY_KM = 0.2;
+
+/**
+ * True when the session covered less ground than {@link STATIONARY_KM}.
+ * Geometry only, on purpose: it gates coordinate omission (PRD §8 D11), and a
+ * small footprint pinpoints a location whether or not anyone moved inside it.
+ * Classification uses {@link isAtRest}, which also weighs the device's speeds.
+ */
+export function isStationary(m: Pick<TrackMetrics, "distanceKm">): boolean {
+  return m.distanceKm < STATIONARY_KM;
+}
+
+/** Device-reported speed above which a ping counts as moving. */
+export const MOVING_KMH = 1;
+
+/**
+ * Share of pings that must report movement before a short session counts as
+ * an outing. A short walk (#230: 2 of 3 moving) clears it; a parked device
+ * whose only moving ping is the pickup to stop tracking (#222: 1 of 4) does not.
+ */
+export const MIN_MOVING_SHARE = 0.5;
+
+/**
+ * Moving pings needed before {@link activityHint} names a speed band, so one
+ * incidental sample cannot decide a multi-hour session.
+ */
+export const MIN_MOVING_PINGS = 2;
+
+/**
+ * True when the session never went anywhere: its path is shorter than
+ * {@link STATIONARY_KM} and fewer than {@link MIN_MOVING_SHARE} of its pings
+ * report movement. Geometry alone cannot tell a parked device from a sparse
+ * short walk (#222); both recorded 2026-09-12 sessions are under 0.2 km.
+ */
+export function isAtRest(pings: KmlPing[]): boolean {
+  if (pings.length < 2) return false;
+  const moving = pings.filter((p) => p.velocityKmh > MOVING_KMH).length;
+  return totalDistanceKm(pings) < STATIONARY_KM && moving / pings.length < MIN_MOVING_SHARE;
+}
+
+export type RouteShape = "out-and-back" | "loop" | "point-to-point" | "stationary";
 
 /**
  * Heuristic classifier from start/end/midpoint geometry.
  *
+ *   session at rest (see isAtRest)           -> "stationary"
  *   start ~ end AND midpoint far from start  -> "out-and-back"
  *   start ~ end (no clear far midpoint)      -> "loop"
  *   start far from end                       -> "point-to-point"
  */
 export function routeShape(pings: KmlPing[]): RouteShape {
   if (pings.length < 2) return "point-to-point";
+  if (isAtRest(pings)) return "stationary";
   const start = pings[0];
   const end = pings[pings.length - 1];
   const mid = pings[Math.floor(pings.length / 2)];
@@ -128,10 +175,12 @@ export function routeShape(pings: KmlPing[]): RouteShape {
   return "point-to-point";
 }
 
-export type ActivityHint = "walk" | "hike" | "run" | "bike" | "drive" | "mixed";
+export type ActivityHint = "walk" | "hike" | "run" | "bike" | "drive" | "mixed" | "stationary";
+
+type SpeedBand = Exclude<ActivityHint, "mixed" | "stationary">;
 
 /**
- * Classify activity by the band that holds the most non-zero pings.
+ * Classify activity by the band that holds the most moving pings.
  *
  *   walk:  0-5 km/h
  *   hike:  5-9 km/h
@@ -139,14 +188,17 @@ export type ActivityHint = "walk" | "hike" | "run" | "bike" | "drive" | "mixed";
  *   bike:  15-35 km/h
  *   drive: 35+ km/h
  *
- * Returns "mixed" if no band gets a clear majority (>=40% of moving pings).
+ * Returns "stationary" for a session at rest (see {@link isAtRest}), and
+ * "mixed" when fewer than {@link MIN_MOVING_PINGS} pings move or no band gets
+ * a clear majority (>=40% of moving pings).
  */
 export function activityHint(pings: KmlPing[]): ActivityHint {
   if (pings.length === 0) return "mixed";
-  const moving = pings.filter((p) => p.velocityKmh > 1);
-  if (moving.length === 0) return "mixed";
+  if (isAtRest(pings)) return "stationary";
+  const moving = pings.filter((p) => p.velocityKmh > MOVING_KMH);
+  if (moving.length < MIN_MOVING_PINGS) return "mixed";
 
-  const counts: Record<Exclude<ActivityHint, "mixed">, number> = {
+  const counts: Record<SpeedBand, number> = {
     walk: 0,
     hike: 0,
     run: 0,
@@ -161,7 +213,7 @@ export function activityHint(pings: KmlPing[]): ActivityHint {
     else counts.drive++;
   }
 
-  const sorted = (Object.entries(counts) as Array<[Exclude<ActivityHint, "mixed">, number]>).sort(
+  const sorted = (Object.entries(counts) as Array<[SpeedBand, number]>).sort(
     ([, a], [, b]) => b - a,
   );
   const [topName, topCount] = sorted[0];
@@ -179,18 +231,6 @@ export interface TrackMetrics {
   elevation: ElevationProfile;
   routeShape: RouteShape;
   activityHint: ActivityHint;
-}
-
-/**
- * Total path length below which a session never went anywhere. Sized for the
- * sparse fixes of the device's stationary saver: dense fixes on a parked device
- * can accumulate GPS jitter past it, and the session then reads as moving.
- */
-export const STATIONARY_KM = 0.2;
-
-/** True when the session covered less ground than {@link STATIONARY_KM}. */
-export function isStationary(m: Pick<TrackMetrics, "distanceKm">): boolean {
-  return m.distanceKm < STATIONARY_KM;
 }
 
 /** Aggregate every metric the narrative pipeline needs into one record. */
@@ -258,7 +298,8 @@ export interface SamplingAssessment {
  * in time, the device moved between fixes that were never recorded. Both
  * conditions must hold, and the implied distance must clear
  * {@link STATIONARY_KM}, so a parked device with jittery velocities is not
- * flagged.
+ * flagged. A session at rest ({@link isAtRest}) is never flagged either: one
+ * pickup ping on a parked device otherwise implies kilometres (#222).
  */
 export function samplingAssessment(pings: KmlPing[], metrics: TrackMetrics): SamplingAssessment {
   let maxGapSeconds = 0;
@@ -273,6 +314,7 @@ export function samplingAssessment(pings: KmlPing[], metrics: TrackMetrics): Sam
         ? Infinity
         : 0;
   const undersampled =
+    !isAtRest(pings) &&
     estimatedDistanceKm >= STATIONARY_KM &&
     speedRatio >= UNDERSAMPLED_SPEED_RATIO &&
     maxGapSeconds >= UNDERSAMPLED_MIN_GAP_S;

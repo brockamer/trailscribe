@@ -1088,3 +1088,179 @@ describe("handleStopTrack — end to end", () => {
     expect(publishSpy).toHaveBeenCalledTimes(1);
   });
 });
+
+// #219: every stage of the `publish_track` callback must either tell the
+// device what failed or be unable to repeat a side effect on replay. The
+// success-path reply runs after the journal commit, so before this fix a reply
+// that threw left `publish_track` incomplete and a replay committed the post a
+// second time (and recorded the LLM spend twice).
+describe("handleStopTrack — failures around the publish (#219)", () => {
+  const IMEI = "300052030374220";
+  const STOP_EVENT: GarminEvent = {
+    imei: IMEI,
+    messageCode: 12,
+    timeStamp: Date.parse("2026-05-02T16:24:30Z"),
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(sendReply).mockReset();
+    vi.mocked(sendReply).mockResolvedValue({ count: 1 });
+  });
+
+  /** Seed the session start and stub every external call on the happy path. */
+  async function stubHappyPath(env: ReturnType<typeof makeTestEnv>) {
+    const { recordSessionStart } = await import("../src/core/tracking.js");
+    await recordSessionStart(env, IMEI, Date.parse("2026-05-02T15:51:30Z"));
+    vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
+    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Malibu, CA");
+    vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Sunny, 18°C");
+    const narrativeSpy = vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
+      title: "PCH and back",
+      haiku: "a\nb\nc",
+      body: "Run + beach + return.",
+      usage: { prompt_tokens: 100, completion_tokens: 50 },
+    });
+    const publishSpy = vi.spyOn(publishMod, "publishTrackPost").mockResolvedValue({
+      url: "https://brockamer.github.io/trailscribe-journal/2026/05/02/pch.html",
+      path: "_posts/2026-05-02-pch.md",
+      sha: "abc",
+    });
+    return { narrativeSpy, publishSpy };
+  }
+
+  /** Every SMS body handed to `sendReply`, in call order. */
+  function sentReplies(): string[] {
+    return vi.mocked(sendReply).mock.calls.map((call) => call[1][0]);
+  }
+
+  test("success reply fails, event replayed: the journal post is committed once", async () => {
+    const env = makeTestEnv();
+    const { publishSpy } = await stubHappyPath(env);
+    vi.mocked(sendReply).mockRejectedValueOnce(new Error("network error: fetch failed"));
+
+    await expect(handleStopTrack(STOP_EVENT, env, "idem-219-reply")).rejects.toThrow(
+      /fetch failed/,
+    );
+    await handleStopTrack(STOP_EVENT, env, "idem-219-reply");
+
+    expect(publishSpy).toHaveBeenCalledTimes(1);
+    expect(sentReplies()).toHaveLength(2);
+    expect(sentReplies()[1]).toMatch(/^Track posted: /);
+  });
+
+  test("success reply fails, event replayed: the LLM spend is recorded once", async () => {
+    const env = makeTestEnv();
+    await stubHappyPath(env);
+    vi.mocked(sendReply).mockRejectedValueOnce(new Error("network error: fetch failed"));
+
+    await expect(handleStopTrack(STOP_EVENT, env, "idem-219-ledger")).rejects.toThrow();
+    await handleStopTrack(STOP_EVENT, env, "idem-219-ledger");
+
+    const ledger = await monthlyTotals(env);
+    expect(ledger.by_command.track).toMatchObject({ requests: 1 });
+  });
+
+  test("success reply fails, replay: MapShare is not read again, so a feed error cannot refuse a live post", async () => {
+    const env = makeTestEnv();
+    const { publishSpy } = await stubHappyPath(env);
+    // The replay's feed would fail (password changed, feed down). It must not be read.
+    const fetchSpy = vi
+      .spyOn(mapshareMod, "fetchMapShareKml")
+      .mockResolvedValueOnce(FIXTURE_KML_E2E)
+      .mockRejectedValue(new Error("MapShare 401"));
+    vi.mocked(sendReply).mockRejectedValueOnce(new Error("network error: fetch failed"));
+
+    await expect(handleStopTrack(STOP_EVENT, env, "idem-219-kml")).rejects.toThrow(/fetch failed/);
+    await handleStopTrack(STOP_EVENT, env, "idem-219-kml");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(publishSpy).toHaveBeenCalledTimes(1);
+    expect(sentReplies()[1]).toMatch(/^Track posted: /);
+  });
+
+  test("narrative failure: device gets an error SMS and the error propagates", async () => {
+    const env = makeTestEnv();
+    const { narrativeSpy, publishSpy } = await stubHappyPath(env);
+    narrativeSpy.mockRejectedValue(new Error("OpenRouter 502"));
+
+    await expect(handleStopTrack(STOP_EVENT, env, "idem-219-narrative")).rejects.toThrow(
+      /OpenRouter 502/,
+    );
+
+    expect(publishSpy).not.toHaveBeenCalled();
+    expect(sentReplies()).toEqual(["Track publish failed: OpenRouter 502"]);
+  });
+
+  test("ledger failure: device gets an error SMS and the error propagates", async () => {
+    const env = makeTestEnv();
+    const { publishSpy } = await stubHappyPath(env);
+    vi.spyOn(env.TS_LEDGER, "put").mockRejectedValueOnce(new Error("KV put failed"));
+
+    await expect(handleStopTrack(STOP_EVENT, env, "idem-219-ledger-fail")).rejects.toThrow(
+      /KV put failed/,
+    );
+
+    expect(publishSpy).not.toHaveBeenCalled();
+    expect(sentReplies()).toEqual(["Track publish failed: KV put failed"]);
+  });
+
+  test("record-store failure: SMS says the post is live; replay stores it without re-posting", async () => {
+    const env = makeTestEnv();
+    const { publishSpy } = await stubHappyPath(env);
+    // Armed after the session-start seed, so the first TS_TRACKS write inside
+    // the callback is storeTrackRecord's.
+    vi.spyOn(env.TS_TRACKS, "put").mockRejectedValueOnce(new Error("KV put failed"));
+
+    await expect(handleStopTrack(STOP_EVENT, env, "idem-219-store")).rejects.toThrow(
+      /KV put failed/,
+    );
+    expect(sentReplies()).toEqual(["Track posted, save failed: KV put failed"]);
+
+    await handleStopTrack(STOP_EVENT, env, "idem-219-store");
+    expect(publishSpy).toHaveBeenCalledTimes(1);
+    expect(sentReplies()[1]).toMatch(/^Track posted: /);
+  });
+
+  test("an undeliverable error SMS is logged at error level", async () => {
+    const env = makeTestEnv();
+    const { publishSpy } = await stubHappyPath(env);
+    publishSpy.mockRejectedValue(new Error("403 Bad credentials"));
+    vi.mocked(sendReply).mockRejectedValueOnce(new Error("network error: fetch failed"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(handleStopTrack(STOP_EVENT, env, "idem-219-loglevel")).rejects.toThrow();
+
+    const records = errSpy.mock.calls.map((call) => JSON.parse(String(call[0])));
+    expect(records).toContainEqual(
+      expect.objectContaining({ event: "track_publish_error_reply_failed", level: "error" }),
+    );
+  });
+
+  test("through the webhook: a re-delivered Stop Track after a failed reply posts once", async () => {
+    const env = makeTestEnv({ IMEI_ALLOWLIST: IMEI });
+    const { publishSpy } = await stubHappyPath(env);
+    vi.mocked(sendReply).mockRejectedValueOnce(new Error("network error: fetch failed"));
+    const app = makeApp();
+    const deliver = () =>
+      app.request(
+        "/garmin/ipc",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-outbound-auth-token": env.GARMIN_INBOUND_TOKEN,
+          },
+          body: JSON.stringify({ Version: "2.0", Events: [STOP_EVENT] }),
+        },
+        env,
+      );
+
+    expect((await deliver()).status).toBe(200);
+    expect((await deliver()).status).toBe(200);
+
+    expect(publishSpy).toHaveBeenCalledTimes(1);
+    expect(sentReplies()).toHaveLength(2);
+    expect(sentReplies()[1]).toMatch(/^Track posted: /);
+  });
+});

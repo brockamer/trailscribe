@@ -459,6 +459,39 @@ describe("publishTrackPost — published location (#223)", () => {
     expect(md).not.toContain("location:");
   });
 
+  test("under-sampled track flags the distance as a lower bound in frontmatter (#230)", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("not found", { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ content: { sha: "a", path: "p", html_url: "x" }, commit: { sha: "c" } }),
+          { status: 200 },
+        ),
+      );
+    await publishTrackPost({
+      title: "Fog",
+      haiku: "a\nb\nc",
+      body: "B",
+      metrics: STATIONARY_METRICS,
+      sampling: {
+        undersampled: true,
+        speedRatio: 8.8,
+        estimatedDistanceKm: 0.5,
+        maxGapSeconds: 780,
+      },
+      endLat: 34.0,
+      endLon: -118.0,
+      env: makeTestEnv(),
+    });
+    const body = JSON.parse((fetchMock.mock.calls[1][1]?.body ?? "{}") as string);
+    fetchMock.mockRestore();
+    const md = atob(body.content);
+    expect(md).toContain("distance_mi: 0.01");
+    expect(md).toContain("distance_is_lower_bound: true");
+    expect(md).toContain("estimated_distance_mi: 0.31");
+  });
+
   test("moving session honours the configured precision", async () => {
     const md = await publishedMarkdown(MOVING_METRICS, "4", "Malibu, CA");
     expect(md).toContain('location: { lat: 34.0269, lon: -118.7603, place: "Malibu, CA" }');
@@ -588,6 +621,54 @@ describe("handleStopTrack — end to end", () => {
     const { recordSessionStart } = await import("../src/core/tracking.js");
     await recordSessionStart(env, imei, atMs);
   }
+
+  test("under-sampled track: lower-bound distance reaches prompt, post and SMS (#230)", async () => {
+    const env = makeTestEnv();
+    const imei = "300052030374220";
+    await seedSessionStart(env, imei, Date.parse("2026-09-12T12:01:00Z"));
+    await recordTrackInterval(env, imei, 14400);
+    // The recorded 2026-09-12 walk: 3 fixes over 900 s, device speeds 0 / 3 / 3 km/h.
+    const ping = (iso: string, lat: number, velocityKmh: number) => ({
+      t: Date.parse(iso),
+      lat,
+      lon: -118.0,
+      alt: 10,
+      velocityKmh,
+      courseDeg: 0,
+      validFix: true,
+    });
+    vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue("<kml/>");
+    vi.spyOn(mapshareMod, "parsePings").mockReturnValue([
+      ping("2026-09-12T12:01:00Z", 34.0, 0),
+      ping("2026-09-12T12:03:00Z", 34.0002545, 3),
+      ping("2026-09-12T12:16:00Z", 34.000509, 3),
+    ]);
+    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Malibu, CA");
+    vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Fog, 15°C");
+    const narrativeSpy = vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
+      title: "Fog",
+      haiku: "a\nb\nc",
+      body: "B",
+      usage: { prompt_tokens: 100, completion_tokens: 50 },
+    });
+    const publishSpy = vi.spyOn(publishMod, "publishTrackPost").mockResolvedValue({
+      url: "https://example.test/fog",
+      path: "_posts/fog.md",
+      sha: "abc",
+    });
+
+    await handleStopTrack(
+      { imei, messageCode: 12, timeStamp: Date.parse("2026-09-12T12:16:00Z") },
+      env,
+      "idem-undersampled",
+    );
+
+    expect(narrativeSpy.mock.calls[0][0].sampling?.undersampled).toBe(true);
+    expect(publishSpy.mock.calls[0][0].sampling?.undersampled).toBe(true);
+    const reply = vi.mocked(sendReply).mock.calls[0][1][0];
+    expect(reply).toContain("Track posted: 0.0+mi (sparse fixes, interval 4h)");
+    expect(reply.length).toBeLessThanOrEqual(160);
+  });
 
   test("fetches KML, generates narrative, publishes, replies, persists record", async () => {
     const env = makeTestEnv();

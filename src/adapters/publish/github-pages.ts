@@ -1,5 +1,9 @@
 import { journalLocationPrecision, type Env, type LocationPrecision } from "../../env.js";
-import { isStationary, type TrackMetrics } from "../../core/track-metrics.js";
+import {
+  isStationary,
+  type SamplingAssessment,
+  type TrackMetrics,
+} from "../../core/track-metrics.js";
 import { formatHaiku, kmToMi, mToFt } from "../../core/units.js";
 
 const RETRY_DELAYS_MS = [1000, 4000, 16000] as const;
@@ -584,6 +588,8 @@ export interface PublishTrackPostArgs {
   haiku: string;
   body: string;
   metrics: TrackMetrics;
+  /** When `undersampled`, frontmatter flags the distance as a lower bound (#230). */
+  sampling?: SamplingAssessment;
   endLat: number;
   endLon: number;
   startPlace?: string;
@@ -602,7 +608,19 @@ export interface PublishTrackPostArgs {
  * dated path uses the session's closedAt timestamp.
  */
 export async function publishTrackPost(args: PublishTrackPostArgs): Promise<PublishPostResult> {
-  const { title, haiku, body, metrics, endLat, endLon, startPlace, endPlace, weather, env } = args;
+  const {
+    title,
+    haiku,
+    body,
+    metrics,
+    sampling,
+    endLat,
+    endLon,
+    startPlace,
+    endPlace,
+    weather,
+    env,
+  } = args;
   const now = (args.now ?? (() => new Date(metrics.closedAt)))();
   const delay = args.delay ?? defaultDelay;
 
@@ -617,6 +635,7 @@ export async function publishTrackPost(args: PublishTrackPostArgs): Promise<Publ
         haiku,
         body,
         metrics,
+        sampling,
         endLat,
         endLon,
         startPlace,
@@ -634,6 +653,7 @@ function renderTrackMarkdown(a: {
   haiku: string;
   body: string;
   metrics: TrackMetrics;
+  sampling?: SamplingAssessment;
   endLat: number;
   endLon: number;
   startPlace?: string;
@@ -650,6 +670,11 @@ function renderTrackMarkdown(a: {
   lines.push(`  started_at: ${new Date(m.startedAt).toISOString()}`);
   lines.push(`  duration_seconds: ${m.durationSeconds}`);
   lines.push(`  distance_mi: ${kmToMi(m.distanceKm).toFixed(2)}`);
+  if (a.sampling?.undersampled) {
+    // distance_mi is the polyline length only; the device's speeds say more ground was covered.
+    lines.push(`  distance_is_lower_bound: true`);
+    lines.push(`  estimated_distance_mi: ${kmToMi(a.sampling.estimatedDistanceKm).toFixed(2)}`);
+  }
   lines.push(`  elevation_gain_ft: ${Math.round(mToFt(m.elevation.gainM))}`);
   lines.push(`  activity_hint: ${m.activityHint}`);
   lines.push(`  route_shape: ${m.routeShape}`);

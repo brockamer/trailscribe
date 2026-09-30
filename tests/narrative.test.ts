@@ -380,3 +380,50 @@ describe("generateTrackNarrative — imperial units in LLM input (#195)", () => 
     expect(sysMsg).toMatch(/US customary units|miles, feet|mph/);
   });
 });
+
+describe("generateTrackNarrative — under-sampled tracks (#230)", () => {
+  const metrics = {
+    pingCount: 3,
+    startedAt: Date.parse("2026-09-12T12:01:00Z"),
+    closedAt: Date.parse("2026-09-12T12:16:00Z"),
+    durationSeconds: 900,
+    distanceKm: 0.0566,
+    pace: { avgKmh: 2, p50Kmh: 3, p95Kmh: 3 },
+    elevation: { gainM: 0, lossM: 0, minM: 10, maxM: 10 },
+    routeShape: "loop" as const,
+    activityHint: "walk" as const,
+  };
+  async function userPrompt(sampling?: { undersampled: boolean }): Promise<string> {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
+    await generateTrackNarrative({
+      metrics,
+      sampling: sampling && {
+        undersampled: sampling.undersampled,
+        speedRatio: 8.8,
+        estimatedDistanceKm: 0.5,
+        maxGapSeconds: 780,
+      },
+      env,
+    });
+    const init = fetchSpy.mock.calls.at(-1)?.[1] as RequestInit;
+    const body = JSON.parse(init.body as string) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    return body.messages.find((m) => m.role === "user")?.content ?? "";
+  }
+
+  test("marks distance as a lower bound and forbids inferring pauses", async () => {
+    const msg = await userPrompt({ undersampled: true });
+    expect(msg).toMatch(/Distance: at least 0\.04 mi \(LOWER BOUND/);
+    expect(msg).toContain("about 0.31 mi");
+    expect(msg).toContain("Data quality");
+    expect(msg).toMatch(/Do not infer stopping/);
+    expect(msg).not.toMatch(/\bkm\b/);
+  });
+
+  test("a well-sampled track prompt is unchanged", async () => {
+    const msg = await userPrompt({ undersampled: false });
+    expect(msg).toMatch(/Distance: 0\.04 mi/);
+    expect(msg).not.toContain("Data quality");
+  });
+});

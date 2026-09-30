@@ -179,7 +179,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 ## Workflow
 
 - **jared** manages the board: https://github.com/users/brockamer/projects/3 (see `docs/project-board.md`).
-- No active plan. Last shipped work was Mode B hardening (epic #187) through 2026-05-18. Phase 3 (DO + D1, epic #99) is the next promotion candidate and is no longer blocked (the #161 edge was re-pointed at #154 on 2026-09-16). Ledger-cost (#162) is the most-developed loose issue; `!snap`/`!snapimg` (#150) was closed as not-planned.
+- Active arc (set 2026-09-29): milestone #10 _Field reliability — replies, posts and tracks you can trust_, then #152 `!call` (Phase 4b), then Phase 3 (DO + D1, epic #99; #161 stays blocked by #154). The Up Next column is kept in work order, so a bare `/jared:jared-start` picks the next item. Parked in Backlog: #246 `!postvid`, #169 watcher digests, #161 agent runtime, #162 ledger actual cost. `!snap`/`!snapimg` (#150) was closed as not-planned.
 - Git: `origin` = `git@github.com:brockamer/trailscribe.git` (SSH on this laptop; the HTTPS form documented before 2026-09-13 was the dev.lan checkout), default branch `main`.
 - Commit sign-off: `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>` (update the model name as sessions change; keep the line).
 

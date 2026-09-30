@@ -177,8 +177,7 @@ export async function handlePost(cmd: PostCommand, ctx: HandlePostContext): Prom
     });
   }
 
-  const body = `Posted: ${narrative.title} · ${publishResult.url}`;
-  return { body };
+  return { body: `Posted: ${narrative.title}`, journalUrl: publishResult.url };
 }
 
 async function failPipeline(

@@ -71,4 +71,6 @@ export interface GarminEnvelope {
  */
 export interface CommandResult {
   body: string;
+  /** Journal post URL; `buildReply` keeps it whole and adds the live hint (#249). */
+  journalUrl?: string;
 }

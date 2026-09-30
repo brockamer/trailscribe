@@ -672,6 +672,57 @@ describe("handleStopTrack — end to end", () => {
     expect(reply.length).toBeLessThanOrEqual(160);
   });
 
+  test("worst-case URL + under-sampled note: every page fits and the URL arrives whole (#249)", async () => {
+    // Before #249 this reply was one 184-char string; sendReply's length guard
+    // threw after the post was committed, so the device got nothing at all.
+    const env = makeTestEnv();
+    const imei = "300052030374220";
+    await seedSessionStart(env, imei, Date.parse("2026-09-12T12:01:00Z"));
+    await recordTrackInterval(env, imei, 14400);
+    const ping = (iso: string, lat: number, velocityKmh: number) => ({
+      t: Date.parse(iso),
+      lat,
+      lon: -118.0,
+      alt: 10,
+      velocityKmh,
+      courseDeg: 0,
+      validFix: true,
+    });
+    vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue("<kml/>");
+    vi.spyOn(mapshareMod, "parsePings").mockReturnValue([
+      ping("2026-09-12T12:01:00Z", 34.0, 0),
+      ping("2026-09-12T12:03:00Z", 34.0002545, 3),
+      ping("2026-09-12T12:16:00Z", 34.000509, 3),
+    ]);
+    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Malibu, CA");
+    vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Fog, 15°C");
+    vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
+      title: "Alpenglow over the Sawtooth crest after a long, cold climb!",
+      haiku: "a\nb\nc",
+      body: "B",
+      usage: { prompt_tokens: 100, completion_tokens: 50 },
+    });
+    const worstUrl =
+      "https://brockamer.github.io/trailscribe-journal/2026/09/12/alpenglow-over-the-sawtooth-crest-after-a-long-col-10.html";
+    vi.spyOn(publishMod, "publishTrackPost").mockResolvedValue({
+      url: worstUrl,
+      path: "_posts/x.md",
+      sha: "abc",
+    });
+
+    await handleStopTrack(
+      { imei, messageCode: 12, timeStamp: Date.parse("2026-09-12T12:16:00Z") },
+      env,
+      "idem-249-worst",
+    );
+
+    const pages = vi.mocked(sendReply).mock.calls[0][1];
+    for (const page of pages) expect(page.length).toBeLessThanOrEqual(160);
+    expect(pages.filter((p) => p.includes(worstUrl))).toHaveLength(1);
+    expect(pages[0]).toContain("Track posted: 0.0+mi (sparse fixes, interval 4h)");
+    expect(pages.join("")).toContain("(live in ~1 min)");
+  });
+
   test("fetches KML, generates narrative, publishes, replies, persists record", async () => {
     const env = makeTestEnv();
     await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));

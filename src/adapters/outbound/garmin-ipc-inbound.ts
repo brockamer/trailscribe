@@ -100,7 +100,8 @@ export async function sendReply(
       sender: env.IPC_INBOUND_SENDER,
       message_pages: messages.length,
       total_chars: totalChars,
-      preview: messages.map((m) => m.slice(0, 80)),
+      // Full text, not a preview: a journal URL alone is up to 117 chars (#249).
+      pages_text: messages,
     });
     return { count: messages.length };
   }
@@ -112,6 +113,16 @@ export async function sendReply(
   for (const message of messages) {
     await sendOne(url, imei, message, env, delay);
     count += 1;
+    // The only server-side record of what the device received (#249): lets a
+    // "the link was wrong" report be checked against the Worker.
+    log({
+      event: "reply_sent",
+      level: "info",
+      imei,
+      page: count,
+      pages: messages.length,
+      text: message,
+    });
   }
   return { count };
 }

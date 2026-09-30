@@ -2,7 +2,7 @@ import { z } from "zod";
 import { journalLocationPrecision, type Env } from "../env.js";
 import { chatCompletion } from "../adapters/ai/openrouter.js";
 import { log } from "../adapters/logging/worker-logs.js";
-import type { TrackMetrics } from "./track-metrics.js";
+import type { SamplingAssessment, TrackMetrics } from "./track-metrics.js";
 import { kmhToMph, kmToMi, mToFt } from "./units.js";
 
 /**
@@ -257,6 +257,8 @@ function buildUserPrompt(input: NarrativeInput): string {
 
 export interface TrackNarrativeInput {
   metrics: TrackMetrics;
+  /** When `undersampled`, the prompt marks distance as a lower bound (#230). */
+  sampling?: SamplingAssessment;
   startPlace?: string;
   endPlace?: string;
   midpointPlace?: string;
@@ -298,6 +300,7 @@ const SYSTEM_PROMPT_TRACK = [
   '- "title": ≤60 characters, evocative, anchored to place + activity. No clickbait, no emoji.',
   '- "haiku": exactly three lines separated by newlines, in 5/7/5 syllables, ≤110 characters total. Plain English, observational.',
   '- "body": ≤3000 characters. Describe the route, place, conditions, and pace. Use long stops as paragraph breaks. Do not invent companions, motivations, or destinations not present in the metrics or place names.',
+  '- If the input carries a "Data quality" note, obey it: it means the recorded fixes are sparse, so gaps in the data are not events in the field.',
   "- Use US customary units exclusively in the body: miles, feet, °F, mph. Never kilometers, meters, °C, or km/h. The numbers in the input are already imperial — render them in the body using the same units shown.",
 ].join("\n");
 
@@ -325,13 +328,25 @@ function buildTrackPrompt(input: TrackNarrativeInput): string {
   const m = input.metrics;
   const lines: string[] = [];
   lines.push("Tracking session metrics:");
-  lines.push(`- Distance: ${kmToMi(m.distanceKm).toFixed(2)} mi`);
+  const sparse = input.sampling?.undersampled ? input.sampling : undefined;
+  if (sparse) {
+    lines.push(
+      `- Distance: at least ${kmToMi(m.distanceKm).toFixed(2)} mi (LOWER BOUND; the device's own speeds imply about ${kmToMi(sparse.estimatedDistanceKm).toFixed(2)} mi)`,
+    );
+  } else {
+    lines.push(`- Distance: ${kmToMi(m.distanceKm).toFixed(2)} mi`);
+  }
   lines.push(`- Duration: ${(m.durationSeconds / 60).toFixed(0)} minutes`);
   lines.push(`- Elevation gain: ${mToFt(m.elevation.gainM).toFixed(0)} ft`);
   lines.push(`- Activity: ${m.activityHint}, route shape: ${m.routeShape}`);
   lines.push(
     `- Average speed: ${kmhToMph(m.pace.avgKmh).toFixed(1)} mph, p95: ${kmhToMph(m.pace.p95Kmh).toFixed(1)} mph`,
   );
+  if (sparse) {
+    lines.push(
+      `Data quality: the tracker recorded only ${m.pingCount} fixes, up to ${Math.round(sparse.maxGapSeconds / 60)} minutes apart. The distance above is a lower bound and gaps between fixes are recording artifacts, not pauses. Do not infer stopping, resting, or standing still from the duration or the short distance, and do not present the distance as exact. Say plainly that the track is sparse.`,
+    );
+  }
   if (input.startPlace) lines.push(`Start: ${input.startPlace}`);
   if (input.endPlace) lines.push(`End: ${input.endPlace}`);
   if (input.midpointPlace) lines.push(`Midpoint: ${input.midpointPlace}`);

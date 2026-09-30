@@ -44,6 +44,18 @@ Not covered by the setting:
 - Device replies, `!where`, and `!share` / `!blast` emails carry exact coordinates in their Maps links. They go to you or to recipients you chose, not to the public site.
 - Posts published before 2026-09-24 carry full six-decimal coordinates. A later redaction commit does not remove them from the repository history.
 
+## Tracking sessions: check the interval first
+
+The Mini 3 Plus lengthens its own tracking interval when it thinks you are standing still, and can stay latched at a long value (seen: 14400 s, 4 h) after you start moving. MapShare then holds only a few breadcrumbs, and the distance in the post covers only the straight lines between them.
+
+**Before a session that matters, look at the device's tracking interval** and set it to the value you want (for example 2 min). Start tracking, then move.
+
+When TrailScribe sees that the fixes are too sparse for the speeds the device reported (`samplingAssessment` in `src/core/track-metrics.ts`), it does not present the distance as fact:
+
+- The reply reads `Track posted: 0.0+mi (sparse fixes, interval 4h), …`. The `+` means "at least".
+- The post frontmatter carries `distance_is_lower_bound: true` and `estimated_distance_mi`, the distance implied by the device's own speeds.
+- The narrative is told the data is sparse and must not describe pauses that the data cannot show.
+
 ## Notes
 
 - **Case-insensitive.** `!Todo` and `!todo` behave the same; the leading exclamation mark is required.

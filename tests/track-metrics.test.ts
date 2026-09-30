@@ -11,6 +11,9 @@ import {
   computeMetrics,
   isStationary,
   STATIONARY_KM,
+  samplingAssessment,
+  UNDERSAMPLED_SPEED_RATIO,
+  UNDERSAMPLED_MIN_GAP_S,
 } from "../src/core/track-metrics.js";
 import { parsePings } from "../src/adapters/location/mapshare.js";
 import type { KmlPing } from "../src/adapters/location/mapshare.js";
@@ -254,5 +257,53 @@ describe("isStationary (#223)", () => {
   test("threshold is exclusive: exactly STATIONARY_KM is not stationary", () => {
     expect(isStationary({ distanceKm: STATIONARY_KM })).toBe(false);
     expect(isStationary({ distanceKm: STATIONARY_KM - 0.001 })).toBe(true);
+  });
+});
+
+/** The recorded 2026-09-12 walk (#230): 3 fixes over 900 s, device speeds 0 / 3 / 3 km/h. */
+const FOG_LOOP_PINGS: KmlPing[] = [
+  { t: Date.parse("2026-09-12T12:01:00Z"), lat: 34.0, lon: -118.0, velocityKmh: 0 },
+  { t: Date.parse("2026-09-12T12:03:00Z"), lat: 34.0002545, lon: -118.0, velocityKmh: 3 },
+  { t: Date.parse("2026-09-12T12:16:00Z"), lat: 34.000509, lon: -118.0, velocityKmh: 3 },
+].map((p) => ({ ...p, alt: 10, courseDeg: 0, validFix: true }));
+
+describe("samplingAssessment (#230)", () => {
+  test("flags the recorded 2026-09-12 shape as under-sampled", () => {
+    const m = computeMetrics(FOG_LOOP_PINGS);
+    expect(m.durationSeconds).toBe(900);
+    expect(m.distanceKm).toBeCloseTo(0.0566, 3);
+    const a = samplingAssessment(FOG_LOOP_PINGS, m);
+    expect(a.undersampled).toBe(true);
+    expect(a.speedRatio).toBeGreaterThan(8);
+    expect(a.speedRatio).toBeLessThan(9.5);
+    expect(a.estimatedDistanceKm).toBeCloseTo(0.5, 2);
+    expect(a.maxGapSeconds).toBe(780);
+  });
+
+  test("dense PCH fixture is not flagged", () => {
+    const pings = parsePings(FIXTURE_KML);
+    expect(samplingAssessment(pings, computeMetrics(pings)).undersampled).toBe(false);
+  });
+
+  test("a parked device with zero reported speed is not flagged", () => {
+    const pings = FOG_LOOP_PINGS.map((p) => ({ ...p, velocityKmh: 0 }));
+    const a = samplingAssessment(pings, computeMetrics(pings));
+    expect(a.undersampled).toBe(false);
+    expect(a.speedRatio).toBe(0);
+  });
+
+  test("a large speed ratio with dense fixes is not flagged", () => {
+    const pings = FOG_LOOP_PINGS.map((p, i) => ({ ...p, t: p.t - (i === 2 ? 600_000 : 0) }));
+    const m = computeMetrics(pings);
+    const a = samplingAssessment(pings, m);
+    expect(a.maxGapSeconds).toBeLessThan(UNDERSAMPLED_MIN_GAP_S);
+    expect(a.undersampled).toBe(false);
+  });
+
+  test("a ratio just under the threshold is not flagged", () => {
+    const pings = FOG_LOOP_PINGS.map((p) => ({ ...p, velocityKmh: 0.4 }));
+    const a = samplingAssessment(pings, computeMetrics(pings));
+    expect(a.speedRatio).toBeLessThan(UNDERSAMPLED_SPEED_RATIO);
+    expect(a.undersampled).toBe(false);
   });
 });

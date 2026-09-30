@@ -222,3 +222,59 @@ export function computeMetrics(pings: KmlPing[]): TrackMetrics {
     activityHint: activityHint(pings),
   };
 }
+
+/**
+ * Smallest ratio of velocity-derived distance to Haversine distance that reads
+ * as under-sampling. GPS speed noise and corner-cutting between dense fixes
+ * stay well under 2x; the 2026-09-12 field test that motivated this (#230) hit
+ * 8.8x.
+ */
+export const UNDERSAMPLED_SPEED_RATIO = 2;
+
+/**
+ * Longest gap between consecutive fixes below which a track is never called
+ * under-sampled, whatever the speed ratio. Dense fixes with a large ratio point
+ * at noisy device velocities, not at movement nobody recorded.
+ */
+export const UNDERSAMPLED_MIN_GAP_S = 300;
+
+export interface SamplingAssessment {
+  /** True when the Haversine distance is likely far below the path actually walked. */
+  undersampled: boolean;
+  /** Velocity-derived distance ÷ Haversine distance; Infinity when the polyline has no length. */
+  speedRatio: number;
+  /** Distance implied by the device's reported speeds over the whole session. */
+  estimatedDistanceKm: number;
+  /** Longest gap between consecutive fixes, in seconds. */
+  maxGapSeconds: number;
+}
+
+/**
+ * Decide whether the polyline under-measures the real path (#230).
+ *
+ * The device's own per-ping velocities (via {@link paceStats}) and the
+ * Haversine distance across the pings are computed independently. When the
+ * first implies much more ground than the second, and the fixes are far apart
+ * in time, the device moved between fixes that were never recorded. Both
+ * conditions must hold, and the implied distance must clear
+ * {@link STATIONARY_KM}, so a parked device with jittery velocities is not
+ * flagged.
+ */
+export function samplingAssessment(pings: KmlPing[], metrics: TrackMetrics): SamplingAssessment {
+  let maxGapSeconds = 0;
+  for (let i = 1; i < pings.length; i++) {
+    maxGapSeconds = Math.max(maxGapSeconds, Math.round((pings[i].t - pings[i - 1].t) / 1000));
+  }
+  const estimatedDistanceKm = (metrics.pace.avgKmh * metrics.durationSeconds) / 3600;
+  const speedRatio =
+    metrics.distanceKm > 0
+      ? estimatedDistanceKm / metrics.distanceKm
+      : estimatedDistanceKm > 0
+        ? Infinity
+        : 0;
+  const undersampled =
+    estimatedDistanceKm >= STATIONARY_KM &&
+    speedRatio >= UNDERSAMPLED_SPEED_RATIO &&
+    maxGapSeconds >= UNDERSAMPLED_MIN_GAP_S;
+  return { undersampled, speedRatio, estimatedDistanceKm, maxGapSeconds };
+}

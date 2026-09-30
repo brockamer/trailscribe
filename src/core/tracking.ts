@@ -1,10 +1,10 @@
 import type { Env } from "../env.js";
 import { getJSON, putJSON } from "../adapters/storage/kv.js";
 import type { GarminEvent } from "./types.js";
-import type { TrackMetrics } from "./track-metrics.js";
+import type { SamplingAssessment, TrackMetrics } from "./track-metrics.js";
 import { withCheckpoint, sha256Hex } from "./idempotency.js";
 import { fetchMapShareKml, parsePings } from "../adapters/location/mapshare.js";
-import { computeMetrics } from "./track-metrics.js";
+import { computeMetrics, samplingAssessment } from "./track-metrics.js";
 import { generateTrackNarrative } from "./narrative.js";
 import { publishTrackPost } from "../adapters/publish/github-pages.js";
 import { sendReply } from "../adapters/outbound/garmin-ipc-inbound.js";
@@ -333,6 +333,18 @@ export async function handleStopTrack(
     }
 
     const metrics = computeMetrics(pings);
+    const sampling = samplingAssessment(pings, metrics);
+    if (sampling.undersampled) {
+      log({
+        event: "track_undersampled",
+        level: "warn",
+        imei: event.imei,
+        idemKey,
+        pingCount: metrics.pingCount,
+        speedRatio: Number.isFinite(sampling.speedRatio) ? sampling.speedRatio : null,
+        maxGapSeconds: sampling.maxGapSeconds,
+      });
+    }
     const startPing = pings[0];
     const endPing = pings[pings.length - 1];
     const midPing = pings[Math.floor(pings.length / 2)];
@@ -378,6 +390,7 @@ export async function handleStopTrack(
     const narrative = await withCheckpoint(env, idemKey, "track_narrative", () =>
       generateTrackNarrative({
         metrics,
+        sampling,
         startPlace: typeof startPlace === "string" ? startPlace : undefined,
         endPlace: typeof endPlace === "string" ? endPlace : undefined,
         weatherSummary: typeof weather === "string" ? weather : undefined,
@@ -398,6 +411,7 @@ export async function handleStopTrack(
         haiku: narrative.haiku,
         body: narrative.body,
         metrics,
+        sampling,
         endLat: endPing.lat,
         endLon: endPing.lon,
         startPlace: typeof startPlace === "string" ? startPlace : undefined,
@@ -458,7 +472,11 @@ export async function handleStopTrack(
       rawKml,
     });
 
-    await sendReply(event.imei, [formatTrackReply(metrics, result.url)], env);
+    await sendReply(
+      event.imei,
+      [formatTrackReply(metrics, result.url, sampling, intervalRecord)],
+      env,
+    );
     // Clear the start marker so the next Stop Track without a fresh mc 10
     // falls back to the lookback heuristic rather than re-using this session.
     await clearSessionStart(env, event.imei);
@@ -500,10 +518,20 @@ function trackErrorReply(
   return withIntervalHint(`${prefix}${msg.slice(0, msgBudget)}`, interval);
 }
 
-function formatTrackReply(metrics: TrackMetrics, url: string): string {
-  const mi = kmToMi(metrics.distanceKm).toFixed(1);
+function formatTrackReply(
+  metrics: TrackMetrics,
+  url: string,
+  sampling: SamplingAssessment,
+  interval: TrackIntervalRecord | null,
+): string {
+  // Under-sampled (#230): the distance is a floor, so say so and name the
+  // interval the device was latched to, the operator's only lever.
+  const mi = kmToMi(metrics.distanceKm).toFixed(1) + (sampling.undersampled ? "+" : "");
+  const note = sampling.undersampled
+    ? ` (sparse fixes${interval ? `, interval ${formatInterval(interval.intervalSec)}` : ""})`
+    : "";
   const gainFt = Math.round(mToFt(metrics.elevation.gainM));
   const minutes = Math.round(metrics.durationSeconds / 60);
   const duration = minutes >= 60 ? `${Math.floor(minutes / 60)}h${minutes % 60}m` : `${minutes}min`;
-  return `Track posted: ${mi}mi, ${gainFt}ft gain, ${duration}\n${url}`;
+  return `Track posted: ${mi}mi${note}, ${gainFt}ft gain, ${duration}\n${url}`;
 }

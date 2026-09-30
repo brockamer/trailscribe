@@ -37,9 +37,9 @@ export interface BuildReplyArgs {
  * markers are preserved (caller's choice to enable cost suffix takes
  * precedence over body completeness).
  *
- * The on-device reply does not include map links — the user is offline in
- * the field and a URL is unusable. Location stays in the journal post's
- * YAML frontmatter (see `src/adapters/publish/github-pages.ts`).
+ * This function adds no map links of its own; location stays in the journal
+ * post's YAML frontmatter (see `src/adapters/publish/github-pages.ts`). A
+ * `journalUrl` is the one link it places, via {@link buildLinkReply}.
  *
  * Throws if any output page exceeds {@link SMS_MAX} — that's a caller bug
  * (logic mistake here, not a runtime input error).

@@ -413,8 +413,8 @@ describe("publishTrackPost — published location (#223)", () => {
     durationSeconds: 15465,
     closedAt: MOVING_METRICS.startedAt + 15465 * 1000,
     distanceKm: 0.019,
-    routeShape: "loop",
-    activityHint: "hike",
+    routeShape: "stationary",
+    activityHint: "stationary",
   };
 
   async function publishedMarkdown(
@@ -450,6 +450,8 @@ describe("publishTrackPost — published location (#223)", () => {
   test("stationary session omits coordinates even when precision is 6", async () => {
     const md = await publishedMarkdown(STATIONARY_METRICS, "6", "Malibu, CA");
     expect(md).toContain('location: { place: "Malibu, CA" }');
+    expect(md).toContain("activity_hint: stationary");
+    expect(md).toContain("route_shape: stationary");
     expect(md).not.toContain("lat:");
     expect(md).not.toContain("lon:");
   });

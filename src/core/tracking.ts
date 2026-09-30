@@ -200,9 +200,11 @@ export async function handleStopTrack(
   // Outer `publish_track` checkpoint owns the all-or-nothing publish lifecycle
   // (publish + store + reply) per spec §6.1. It completes only after the
   // success reply, so each side effect inside it has its own inner checkpoint
-  // that a Garmin retry (2/4/8/16/32/64/128s then 12h × 5d) skips once done:
-  // `track_narrative` (#172, no second LLM call), `track_ledger` (no second
-  // spend entry) and `track_publish` (#219, no second journal post).
+  // that a re-delivery of the same event skips once done: `track_kml` (#219,
+  // no second MapShare read), `track_narrative` (#172, no second LLM call),
+  // `track_ledger` (no second spend entry) and `track_publish` (#219, no
+  // second journal post). The webhook always answers 200, so these replays
+  // come from Garmin re-delivering a slow request, not its retry escalator.
   // Mirrors the per-op pattern in commands/postimg.ts.
   await withCheckpoint(env, idemKey, "publish_track", async () => {
     const closedAt = event.timeStamp;
@@ -254,10 +256,16 @@ export async function handleStopTrack(
     // default page. Without this catch a 401 here throws past the publish guard
     // below, reaches safeOrchestrate, and the device gets nothing at all — the
     // exact silence this whole change exists to remove.
+    //
+    // Checkpointed (#219) so a replay reuses the same KML: the same pings, the
+    // same metrics, and no second fetch that could fail or come back thinner
+    // and send a refusal for a post that is already live.
     let rawKml: string;
     let pings: ReturnType<typeof parsePings>;
     try {
-      rawKml = await fetchMapShareKml(env, startedAt, closedAt);
+      rawKml = await withCheckpoint(env, idemKey, "track_kml", () =>
+        fetchMapShareKml(env, startedAt, closedAt),
+      );
       pings = parsePings(rawKml);
     } catch (err) {
       log({
@@ -390,7 +398,7 @@ export async function handleStopTrack(
 
     // One guard for every stage from the narrative to the record store (#219):
     // any throw sends the device an error SMS, then rethrows so the outer
-    // `publish_track` op stays incomplete and a Garmin retry resumes. Each
+    // `publish_track` op stays incomplete and a re-delivery resumes. Each
     // stage with an external side effect has its own checkpoint, so the retry
     // skips what already happened: no second LLM call (#172), no second ledger
     // entry, no second journal post. Without the SMS, a bad MapShare code, an
@@ -401,7 +409,7 @@ export async function handleStopTrack(
     // The success reply stays outside the guard. If it throws, the error SMS
     // would most likely fail the same way, and "failed" would be false: the
     // post is live. The bare rethrow leaves `publish_track` incomplete, so the
-    // retry sends the success SMS again.
+    // re-delivery sends the success SMS again.
     let journalUrl: string | null = null;
     try {
       const narrative = await withCheckpoint(env, idemKey, "track_narrative", () =>

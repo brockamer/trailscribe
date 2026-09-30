@@ -1161,6 +1161,24 @@ describe("handleStopTrack — failures around the publish (#219)", () => {
     expect(ledger.by_command.track).toMatchObject({ requests: 1 });
   });
 
+  test("success reply fails, replay: MapShare is not read again, so a feed error cannot refuse a live post", async () => {
+    const env = makeTestEnv();
+    const { publishSpy } = await stubHappyPath(env);
+    // The replay's feed would fail (password changed, feed down). It must not be read.
+    const fetchSpy = vi
+      .spyOn(mapshareMod, "fetchMapShareKml")
+      .mockResolvedValueOnce(FIXTURE_KML_E2E)
+      .mockRejectedValue(new Error("MapShare 401"));
+    vi.mocked(sendReply).mockRejectedValueOnce(new Error("network error: fetch failed"));
+
+    await expect(handleStopTrack(STOP_EVENT, env, "idem-219-kml")).rejects.toThrow(/fetch failed/);
+    await handleStopTrack(STOP_EVENT, env, "idem-219-kml");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(publishSpy).toHaveBeenCalledTimes(1);
+    expect(sentReplies()[1]).toMatch(/^Track posted: /);
+  });
+
   test("narrative failure: device gets an error SMS and the error propagates", async () => {
     const env = makeTestEnv();
     const { narrativeSpy, publishSpy } = await stubHappyPath(env);

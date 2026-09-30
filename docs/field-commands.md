@@ -64,7 +64,7 @@ When a Stop Track cannot finish, the device gets one of these replies instead of
 - `Track publish failed: …` — the narrative, the cost record or the journal commit failed. Nothing was published.
 - `Track posted, save failed: …` — the journal post is live. Only TrailScribe's own session record was not saved.
 
-If Garmin delivers the same Stop Track again, TrailScribe resumes from the step that failed. Steps that already finished do not run again, so a re-delivery never makes a second journal post or a second charge for the narrative. You can then get two replies for one Stop Track: the error, then `Track posted: …`.
+If Garmin delivers the same Stop Track again, TrailScribe resumes from the step that failed. The MapShare read, the narrative, the cost record and the journal post do not run again once they have finished, so a re-delivery never makes a second journal post, a second charge for the narrative, or a different distance. You can then get two replies for one Stop Track: the error, then `Track posted: …`.
 
 ## Notes
 

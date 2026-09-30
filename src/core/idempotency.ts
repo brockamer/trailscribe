@@ -57,7 +57,9 @@ export type OpName =
   | "track_narrative"
   // Inner checkpoints of `publish_track` (#219). The outer op completes only
   // after the success reply, so without these a reply that failed after the
-  // commit made a replay post the journal entry and record the spend again.
+  // commit made a replay post the journal entry and record the spend again,
+  // or re-read MapShare and send a false refusal for a live post.
+  | "track_kml"
   | "track_ledger"
   | "track_publish"
   // Ledger writes are side effects too (#235 review): they were unguarded, so a

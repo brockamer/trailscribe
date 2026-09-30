@@ -326,6 +326,11 @@ function quoteYaml(s: string): string {
   return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
+/** `quoteYaml` for text with line breaks: a raw newline would fold to a space, so escape it. */
+function quoteYamlMultiline(s: string): string {
+  return quoteYaml(s.replace(/\r\n?/g, "\n")).replace(/\n/g, "\\n");
+}
+
 /** Encode each path segment, leaving slashes intact. */
 function encodePath(path: string): string {
   return path
@@ -389,8 +394,9 @@ interface GraphqlBranchOidData {
  *
  * Public URL derivation, slug collision handling, and frontmatter shape are
  * inherited from `publishPost` — this function calls into the same helpers
- * and adds an `image:` frontmatter key plus a leading `![title](/path)`
- * markdown line so the rendered Pages site shows the image at the top.
+ * and adds the image frontmatter (`image:`, `header.og_image`, and an explicit
+ * `excerpt:`) plus a leading `![title](/path)` markdown line so the rendered
+ * Pages site shows the image at the top (#250).
  */
 export async function publishPostWithImage(
   args: PublishPostWithImageArgs,
@@ -554,11 +560,21 @@ interface RenderArgsWithImage extends RenderArgs {
 }
 
 function renderMarkdownWithImage(a: RenderArgsWithImage): string {
-  const imageUrl = `${stripTrailingSlash(a.baseurl)}/${a.imagePath}`;
+  const imagePath = a.imagePath.replace(/^\/+/, "");
+  // The body is raw markdown, so its URL must carry the site base path. The
+  // frontmatter values below must not: jekyll-feed and minimal-mistakes both
+  // run them through `absolute_url`, which adds `baseurl` itself (#250).
+  const bodyUrl = `${stripTrailingSlash(a.baseurl)}/${imagePath}`;
+  const sitePath = `/${imagePath}`;
   const lines: string[] = ["---"];
   lines.push(`title: ${quoteYaml(a.title)}`);
   lines.push(`date: ${a.date}`);
-  lines.push(`image: ${imageUrl}`);
+  lines.push(`image: ${sitePath}`);
+  // `header.og_image` feeds `og:image`. Not `header.image`: that renders a hero.
+  lines.push("header:");
+  lines.push(`  og_image: ${sitePath}`);
+  // Without this the excerpt is the image line, which strips to nothing (#250).
+  lines.push(`excerpt: ${quoteYamlMultiline(a.haiku)}`);
   const location = renderLocation({ ...a, place: a.placeName });
   if (location) lines.push(location);
   if (a.weather !== undefined) {
@@ -566,7 +582,7 @@ function renderMarkdownWithImage(a: RenderArgsWithImage): string {
   }
   lines.push("tags: [trailscribe]");
   lines.push("---");
-  lines.push(`![${a.title}](${imageUrl})`);
+  lines.push(`![${a.title}](${bodyUrl})`);
   lines.push("");
   lines.push(formatHaiku(a.haiku));
   lines.push("");

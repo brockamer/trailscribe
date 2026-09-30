@@ -315,6 +315,92 @@ describe("published coordinate precision (#223)", () => {
   });
 });
 
+describe("publishPostWithImage — frontmatter and body shape (#250)", () => {
+  const IMG = "assets/images/2026-04-25-alpenglow-at-lake-sabrina.png";
+
+  /** Run one !postimg publish and return the markdown file that was committed. */
+  async function imageMarkdown(overrides: Partial<Env> = {}, haiku = "a\nb\nc"): Promise<string> {
+    fetchSpy
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(
+        jsonResponse({ data: { repository: { ref: { target: { oid: "h" } } } } }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ data: { createCommitOnBranch: { commit: { oid: "c1", url: "u" } } } }),
+      );
+
+    await publishPostWithImage({
+      title: "Alpenglow at Lake Sabrina",
+      haiku,
+      body: "Body text.",
+      lat: 37.168249,
+      lon: -118.589137,
+      env: makeTestEnv({ ...env, ...overrides }),
+      now: () => NOW,
+      image: {
+        bytes: new Uint8Array([1, 2, 3]).buffer,
+        mimeType: "image/png",
+        pathTemplate: "assets/images/{yyyy}-{mm}-{dd}-{slug}.{ext}",
+      },
+    });
+
+    const vars = JSON.parse((fetchSpy.mock.calls[2][1] as RequestInit).body as string) as {
+      variables: { input: { fileChanges: { additions: Array<{ contents: string }> } } };
+    };
+    return decodeUtf8(vars.variables.input.fileChanges.additions[0].contents);
+  }
+
+  /** Split a post into its frontmatter lines and body text. */
+  function split(md: string): { front: string[]; body: string } {
+    const [, front, ...rest] = md.split(/^---$/m);
+    return { front: front.trim().split("\n"), body: rest.join("---").trim() };
+  }
+
+  test("`image:` carries no base path — jekyll-feed adds site.baseurl itself", async () => {
+    const { front } = split(await imageMarkdown());
+    expect(front).toContain(`image: /${IMG}`);
+    expect(front.join("\n")).not.toContain("/trailscribe-journal/");
+  });
+
+  test("`header.og_image` is base-path-free, and there is no `header.image` hero", async () => {
+    const { front } = split(await imageMarkdown());
+    const at = front.indexOf("header:");
+    expect(at).toBeGreaterThan(-1);
+    expect(front[at + 1]).toBe(`  og_image: /${IMG}`);
+    // Anything indented under `header:` other than og_image would risk a second, hero copy.
+    const headerLines = front.slice(at + 1).filter((l) => l.startsWith("  "));
+    expect(headerLines).toEqual([`  og_image: /${IMG}`]);
+  });
+
+  test("`excerpt:` is the haiku, so summaries and previews are not empty", async () => {
+    const { front } = split(
+      await imageMarkdown({}, "Snow on the ridge\nlight climbs the granite\nsilence"),
+    );
+    expect(front).toContain('excerpt: "Snow on the ridge\\nlight climbs the granite\\nsilence"');
+  });
+
+  test("the body image keeps the base path, and appears once, above the haiku", async () => {
+    const { body } = split(await imageMarkdown());
+    const lines = body.split("\n");
+    expect(lines[0]).toBe(`![Alpenglow at Lake Sabrina](/trailscribe-journal/${IMG})`);
+    expect(body.match(/!\[/g)).toHaveLength(1);
+    expect(lines[2]).toBe("a  ");
+  });
+
+  test("a trailing slash or empty JOURNAL_BASEURL still yields exactly one slash in the body", async () => {
+    expect(split(await imageMarkdown({ JOURNAL_BASEURL: "/trailscribe-journal/" })).body).toContain(
+      `](/trailscribe-journal/${IMG})`,
+    );
+    fetchSpy.mockReset();
+    expect(split(await imageMarkdown({ JOURNAL_BASEURL: "" })).body).toContain(`](/${IMG})`);
+  });
+
+  test("a quote or backslash in the haiku cannot break out of the YAML string", async () => {
+    const { front } = split(await imageMarkdown({}, 'say "hi"\nback\\slash\nend'));
+    expect(front).toContain('excerpt: "say \\"hi\\"\\nback\\\\slash\\nend"');
+  });
+});
+
 describe("publishPost — slug collision", () => {
   test("first path 200 (collision) then 404 → slug becomes <base>-2 and PUT goes there", async () => {
     fetchSpy

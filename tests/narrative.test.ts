@@ -89,7 +89,7 @@ describe("generateNarrative — happy path", () => {
     expect(headers["Content-Type"]).toBe("application/json");
   });
 
-  test("uses LLM_MODEL from env (default: anthropic/claude-sonnet-4-6)", async () => {
+  test("passes LLM_MODEL from env through as the request model", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
 
     await generateNarrative({ note: "x", env });

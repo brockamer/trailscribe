@@ -117,7 +117,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 - **D4 Token budget:** 50,000/day
 - **D6 Reply:** IPC Inbound primary + email fallback (fallback gated by D9)
 - **D7 Branch:** rename `master` → `main` at Phase 0
-- **Model:** `anthropic/claude-sonnet-4-6` via OpenRouter (per #31; supersedes the original direct-OpenAI `claude-sonnet-4-6` decision)
+- **Model:** `anthropic/claude-opus-5.5` via OpenRouter (#263, 2026-10-01; supersedes `anthropic/claude-sonnet-4-6`, chosen per #31). A reasoning model: the narrative `max_tokens` (2000 post, 3000 track, in `src/core/narrative.ts`) are sized for its reasoning tokens — do not lower them. Rollback is `LLM_MODEL` plus the two cost values (PRD §LLM configuration).
 
 ## Also locked (2026-04-22)
 
@@ -150,7 +150,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 - `GOOGLE_MAPS_BASE` — link prefix for Google Maps URLs
 - `MAPSHARE_BASE` — Garmin MapShare host root (e.g. `https://share.garmin.com`); per-tenant slug lives in `MAPSHARE_KEY` and is appended at use sites (`${MAPSHARE_BASE}/${MAPSHARE_KEY}` for page URLs, `${MAPSHARE_BASE}/Feed/Share/${MAPSHARE_KEY}` for the KML feed). Empty `MAPSHARE_BASE` disables MapShare links in `!where` / `!share` / `!blast`.
 - `LLM_BASE_URL` — `https://openrouter.ai/api/v1` (override for direct-provider routing)
-- `LLM_MODEL` — `anthropic/claude-sonnet-4-6` (OpenRouter format `<provider>/<model>`)
+- `LLM_MODEL` — `anthropic/claude-opus-5.5` (OpenRouter format `<provider>/<model>`); its pricing is `0.004` in / `0.02` out per 1K tokens (#263)
 - `LLM_INPUT_COST_PER_1K` / `LLM_OUTPUT_COST_PER_1K` — ledger pricing; set from the chosen model provider's pricing page
 - `LLM_PROVIDER_HEADERS_JSON` — optional JSON blob for OpenRouter `HTTP-Referer` + `X-Title` analytics headers
 - `APPEND_COST_SUFFIX` — bool (α default: false)

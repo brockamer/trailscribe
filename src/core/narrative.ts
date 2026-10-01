@@ -8,7 +8,7 @@ import { kmhToMph, kmToMi, mToFt } from "./units.js";
 /**
  * Narrative module — composes a `!post` event into a structured blog post via
  * the configured LLM (P1-04: model + base URL come from env, defaulting to
- * `anthropic/claude-sonnet-4-6` on OpenRouter).
+ * `anthropic/claude-opus-5.5` on OpenRouter, #263).
  *
  * The orchestrator (P1-16) calls `generateNarrative(input)` once per `!post`,
  * gets back `{ title, haiku, body, usage }`, and:
@@ -111,6 +111,21 @@ const SYSTEM_PROMPT_POST_NO_NOTE = [
   "- Do not open with coordinates. Describe this moment, not what is typical for the region or season.",
   '- A "Local time" line, when present, fixes the time of day: make the light and sky agree with it, and never describe daylight, sunset or evening when it says night.',
 ].join("\n");
+
+/** Model used when `LLM_MODEL` is empty (#263). */
+const DEFAULT_MODEL = "anthropic/claude-opus-5.5";
+
+/**
+ * Output caps (#263). The model is a reasoning model: its hidden reasoning tokens
+ * (180–560 per narrative call, measured) count against `max_tokens`, and a call
+ * that hits the cap returns truncated, non-JSON content. At 600, 3 of 16 post
+ * calls failed that way. The largest observed post completion was 725 tokens; a
+ * track completion was 974, and a full 3,000-character body adds about 750 more.
+ * No `reasoning` parameter is sent, so the caps stay harmless on a non-reasoning
+ * model and a rollback is `LLM_MODEL` alone. Do not lower these.
+ */
+const POST_MAX_TOKENS = 2000;
+const TRACK_MAX_TOKENS = 3000;
 
 export class NarrativeError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
@@ -216,12 +231,12 @@ export async function generateNarrative(input: NarrativeInput): Promise<Narrativ
 
   const { data, usage } = await runNarrativeCall({
     env: input.env,
-    model: input.env.LLM_MODEL || "anthropic/claude-sonnet-4-6",
+    model: input.env.LLM_MODEL || DEFAULT_MODEL,
     systemPrompt,
     userPrompt,
     responseSchema: POST_NARRATIVE_SCHEMA,
     zodSchema: PostContentSchema,
-    maxTokens: 600,
+    maxTokens: POST_MAX_TOKENS,
     diagKind: "post",
   });
 
@@ -334,12 +349,12 @@ const SYSTEM_PROMPT_TRACK = [
 export async function generateTrackNarrative(input: TrackNarrativeInput): Promise<NarrativeOutput> {
   const { data, usage } = await runNarrativeCall({
     env: input.env,
-    model: input.env.LLM_MODEL || "anthropic/claude-sonnet-4-6",
+    model: input.env.LLM_MODEL || DEFAULT_MODEL,
     systemPrompt: SYSTEM_PROMPT_TRACK,
     userPrompt: buildTrackPrompt(input),
     responseSchema: TRACK_NARRATIVE_SCHEMA,
     zodSchema: TrackContentSchema,
-    maxTokens: 1500,
+    maxTokens: TRACK_MAX_TOKENS,
     diagKind: "track",
   });
 

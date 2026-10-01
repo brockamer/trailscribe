@@ -366,7 +366,10 @@ Image-bearing commands sit on the separate image-path budget above:
 
 > Per issue [#31](https://github.com/brockamer/trailscribe/issues/31), the AI layer routes through **OpenRouter** rather than OpenAI directly. OpenRouter exposes one HTTPS API and one API key while letting us pick any model from many providers — same OpenAI-compatible request/response shape, different base URL and auth header. Lets us swap models without code changes.
 
-- **Model:** `anthropic/claude-sonnet-4-6` (OpenRouter format `<provider>/<model>`). Swapped back from the brief `openai/gpt-5-mini` direction (2026-04-22 → 2026-04-25) after P1-21 burn-in proved gpt-5-mini is a _reasoning model_ that consumes all completion tokens on chain-of-thought before producing the JSON output — caused empty-content failures on shorter prompts (no-GPS edge case). Claude Sonnet 4.6 is a non-reasoning model: structured JSON output is reliable within the configured `max_tokens` budget (currently 600), no chain-of-thought token consumption.
+- **Model:** `anthropic/claude-opus-5.5` (OpenRouter format `<provider>/<model>`), per [#263](https://github.com/brockamer/trailscribe/issues/263). It replaced `anthropic/claude-sonnet-4-6`, which kept writing specifics the prompt forbids: terrain absent from the data (chaparral, the Owens Valley, cypress on a bluff) and, on track posts, reading "tracking session" as animal tracking. Opus 5.5 kept to the caption and data in a comparison through the Worker's own `generateNarrative` on 2026-09-30. Sonnet 4.6 had itself replaced the brief `openai/gpt-5-mini` direction (2026-04-22 → 2026-04-25).
+- **Reasoning tokens.** Opus 5.5 is a _reasoning model_, and OpenRouter will not disable its reasoning (`HTTP 400: Reasoning is mandatory`). Its hidden reasoning tokens count against `max_tokens` — the failure class that removed `openai/gpt-5-mini` on 2026-04-25, when P1-21 burn-in showed it spending _all_ completion tokens on chain-of-thought and returning empty content. Opus 5.5 differs in degree: it spends a bounded 180–560 reasoning tokens per narrative call, so the caps are sized for that — `max_tokens` 2000 for `!post`/`!postimg` (largest observed completion 725) and 3000 for track posts (largest observed 974, and a full 3,000-character body adds about 750). At the old 600 cap, 3 of 16 calls ended `finish_reason: length` and failed as non-JSON. **Do not lower these caps.** No `reasoning` parameter is sent: `effort: "low"` removes the reasoning tokens but weakens the output, and it turns thinking on for Sonnet 4.6, which would break a rollback that changes only `LLM_MODEL`.
+- **Cost and time (measured 2026-09-30):** about $0.012 per `!post` narrative and $0.021 per track narrative; about 1,100 tokens per `!post` call; narrative latency median 8.8 s.
+- **Rollback:** set `LLM_MODEL` to `anthropic/claude-sonnet-4-6` and `LLM_INPUT_COST_PER_1K` / `LLM_OUTPUT_COST_PER_1K` to `0.003` / `0.015` in all three `wrangler.toml` blocks. Nothing else; the raised caps are harmless on a non-reasoning model.
 - **Output mode:** JSON mode with schema `{ title: string ≤60ch, haiku: string ≤80ch, body: string ≤500ch }`.
 - **Prompt:** Concise system prompt with explicit length directives ("Respond in under 150 tokens", "haiku must be exactly 5-7-5").
 - **Target token use:** ≤300 tokens per `!post` narrative (prompt + response). Actual $/tx depends on the current model's pricing — will be set in env (`LLM_INPUT_COST_PER_1K`, `LLM_OUTPUT_COST_PER_1K`) from the OpenRouter or model-provider pricing page at deploy time and updated when prices change. **Design assumes the narrative-LLM cost remains under $0.05/tx on the text path ($0.08/tx hard ceiling on the image path — see §6); alert if drift above $0.03 sustained.**
@@ -382,7 +385,7 @@ Image-bearing commands sit on the separate image-path budget above:
 - `DAILY_TOKEN_BUDGET` env var (integer, 0 = unlimited).
 - Before `!post` dispatches to the LLM, orchestrator checks today's token total. If `tokens_today + estimated_prompt > budget`, the command returns `"Daily AI budget reached. Retry tomorrow or raise DAILY_TOKEN_BUDGET."` and does NOT call the LLM.
 - Non-AI commands (`!mail`, `!todo`, etc.) are not budget-gated — they have trivial cost.
-- **My recommended default:** `DAILY_TOKEN_BUDGET=50000` (≈ 150 posts/day at full prompt+response). You'll want to set this with real numbers after one week of usage data.
+- **My recommended default:** `DAILY_TOKEN_BUDGET=50000` (≈ 45 `!post` narratives/day at the measured ~1,100 tokens each (Opus 5.5); kept at 50,000 by [#263](https://github.com/brockamer/trailscribe/issues/263)). You'll want to set this with real numbers after one week of usage data.
 
 ### Reply cost suffix
 
@@ -445,13 +448,13 @@ Image-bearing commands sit on the separate image-path budget above:
 - **D1. Inbound auth:** Static token stored as `GARMIN_INBOUND_TOKEN` Wrangler Secret. Garmin IPC Outbound sends the token as a raw value in the `X-Outbound-Auth-Token` header (not the standard `Authorization: Bearer` form — verified against the live Garmin gateway 2026-04-25). Rotation yearly.
 - **D2. Garmin Professional tier:** Available. Full IPC Outbound + IPC Inbound path enabled.
 - **D3. Schema version:** V2 for α. Code tolerant of V3/V4 fields.
-- **D4. Daily token budget:** `DAILY_TOKEN_BUDGET=50000` tokens/day (≈ 150 `!post` narratives/day). Revise after one week of real usage.
+- **D4. Daily token budget:** `DAILY_TOKEN_BUDGET=50000` tokens/day (≈ 45 `!post` narratives/day at the measured ~1,100 tokens each (Opus 5.5); kept at 50,000 by [#263](https://github.com/brockamer/trailscribe/issues/263)). Revise after one week of real usage.
 - **D6. IPC Inbound primary reply + email fallback.** (Email fallback implementation depends on D9 — see below.)
 - **D7. Branch rename:** `master` → `main` at Phase 0. Update `origin/HEAD`, GitHub default branch, CI target.
 
 ### Override (2026-04-22)
 
-- **Model:** `claude-sonnet-4-6` (reverted from the brief `gpt-5-mini` swap after empirical burn-in failure on 2026-04-25 — see §LLM configuration). Per [#31](https://github.com/brockamer/trailscribe/issues/31), routed through OpenRouter as `anthropic/claude-sonnet-4-6`; env var is `LLM_MODEL` (provider-neutral). Cost per 1K pinned in `wrangler.toml`: `0.00015` input, `0.0006` output (OpenRouter pass-through pricing).
+- **Model:** `claude-sonnet-4-6` (reverted from the brief `gpt-5-mini` swap after empirical burn-in failure on 2026-04-25 — see §LLM configuration). Per [#31](https://github.com/brockamer/trailscribe/issues/31), routed through OpenRouter as `anthropic/claude-sonnet-4-6`; env var is `LLM_MODEL` (provider-neutral). Cost per 1K pinned in `wrangler.toml`: `0.00015` input, `0.0006` output (OpenRouter pass-through pricing). Superseded by [#263](https://github.com/brockamer/trailscribe/issues/263): `anthropic/claude-opus-5.5`, see §LLM configuration.
 
 ### Resolved 2026-04-22 (replaces "Still open" section below)
 

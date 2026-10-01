@@ -37,10 +37,15 @@ function jsonResponse(obj: unknown, status = 200): Response {
   });
 }
 
-function chatCompletionResponse(content: string, prompt = 60, completion = 80) {
+function chatCompletionResponse(
+  content: string,
+  prompt = 60,
+  completion = 80,
+  finishReason = "stop",
+) {
   return {
     id: "chatcmpl-test",
-    choices: [{ message: { role: "assistant", content }, finish_reason: "stop" }],
+    choices: [{ message: { role: "assistant", content }, finish_reason: finishReason }],
     usage: {
       prompt_tokens: prompt,
       completion_tokens: completion,
@@ -233,5 +238,57 @@ describe("P2-08 !camp — empty query", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     const [, messages] = sendReplyMock.mock.calls[0];
     expect(messages).toEqual(["Unknown command. Try !help"]);
+  });
+});
+
+describe("P2-08 !camp — output cap (#265)", () => {
+  // With no max_tokens, OpenRouter reserves credit for 65,536 completion tokens
+  // (about $1.31 on Opus 5.5) and returns 402 when the balance is lower.
+  function llmRequestBody(): { max_tokens?: number } {
+    const call = fetchSpy.mock.calls.find((c: unknown[]) =>
+      String(c[0]).includes("/chat/completions"),
+    );
+    return JSON.parse((call![1] as RequestInit).body as string) as { max_tokens?: number };
+  }
+
+  function llmRouter(finishReason: string) {
+    return makeFetchRouter([
+      {
+        match: (u) => u.includes("openrouter.ai") || u.includes("/chat/completions"),
+        respond: () =>
+          jsonResponse(chatCompletionResponse("Water at the inlet.", 60, 80, finishReason)),
+      },
+    ]);
+  }
+
+  test("sends max_tokens 2000, the same output reservation as a !post", async () => {
+    fetchSpy = llmRouter("stop");
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!camp water near lake sabrina"));
+
+    expect(llmRequestBody().max_tokens).toBe(2000);
+  });
+
+  test("an answer cut off at the cap logs camp_truncated and is still delivered", async () => {
+    fetchSpy = llmRouter("length");
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!camp water near lake sabrina"));
+
+    const warnLines = errSpy.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(warnLines.some((l: string) => l.includes('"event":"camp_truncated"'))).toBe(true);
+    const [, messages] = sendReplyMock.mock.calls[0];
+    expect(messages).toEqual(["(may be outdated) Water at the inlet."]);
+  });
+
+  test("a complete answer logs no camp_truncated", async () => {
+    fetchSpy = llmRouter("stop");
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!camp water near lake sabrina"));
+
+    const warnLines = errSpy.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(warnLines.some((l: string) => l.includes('"event":"camp_truncated"'))).toBe(false);
   });
 });

@@ -11,7 +11,15 @@ import { log } from "../../adapters/logging/worker-logs.js";
 type BriefCommand = Extract<ParsedCommand, { type: "brief" }>;
 
 const REPLY_MAX = 320;
-const ESTIMATED_BRIEF_TOKENS = 800;
+/** Typical measured total (see `ESTIMATED_POST_TOKENS`): 749–950 on Opus 5.5 (#265). */
+const ESTIMATED_BRIEF_TOKENS = 1000;
+/**
+ * Output cap (#265). Without one, OpenRouter reserves credit for 65,536
+ * completion tokens (about $1.31 on Opus 5.5) and returns 402 when the balance
+ * is lower. At 2000 it reserves $0.04, the same as a `!post`. Measured
+ * completions, the model's hidden reasoning tokens included: 403–604.
+ */
+const BRIEF_MAX_TOKENS = 2000;
 const DEFAULT_WINDOW_DAYS = 1;
 const OVERFLOW_REPLY = "Brief sent by email.";
 const NO_ENTRIES_REPLY = "No entries to brief on.";
@@ -65,10 +73,21 @@ export async function handleBrief(
             { role: "system", content: SYSTEM_PROMPT },
             { role: "user", content: userPrompt },
           ],
+          max_tokens: BRIEF_MAX_TOKENS,
         },
         env,
       });
-      const content = completion.choices[0]?.message.content ?? "";
+      const choice = completion.choices[0];
+      if (choice?.finish_reason === "length") {
+        log({
+          event: "brief_truncated",
+          level: "warn",
+          imei,
+          max_tokens: BRIEF_MAX_TOKENS,
+          completion_tokens: completion.usage.completion_tokens,
+        });
+      }
+      const content = choice?.message.content ?? "";
       return {
         content,
         usage: {

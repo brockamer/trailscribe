@@ -43,10 +43,15 @@ function jsonResponse(obj: unknown, status = 200): Response {
   });
 }
 
-function chatCompletionResponse(content: string, prompt = 100, completion = 150) {
+function chatCompletionResponse(
+  content: string,
+  prompt = 100,
+  completion = 150,
+  finishReason = "stop",
+) {
   return {
     id: "chatcmpl-test",
-    choices: [{ message: { role: "assistant", content }, finish_reason: "stop" }],
+    choices: [{ message: { role: "assistant", content }, finish_reason: finishReason }],
     usage: {
       prompt_tokens: prompt,
       completion_tokens: completion,
@@ -271,6 +276,25 @@ describe("P2-06 !brief — budget gate", () => {
     const [, messages] = sendReplyMock.mock.calls[0];
     expect(messages[0]).toContain("Daily AI budget reached");
   });
+
+  test("999 tokens left is not enough: a brief measured 749–950 on Opus 5.5 (#265)", async () => {
+    await seedEntries(2);
+    await recordTransaction({
+      command: "post",
+      usage: { prompt_tokens: 49001, completion_tokens: 0 },
+      env,
+    });
+    fetchSpy = vi.fn(async () => {
+      throw new Error("should not have called fetch");
+    });
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!brief"));
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const [, messages] = sendReplyMock.mock.calls[0];
+    expect(messages[0]).toContain("Daily AI budget reached");
+  });
 });
 
 describe("P2-06 !brief — idempotency", () => {
@@ -292,5 +316,60 @@ describe("P2-06 !brief — idempotency", () => {
       .map((c) => String(c[0]))
       .filter((u) => u.includes("openrouter") || u.includes("/chat/completions"));
     expect(llmCalls).toHaveLength(1);
+  });
+});
+
+describe("P2-06 !brief — output cap (#265)", () => {
+  // With no max_tokens, OpenRouter reserves credit for 65,536 completion tokens
+  // (about $1.31 on Opus 5.5) and returns 402 when the balance is lower.
+  function llmRequestBody(): { max_tokens?: number } {
+    const call = fetchSpy.mock.calls.find((c: unknown[]) =>
+      String(c[0]).includes("/chat/completions"),
+    );
+    return JSON.parse((call![1] as RequestInit).body as string) as { max_tokens?: number };
+  }
+
+  function llmRouter(finishReason: string) {
+    return makeFetchRouter([
+      {
+        match: (u) => u.includes("openrouter.ai") || u.includes("/chat/completions"),
+        respond: () =>
+          jsonResponse(chatCompletionResponse("Logged 3 observations.", 100, 150, finishReason)),
+      },
+    ]);
+  }
+
+  test("sends max_tokens 2000, the same output reservation as a !post", async () => {
+    await seedEntries(3);
+    fetchSpy = llmRouter("stop");
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!brief"));
+
+    expect(llmRequestBody().max_tokens).toBe(2000);
+  });
+
+  test("a brief cut off at the cap logs brief_truncated and is still delivered", async () => {
+    await seedEntries(3);
+    fetchSpy = llmRouter("length");
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!brief"));
+
+    const warnLines = errSpy.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(warnLines.some((l: string) => l.includes('"event":"brief_truncated"'))).toBe(true);
+    const [, messages] = sendReplyMock.mock.calls[0];
+    expect(messages).toEqual(["Logged 3 observations."]);
+  });
+
+  test("a complete brief logs no brief_truncated", async () => {
+    await seedEntries(3);
+    fetchSpy = llmRouter("stop");
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!brief"));
+
+    const warnLines = errSpy.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(warnLines.some((l: string) => l.includes('"event":"brief_truncated"'))).toBe(false);
   });
 });

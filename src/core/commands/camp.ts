@@ -10,7 +10,15 @@ import { log } from "../../adapters/logging/worker-logs.js";
 type CampCommand = Extract<ParsedCommand, { type: "camp" }>;
 
 const REPLY_MAX = 320;
+/** Typical measured total (see `ESTIMATED_POST_TOKENS`): 345–581 on Opus 5.5 (#265). */
 const ESTIMATED_CAMP_TOKENS = 600;
+/**
+ * Output cap (#265). Without one, OpenRouter reserves credit for 65,536
+ * completion tokens (about $1.31 on Opus 5.5) and returns 402 when the balance
+ * is lower. At 2000 it reserves $0.04, the same as a `!post`. Measured
+ * completions, the model's hidden reasoning tokens included: 230–465.
+ */
+const CAMP_MAX_TOKENS = 2000;
 const SUBJECT_PREVIEW_MAX = 40;
 const STALENESS_PREFIX = "(may be outdated) ";
 const OVERFLOW_REPLY = "Long answer sent by email.";
@@ -53,10 +61,21 @@ export async function handleCamp(
             { role: "system", content: SYSTEM_PROMPT },
             { role: "user", content: cmd.query },
           ],
+          max_tokens: CAMP_MAX_TOKENS,
         },
         env,
       });
-      const content = completion.choices[0]?.message.content ?? "";
+      const choice = completion.choices[0];
+      if (choice?.finish_reason === "length") {
+        log({
+          event: "camp_truncated",
+          level: "warn",
+          imei,
+          max_tokens: CAMP_MAX_TOKENS,
+          completion_tokens: completion.usage.completion_tokens,
+        });
+      }
+      const content = choice?.message.content ?? "";
       return {
         content,
         usage: {

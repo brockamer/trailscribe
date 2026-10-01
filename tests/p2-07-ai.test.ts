@@ -38,10 +38,15 @@ function jsonResponse(obj: unknown, status = 200): Response {
   });
 }
 
-function chatCompletionResponse(content: string, prompt = 50, completion = 100) {
+function chatCompletionResponse(
+  content: string,
+  prompt = 50,
+  completion = 100,
+  finishReason = "stop",
+) {
   return {
     id: "chatcmpl-test",
-    choices: [{ message: { role: "assistant", content }, finish_reason: "stop" }],
+    choices: [{ message: { role: "assistant", content }, finish_reason: finishReason }],
     usage: {
       prompt_tokens: prompt,
       completion_tokens: completion,
@@ -236,5 +241,56 @@ describe("P2-07 !ai — empty question", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     const [, messages] = sendReplyMock.mock.calls[0];
     expect(messages).toEqual(["Unknown command. Try !help"]);
+  });
+});
+
+describe("P2-07 !ai — output cap (#265)", () => {
+  // With no max_tokens, OpenRouter reserves credit for 65,536 completion tokens
+  // (about $1.31 on Opus 5.5) and returns 402 when the balance is lower.
+  function llmRequestBody(): { max_tokens?: number } {
+    const call = fetchSpy.mock.calls.find((c: unknown[]) =>
+      String(c[0]).includes("/chat/completions"),
+    );
+    return JSON.parse((call![1] as RequestInit).body as string) as { max_tokens?: number };
+  }
+
+  function llmRouter(finishReason: string) {
+    return makeFetchRouter([
+      {
+        match: (u) => u.includes("openrouter.ai") || u.includes("/chat/completions"),
+        respond: () => jsonResponse(chatCompletionResponse("Short answer.", 50, 100, finishReason)),
+      },
+    ]);
+  }
+
+  test("sends max_tokens 3000, room for a long answer that overflows to email", async () => {
+    fetchSpy = llmRouter("stop");
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!ai what is granite"));
+
+    expect(llmRequestBody().max_tokens).toBe(3000);
+  });
+
+  test("an answer cut off at the cap logs ai_truncated and is still delivered", async () => {
+    fetchSpy = llmRouter("length");
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!ai what is granite"));
+
+    const warnLines = errSpy.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(warnLines.some((l: string) => l.includes('"event":"ai_truncated"'))).toBe(true);
+    const [, messages] = sendReplyMock.mock.calls[0];
+    expect(messages).toEqual(["Short answer."]);
+  });
+
+  test("a complete answer logs no ai_truncated", async () => {
+    fetchSpy = llmRouter("stop");
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!ai what is granite"));
+
+    const warnLines = errSpy.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(warnLines.some((l: string) => l.includes('"event":"ai_truncated"'))).toBe(false);
   });
 });

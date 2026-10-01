@@ -6,9 +6,14 @@ import { dailyTotals } from "./ledger.js";
  * Estimated prompt+completion tokens consumed by a typical `!post` narrative.
  * Used by the budget gate to reserve capacity before calling the LLM.
  *
+ * Every `ESTIMATED_*_TOKENS` is the typical measured total for its command,
+ * prompt plus completion, the model's hidden reasoning tokens included — not
+ * the worst case, which would refuse a call that usually fits. A post measured
+ * about 1,100 on Opus 5.5 (#263); 400 dated from the Sonnet 4.6 era (#265).
+ *
  * Static for α — Phase 3 will measure historical p95 and adapt.
  */
-export const ESTIMATED_POST_TOKENS = 400;
+export const ESTIMATED_POST_TOKENS = 1100;
 
 /**
  * Canned reply when the daily budget is exhausted. Kept ≤ 80 chars so it

@@ -10,13 +10,16 @@ import type { Env } from "../src/env.js";
 
 let env: Env;
 
+/** Example estimate for the gating-logic tests; independent of any command's constant. */
+const EST = 400;
+
 beforeEach(() => {
   env = makeTestEnv({ DAILY_TOKEN_BUDGET: "1000" });
 });
 
 describe("checkBudget — gating logic", () => {
   test("cold day: budget allows, remaining = full budget", async () => {
-    const r = await checkBudget(env, ESTIMATED_POST_TOKENS);
+    const r = await checkBudget(env, EST);
     expect(r.allowed).toBe(true);
     expect(r.remaining).toBe(1000);
   });
@@ -27,7 +30,7 @@ describe("checkBudget — gating logic", () => {
       usage: { prompt_tokens: 200, completion_tokens: 100 },
       env,
     });
-    let r = await checkBudget(env, ESTIMATED_POST_TOKENS);
+    let r = await checkBudget(env, EST);
     expect(r.allowed).toBe(true);
     expect(r.remaining).toBe(1000 - 300);
 
@@ -36,7 +39,7 @@ describe("checkBudget — gating logic", () => {
       usage: { prompt_tokens: 200, completion_tokens: 100 },
       env,
     });
-    r = await checkBudget(env, ESTIMATED_POST_TOKENS);
+    r = await checkBudget(env, EST);
     // 600 used + 400 estimated = 1000 — at the limit, still allowed
     expect(r.allowed).toBe(true);
     expect(r.remaining).toBe(1000 - 600);
@@ -47,7 +50,7 @@ describe("checkBudget — gating logic", () => {
       usage: { prompt_tokens: 200, completion_tokens: 100 },
       env,
     });
-    r = await checkBudget(env, ESTIMATED_POST_TOKENS);
+    r = await checkBudget(env, EST);
     expect(r.allowed).toBe(false);
     expect(r.remaining).toBe(1000 - 900);
   });
@@ -59,7 +62,7 @@ describe("checkBudget — gating logic", () => {
       usage: { prompt_tokens: 99999, completion_tokens: 99999 },
       env,
     });
-    const r = await checkBudget(env, ESTIMATED_POST_TOKENS);
+    const r = await checkBudget(env, EST);
     expect(r.allowed).toBe(true);
     expect(r.remaining).toBe(Number.POSITIVE_INFINITY);
   });
@@ -72,7 +75,7 @@ describe("checkBudget — gating logic", () => {
       usage: { prompt_tokens: 0, completion_tokens: 0 },
       env,
     });
-    const r = await checkBudget(env, ESTIMATED_POST_TOKENS);
+    const r = await checkBudget(env, EST);
     expect(r.allowed).toBe(true);
     expect(r.remaining).toBe(1000);
   });
@@ -82,7 +85,7 @@ describe("checkBudget — gating logic", () => {
     expect(BUDGET_REJECTION_MESSAGE).toMatch(/budget|cap|limit/i);
   });
 
-  test("ESTIMATED_POST_TOKENS is the documented constant 400", () => {
-    expect(ESTIMATED_POST_TOKENS).toBe(400);
+  test("ESTIMATED_POST_TOKENS is the measured Opus 5.5 post total, 1100 (#263, #265)", () => {
+    expect(ESTIMATED_POST_TOKENS).toBe(1100);
   });
 });

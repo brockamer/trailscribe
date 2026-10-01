@@ -10,7 +10,18 @@ import { log } from "../../adapters/logging/worker-logs.js";
 type AiCommand = Extract<ParsedCommand, { type: "ai" }>;
 
 const REPLY_MAX = 320;
+/** Typical measured total (see `ESTIMATED_POST_TOKENS`): 418–456 on Opus 5.5 (#265). */
 const ESTIMATED_AI_TOKENS = 600;
+/**
+ * Output cap (#265). Without one, OpenRouter reserves credit for 65,536
+ * completion tokens (about $1.31 on Opus 5.5) before the call runs and returns
+ * 402 when the balance is lower. At 3000 it reserves $0.06, the same as a track
+ * post. The model's hidden reasoning tokens count against the cap. Short
+ * answers measured 324–373 completion tokens; a long-form question measured
+ * 1,733 (615 reasoning, 2,879 characters of answer), so 3000 leaves room for an
+ * answer of about 6,000 characters, which overflows to email.
+ */
+const AI_MAX_TOKENS = 3000;
 const SUBJECT_PREVIEW_MAX = 40;
 const OVERFLOW_REPLY = "Long answer sent by email.";
 
@@ -52,10 +63,21 @@ export async function handleAi(cmd: AiCommand, ctx: OrchestratorContext): Promis
             { role: "system", content: SYSTEM_PROMPT },
             { role: "user", content: cmd.question },
           ],
+          max_tokens: AI_MAX_TOKENS,
         },
         env,
       });
-      const content = completion.choices[0]?.message.content ?? "";
+      const choice = completion.choices[0];
+      if (choice?.finish_reason === "length") {
+        log({
+          event: "ai_truncated",
+          level: "warn",
+          imei,
+          max_tokens: AI_MAX_TOKENS,
+          completion_tokens: completion.usage.completion_tokens,
+        });
+      }
+      const content = choice?.message.content ?? "";
       return {
         content,
         usage: {

@@ -89,7 +89,7 @@ describe("generateNarrative — happy path", () => {
     expect(headers["Content-Type"]).toBe("application/json");
   });
 
-  test("uses LLM_MODEL from env (default: anthropic/claude-sonnet-4-6)", async () => {
+  test("passes LLM_MODEL from env through as the request model", async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
 
     await generateNarrative({ note: "x", env });
@@ -537,5 +537,62 @@ describe("generateNarrative — bare post voice and time grounding (#240)", () =
       env,
     });
     expect(user).toContain("Location: Lake Sabrina, Inyo County, CA (37.168, -118.589)");
+  });
+});
+
+describe("reasoning-model token caps (#263)", () => {
+  // Opus 5.5 spends a hidden 180–560 reasoning tokens per narrative call, and they count
+  // against max_tokens. At the old 600 cap, 3 of 16 calls ended finish_reason: length.
+  const TRACK_METRICS = {
+    pingCount: 14,
+    startedAt: Date.parse("2026-05-02T15:51:30Z"),
+    closedAt: Date.parse("2026-05-02T16:24:30Z"),
+    durationSeconds: 1980,
+    distanceKm: 3,
+    pace: { avgKmh: 4.5, p50Kmh: 4.2, p95Kmh: 12 },
+    elevation: { gainM: 33, lossM: 33, minM: 0, maxM: 35 },
+    routeShape: "loop" as const,
+    activityHint: "mixed" as const,
+  };
+
+  function sentBody(): { max_tokens?: number; reasoning?: unknown; model: string } {
+    const init = fetchSpy.mock.calls.at(-1)?.[1] as RequestInit;
+    return JSON.parse(init.body as string) as {
+      max_tokens?: number;
+      reasoning?: unknown;
+      model: string;
+    };
+  }
+
+  test("a post narrative leaves room for reasoning tokens: max_tokens 2000", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
+    await generateNarrative({ note: "x", env });
+    expect(sentBody().max_tokens).toBe(2000);
+  });
+
+  test("a track narrative leaves room for reasoning tokens: max_tokens 3000", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
+    await generateTrackNarrative({ metrics: TRACK_METRICS, env });
+    expect(sentBody().max_tokens).toBe(3000);
+  });
+
+  test("sends no reasoning parameter, so a rollback to a non-reasoning model is config-only", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
+    await generateNarrative({ note: "x", env });
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
+    await generateTrackNarrative({ metrics: TRACK_METRICS, env });
+    for (const [, init] of fetchSpy.mock.calls) {
+      expect(JSON.parse((init as RequestInit).body as string)).not.toHaveProperty("reasoning");
+    }
+  });
+
+  test("falls back to anthropic/claude-opus-5.5 when LLM_MODEL is empty", async () => {
+    env = makeTestEnv({ LLM_MODEL: "" });
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
+    await generateNarrative({ note: "x", env });
+    expect(sentBody().model).toBe("anthropic/claude-opus-5.5");
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
+    await generateTrackNarrative({ metrics: TRACK_METRICS, env });
+    expect(sentBody().model).toBe("anthropic/claude-opus-5.5");
   });
 });

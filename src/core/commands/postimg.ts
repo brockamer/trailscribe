@@ -5,6 +5,7 @@ import { currentWeatherDetail } from "../../adapters/location/weather.js";
 import { generateNarrative } from "../narrative.js";
 import { generateImage, ImageGenError } from "../../adapters/ai/replicate.js";
 import { buildImagePrompt } from "../imageprompt.js";
+import { approximateLocalTime } from "../localtime.js";
 import { publishPost, publishPostWithImage } from "../../adapters/publish/github-pages.js";
 import { recordTransaction, recordImageTransaction } from "../ledger.js";
 import { appendEvent } from "../context.js";
@@ -87,6 +88,13 @@ export async function handlePostImg(
     }
   }
 
+  // One time-of-day derivation feeding both the narrative and the image prompt,
+  // so the text and the picture agree on the hour (#240).
+  const solar =
+    ctx.timeStamp !== undefined && lon !== undefined
+      ? approximateLocalTime(ctx.timeStamp, lon)
+      : undefined;
+
   let narrative: Awaited<ReturnType<typeof generateNarrative>>;
   try {
     narrative = await withCheckpoint(env, idemKey, "narrative", () =>
@@ -96,6 +104,8 @@ export async function handlePostImg(
         lon,
         placeName,
         weather,
+        localTime: solar?.text,
+        isNight: solar?.isNight,
         env,
       }),
     );
@@ -114,11 +124,6 @@ export async function handlePostImg(
   type ImageOpResult =
     | { ok: true; bytesB64: string; mimeType: string; costUsd: number; model: string }
     | { ok: false; error: string };
-
-  const solar =
-    ctx.timeStamp !== undefined && lon !== undefined
-      ? approximateLocalTime(ctx.timeStamp, lon)
-      : undefined;
 
   // Bare `!postimg` (#150): the narrative just written from telemetry becomes
   // the image's subject, so the picture and the post describe one moment.
@@ -345,41 +350,4 @@ function base64ToArrayBuffer(b64: string): ArrayBuffer {
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
   return out.buffer;
-}
-
-/**
- * Mean solar time from longitude — a zero-dependency approximation of local
- * time of day, used only to ground the image prompt's lighting.
- *
- * Deliberately NOT civil time: there is no timezone database in this Worker
- * and adding one would need PRD justification. Mean solar time ignores
- * political timezone boundaries and DST, so it can differ from the clock on
- * the operator's wrist by an hour or more. That is acceptable for its only
- * purpose — telling an image model roughly where the sun is.
- */
-export function approximateLocalTime(
-  timeStampMs: number,
-  lon: number,
-): { text: string; isNight: boolean } {
-  const d = new Date(timeStampMs + (lon / 15) * 3_600_000);
-  const hh = d.getUTCHours();
-  const mm = d.getUTCMinutes();
-  const band =
-    hh < 5
-      ? "night"
-      : hh < 8
-        ? "early morning"
-        : hh < 11
-          ? "morning"
-          : hh < 14
-            ? "midday"
-            : hh < 17
-              ? "afternoon"
-              : hh < 20
-                ? "evening"
-                : "night";
-  return {
-    text: `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")} — ${band}`,
-    isNight: band === "night",
-  };
 }

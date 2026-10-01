@@ -427,3 +427,115 @@ describe("generateTrackNarrative — under-sampled tracks (#230)", () => {
     expect(msg).not.toContain("Data quality");
   });
 });
+
+describe("generateNarrative — bare post voice and time grounding (#240)", () => {
+  async function promptsFor(input: Parameters<typeof generateNarrative>[0]) {
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
+    await generateNarrative(input);
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    return {
+      sys: body.messages.find((m) => m.role === "system")?.content ?? "",
+      user: body.messages.find((m) => m.role === "user")?.content ?? "",
+    };
+  }
+
+  test("no-note system prompt never says 'traveller' — the word leaks into the post", async () => {
+    const { sys } = await promptsFor({ placeName: "X", lat: 1, lon: 2, env });
+    expect(sys.toLowerCase()).not.toContain("traveller");
+    expect(sys.toLowerCase()).not.toContain("traveler");
+  });
+
+  test("no-note system prompt asks for the operator's own first-person voice, not third-person", async () => {
+    const { sys } = await promptsFor({ placeName: "X", lat: 1, lon: 2, env });
+    expect(sys.toLowerCase()).not.toContain("third-person");
+    expect(sys.toLowerCase()).not.toContain("observational");
+    expect(sys.toLowerCase()).toContain("first-person");
+  });
+
+  test("no-note system prompt keeps every anti-hallucination constraint", async () => {
+    const { sys } = await promptsFor({ placeName: "X", lat: 1, lon: 2, env });
+    expect(sys.toLowerCase()).toContain("do not invent activities, feelings, companions");
+    expect(sys.toLowerCase()).toContain("keep the body short rather than padding");
+  });
+
+  test("no-note system prompt forbids opening on coordinates and generalising about the region", async () => {
+    const { sys } = await promptsFor({ placeName: "X", lat: 1, lon: 2, env });
+    expect(sys.toLowerCase()).toContain("do not open with coordinates");
+    expect(sys.toLowerCase()).toContain("this moment");
+  });
+
+  test("no-note system prompt tells the model the time of day is fixed", async () => {
+    const { sys } = await promptsFor({ placeName: "X", lat: 1, lon: 2, env });
+    expect(sys).toContain("Local time");
+  });
+
+  test("localTime reaches the user prompt as a 'Local time:' line", async () => {
+    const { user } = await promptsFor({
+      placeName: "Malibu, CA",
+      lat: 34.0,
+      lon: -118.7,
+      weather: "Clear · 66°F",
+      localTime: "21:17 — night",
+      isNight: true,
+      env,
+    });
+    expect(user).toMatch(/^Local time: 21:17 — night/m);
+  });
+
+  test("isNight adds an explicit darkness line so the model cannot read 'evening' into clear skies", async () => {
+    const { user } = await promptsFor({
+      placeName: "Malibu, CA",
+      lat: 34.0,
+      lon: -118.7,
+      weather: "Clear · 66°F",
+      localTime: "21:17 — night",
+      isNight: true,
+      env,
+    });
+    expect(user.toLowerCase()).toContain("dark");
+  });
+
+  test("a daytime localTime does not claim darkness", async () => {
+    const { user } = await promptsFor({
+      placeName: "Malibu, CA",
+      lat: 34.0,
+      lon: -118.7,
+      localTime: "13:05 — midday",
+      isNight: false,
+      env,
+    });
+    expect(user).toMatch(/^Local time: 13:05 — midday/m);
+    expect(user.toLowerCase()).not.toContain("dark");
+  });
+
+  test("no localTime → no 'Local time:' line (nothing fabricated)", async () => {
+    const { user } = await promptsFor({ placeName: "X", lat: 1, lon: 2, env });
+    expect(user).not.toContain("Local time");
+  });
+
+  test("bare post → Location line carries the place name only, no coordinates to open on", async () => {
+    const { user } = await promptsFor({
+      lat: 37.1682,
+      lon: -118.5891,
+      placeName: "Lake Sabrina, Inyo County, CA",
+      env,
+    });
+    expect(user).toContain("Location: Lake Sabrina, Inyo County, CA");
+    expect(user).not.toContain("37.168");
+    expect(user).not.toContain("-118.589");
+  });
+
+  test("captioned post → Location line still carries the (rounded) coordinates", async () => {
+    const { user } = await promptsFor({
+      note: NATALIE_NOTE,
+      lat: 37.1682,
+      lon: -118.5891,
+      placeName: "Lake Sabrina, Inyo County, CA",
+      env,
+    });
+    expect(user).toContain("Location: Lake Sabrina, Inyo County, CA (37.168, -118.589)");
+  });
+});

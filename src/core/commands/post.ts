@@ -3,6 +3,7 @@ import type { OrchestratorContext } from "../orchestrator.js";
 import { reverseGeocode } from "../../adapters/location/geocode.js";
 import { currentWeather } from "../../adapters/location/weather.js";
 import { generateNarrative } from "../narrative.js";
+import { approximateLocalTime } from "../localtime.js";
 import { publishPost } from "../../adapters/publish/github-pages.js";
 import { recordTransaction } from "../ledger.js";
 import { appendEvent } from "../context.js";
@@ -83,6 +84,12 @@ export async function handlePost(cmd: PostCommand, ctx: HandlePostContext): Prom
       });
   }
 
+  // One time-of-day derivation, shared with `!postimg`'s image prompt (#240).
+  const solar =
+    ctx.timeStamp !== undefined && lon !== undefined
+      ? approximateLocalTime(ctx.timeStamp, lon)
+      : undefined;
+
   let narrative: Awaited<ReturnType<typeof generateNarrative>>;
   try {
     narrative = await withCheckpoint(env, idemKey, "narrative", () =>
@@ -92,6 +99,8 @@ export async function handlePost(cmd: PostCommand, ctx: HandlePostContext): Prom
         lon,
         placeName,
         weather,
+        localTime: solar?.text,
+        isNight: solar?.isNight,
         env,
       }),
     );

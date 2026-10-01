@@ -316,6 +316,50 @@ describe("#124 bare !post — narrative built from metadata, no caption", () => 
     expect(userMsg).toMatch(/^Weather: /m);
   });
 
+  test("bare !post hands the narrative the same local time the image prompt uses (#240)", async () => {
+    fetchSpy = makeFetchRouter([
+      {
+        match: (u) => u.includes("nominatim.openstreetmap.org"),
+        respond: () => jsonResponse({ display_name: "Malibu, Los Angeles County, California" }),
+      },
+      {
+        match: (u) => u.includes("api.open-meteo.com"),
+        respond: () =>
+          jsonResponse({ current: { temperature_2m: 19, wind_speed_10m: 6, weather_code: 0 } }),
+      },
+      {
+        match: (u) => u.includes("openrouter.ai"),
+        respond: () => jsonResponse(NARRATIVE_RESPONSE),
+      },
+      {
+        match: (u, i) => u.includes("api.github.com") && i?.method === "GET",
+        respond: () => new Response(null, { status: 404 }),
+      },
+      {
+        match: (u, i) => u.includes("api.github.com") && i?.method === "PUT",
+        respond: () => jsonResponse(PUBLISH_RESPONSE),
+      },
+    ]);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    // 05:17Z at 120°W is 21:17 mean solar time — night.
+    await postIpc(
+      envelope("!post", {
+        gps: { lat: 34.03, lon: -120 },
+        ts: Date.UTC(2026, 8, 16, 5, 17),
+      }),
+    );
+
+    const orCall = fetchSpy.mock.calls.find(
+      (c: unknown[]) => typeof c[0] === "string" && c[0].includes("openrouter.ai"),
+    );
+    const orBody = JSON.parse((orCall![1] as RequestInit).body as string) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    const userMsg = orBody.messages.find((m) => m.role === "user")?.content ?? "";
+    expect(userMsg).toMatch(/^Local time: 21:17 — night/m);
+  });
+
   test("bare !post with no GPS fix → no-note prompt; minimal user prompt; journal post still produced", async () => {
     fetchSpy = makeFetchRouter([
       {

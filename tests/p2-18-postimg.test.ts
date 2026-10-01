@@ -436,3 +436,70 @@ describe("P2-18 !postimg — bare, no caption (#150)", () => {
     expect(messages[0]).toMatch(/^Posted: /);
   });
 });
+
+describe("P2-18 !postimg — narrative and image share one time of day (#240)", () => {
+  test("bare !postimg: the narrative prompt and the image prompt carry the same local time", async () => {
+    const seen: { narrative?: string; image?: string } = {};
+    fetchSpy = vi.fn(async (url: URL | RequestInfo, init?: RequestInit) => {
+      const u = typeof url === "string" ? url : url.toString();
+      if (u.includes("nominatim")) {
+        return jsonResponse({ address: { locality: "Malibu", state: "California" } });
+      }
+      if (u.includes("api.open-meteo.com")) {
+        return jsonResponse({
+          current: { temperature_2m: 19, wind_speed_10m: 6, weather_code: 0 },
+        });
+      }
+      if (u.includes("openrouter.ai") || u.includes("/chat/completions")) {
+        seen.narrative = init?.body as string;
+        return jsonResponse(narrativeResponse());
+      }
+      if (u.includes("api.replicate.com") && u.endsWith("predictions")) {
+        seen.image = init?.body as string;
+        return jsonResponse({
+          id: "pred_t",
+          status: "succeeded",
+          output: "https://replicate.delivery/output/img-t.webp",
+        });
+      }
+      if (u.includes("replicate.delivery/output")) return imageResponse();
+      if (u.includes("api.github.com/repos/") && u.includes("?ref=")) {
+        return new Response("not found", { status: 404 });
+      }
+      if (u.includes("api.github.com/graphql")) {
+        const reqBody = JSON.parse((init?.body as string) ?? "{}") as { query: string };
+        if (reqBody.query.includes("createCommitOnBranch")) {
+          return jsonResponse({
+            data: {
+              createCommitOnBranch: {
+                commit: { oid: "abc123commit", url: "https://github.com/x/y/commit/abc" },
+              },
+            },
+          });
+        }
+        return jsonResponse({
+          data: { repository: { ref: { target: { oid: "deadbeefoid" } } } },
+        });
+      }
+      throw new Error(`unmatched fetch: ${u}`);
+    });
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    // 05:17Z at 120°W is 21:17 mean solar time — night.
+    await postIpc(
+      envelope("!postimg", {
+        gps: { lat: 34.03, lon: -120 },
+        ts: Date.UTC(2026, 8, 16, 5, 17),
+      }),
+    );
+
+    expect(seen.narrative).toBeDefined();
+    expect(seen.image).toBeDefined();
+    const narrativeUser =
+      (
+        JSON.parse(seen.narrative!) as { messages: Array<{ role: string; content: string }> }
+      ).messages.find((m) => m.role === "user")?.content ?? "";
+    expect(narrativeUser).toMatch(/^Local time: 21:17 — night/m);
+    expect(seen.image).toContain("21:17 — night");
+  });
+});

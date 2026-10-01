@@ -33,6 +33,14 @@ export interface NarrativeInput {
   placeName?: string;
   /** Weather summary (P1-10). Optional — omitted prompt when absent. */
   weather?: string;
+  /**
+   * Approximate local time of day, e.g. `"21:17 — night"` (#240). Must be the
+   * same value the image prompt receives, so a bare post's text and its image
+   * agree on the hour. Omitted prompt line when absent.
+   */
+  localTime?: string;
+  /** True when `localTime` is in the night band; adds an explicit darkness line. */
+  isNight?: boolean;
   env: Env;
 }
 
@@ -85,18 +93,23 @@ const SYSTEM_PROMPT_POST_WITH_NOTE = [
 /**
  * No-note variant for bare `!post` (#124). The operator sent no caption, so the
  * LLM must construct the narrative purely from enrichment context (location,
- * weather, time). Tone is observational rather than first-person, and the
- * model is explicitly forbidden from inventing activities, feelings, or
+ * weather, time). It is the operator's own journal, so the voice is first-person
+ * present and sparse (#240) — never a third-person bulletin about "a traveller".
+ * The model is explicitly forbidden from inventing activities, feelings, or
  * specifics not present in the metadata — a stronger constraint than the
- * with-note prompt because there's no anchoring caption to ground it.
+ * with-note prompt because there's no anchoring caption to ground it. Do not
+ * reintroduce words like "traveller" or "observational": the model echoes the
+ * prompt's own vocabulary into the post.
  */
 const SYSTEM_PROMPT_POST_NO_NOTE = [
-  "You write short field-journal entries from a backcountry traveller's location and weather snapshot. The traveller did not provide a caption — describe what is true about this position and moment, in observational third-person, from the metadata alone.",
+  "You write short field-journal entries in the operator's own voice: first-person, present tense, plain and sparse. The operator did not provide a caption — say what is true about this place and moment from the metadata alone, as the operator would note it in their own journal.",
   "Always return valid JSON matching the schema. No prose outside the JSON.",
   "Constraints:",
   '- "title": ≤ 60 characters, evocative, no clickbait, no emoji. Anchor to the place name or weather, not to invented activities.',
   '- "haiku": exactly three lines separated by newlines, in 5/7/5 syllables, ≤ 110 characters total (count strictly — including spaces and newlines). Plain English. No formatting marks. Anchor to observable detail (place, weather, time, terrain).',
-  '- "body": ≤ 500 characters. Observational voice. Do not invent activities, feelings, companions, or specifics that are not present in the location or weather context. If context is sparse, keep the body short rather than padding.',
+  '- "body": ≤ 500 characters. First-person present, like a private journal line, not a weather report. Do not invent activities, feelings, companions, or specifics that are not present in the location or weather context. If context is sparse, keep the body short rather than padding.',
+  "- Do not open with coordinates. Describe this moment, not what is typical for the region or season.",
+  '- A "Local time" line, when present, fixes the time of day: make the light and sky agree with it, and never describe daylight, sunset or evening when it says night.',
 ].join("\n");
 
 export class NarrativeError extends Error {
@@ -199,10 +212,7 @@ async function runNarrativeCall<T>(
 
 export async function generateNarrative(input: NarrativeInput): Promise<NarrativeOutput> {
   const userPrompt = buildUserPrompt(input);
-  const systemPrompt =
-    input.note !== undefined && input.note.trim().length > 0
-      ? SYSTEM_PROMPT_POST_WITH_NOTE
-      : SYSTEM_PROMPT_POST_NO_NOTE;
+  const systemPrompt = hasNote(input) ? SYSTEM_PROMPT_POST_WITH_NOTE : SYSTEM_PROMPT_POST_NO_NOTE;
 
   const { data, usage } = await runNarrativeCall({
     env: input.env,
@@ -218,6 +228,11 @@ export async function generateNarrative(input: NarrativeInput): Promise<Narrativ
   return { title: data.title, haiku: data.haiku, body: data.body, usage };
 }
 
+/** True when the operator supplied a non-blank caption (bare posts have none). */
+function hasNote(input: NarrativeInput): boolean {
+  return input.note !== undefined && input.note.trim().length > 0;
+}
+
 /**
  * Compose the user-facing prompt. When lat/lon/placeName/weather are absent
  * (no GPS fix or geocode/weather lookup failed upstream), those lines are
@@ -230,15 +245,17 @@ export async function generateNarrative(input: NarrativeInput): Promise<Narrativ
 function buildUserPrompt(input: NarrativeInput): string {
   const lines: string[] = [];
 
-  if (input.note !== undefined && input.note.trim().length > 0) {
+  if (hasNote(input)) {
     lines.push(`Note: ${input.note}`);
   }
 
   if (input.placeName !== undefined && input.lat !== undefined && input.lon !== undefined) {
     // The body is published, so the model never sees finer coordinates than the frontmatter carries.
+    // A bare post (#240) sees the place name only: given raw lat/lon the model opens the body on
+    // them. The captioned post keeps them — the caption anchors its voice.
     const p = journalLocationPrecision(input.env);
     lines.push(
-      p === "omit"
+      p === "omit" || !hasNote(input)
         ? `Location: ${input.placeName}`
         : `Location: ${input.placeName} (${input.lat.toFixed(p)}, ${input.lon.toFixed(p)})`,
     );
@@ -246,6 +263,11 @@ function buildUserPrompt(input: NarrativeInput): string {
 
   if (input.weather !== undefined) {
     lines.push(`Weather: ${input.weather}`);
+  }
+
+  if (input.localTime !== undefined && input.localTime.length > 0) {
+    lines.push(`Local time: ${input.localTime} (approximate, mean solar time)`);
+    if (input.isNight) lines.push("It is dark outside: no daylight, sunset or evening light.");
   }
 
   return lines.join("\n");

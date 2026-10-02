@@ -511,6 +511,39 @@ describe("generateNarrative — bare post voice and time grounding (#240)", () =
     expect(user.toLowerCase()).not.toContain("dark");
   });
 
+  test("a civil clock time reaches the prompt as fact, not as an approximation (#274)", async () => {
+    const { user } = await promptsFor({
+      placeName: "Malibu, CA",
+      lat: 34.0,
+      lon: -118.7,
+      localTime: "03:28 — night",
+      isNight: true,
+      clockKnown: true,
+      env,
+    });
+    expect(user).toMatch(/^Local time: 03:28 — night$/m);
+    expect(user).not.toContain("mean solar");
+    expect(user).not.toContain("approximate");
+  });
+
+  test("with no clock time known, the line gives the period and forbids stating a time (#274)", async () => {
+    const { user } = await promptsFor({
+      placeName: "Malibu, CA",
+      lat: 34.0,
+      lon: -118.7,
+      localTime: "night",
+      isNight: true,
+      clockKnown: false,
+      env,
+    });
+    expect(user).toMatch(/^Local time: night \(clock time unknown — state no clock time\)$/m);
+  });
+
+  test("the system rule allows a clock time only when the Local time line gives one (#274)", async () => {
+    const { sys } = await promptsFor({ placeName: "X", lat: 1, lon: 2, env });
+    expect(sys).toContain("State a clock time only when the Local time line gives one");
+  });
+
   test("no localTime → no 'Local time:' line (nothing fabricated)", async () => {
     const { user } = await promptsFor({ placeName: "X", lat: 1, lon: 2, env });
     expect(user).not.toContain("Local time");

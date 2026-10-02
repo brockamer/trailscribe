@@ -10,7 +10,11 @@ export interface ImagePromptInputs {
   /** Reverse-geocoded place name (no specific landmark naming required). */
   place?: string;
   altitudeM?: number;
-  /** Free-form local time string, e.g. "07:42 — early morning". */
+  /**
+   * Local time from `localTimeOfDay()`: the civil clock time, e.g.
+   * "07:42 — early morning", or the period alone ("night") when no UTC offset
+   * is known (#274).
+   */
   localTime?: string;
   /**
    * Raw WMO weather code from Open-Meteo, mapped here to a light-quality
@@ -19,7 +23,8 @@ export interface ImagePromptInputs {
    */
   weatherCode?: number;
   /**
-   * True when `localTime` falls in the night band. Without it a clear sky at
+   * True when it is dark: the sun is down by that day's sunrise/sunset, or
+   * `localTime` falls in the night band when those are unknown (#274). Without it a clear sky at
    * 02:00 rendered "bright, clear sunlight" alongside "night" in the same
    * prompt (#235 review).
    */

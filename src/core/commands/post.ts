@@ -1,9 +1,9 @@
 import type { CommandResult, ParsedCommand } from "../types.js";
 import type { OrchestratorContext } from "../orchestrator.js";
 import { reverseGeocode } from "../../adapters/location/geocode.js";
-import { currentWeather } from "../../adapters/location/weather.js";
+import { currentWeatherDetail } from "../../adapters/location/weather.js";
 import { generateNarrative } from "../narrative.js";
-import { approximateLocalTime } from "../localtime.js";
+import { type CivilTimeInfo, localTimeOfDay } from "../localtime.js";
 import { publishPost } from "../../adapters/publish/github-pages.js";
 import { recordTransaction } from "../ledger.js";
 import { appendEvent } from "../context.js";
@@ -55,10 +55,11 @@ export async function handlePost(cmd: PostCommand, ctx: HandlePostContext): Prom
 
   let placeName: string | undefined;
   let weather: string | undefined;
+  let civil: CivilTimeInfo | undefined;
   if (hasGps) {
     const [placeResult, weatherResult] = await Promise.allSettled([
       reverseGeocode(lat, lon, env),
-      currentWeather(lat, lon, env),
+      currentWeatherDetail(lat, lon, env),
     ]);
     if (placeResult.status === "fulfilled") placeName = placeResult.value;
     else
@@ -71,8 +72,10 @@ export async function handlePost(cmd: PostCommand, ctx: HandlePostContext): Prom
             ? placeResult.reason.message
             : String(placeResult.reason),
       });
-    if (weatherResult.status === "fulfilled") weather = weatherResult.value;
-    else
+    if (weatherResult.status === "fulfilled") {
+      weather = weatherResult.value.text;
+      civil = weatherResult.value.civil;
+    } else
       log({
         event: "post_weather_failed",
         level: "warn",
@@ -85,9 +88,9 @@ export async function handlePost(cmd: PostCommand, ctx: HandlePostContext): Prom
   }
 
   // One time-of-day derivation, shared with `!postimg`'s image prompt (#240).
-  const solar =
+  const localTime =
     ctx.timeStamp !== undefined && lon !== undefined
-      ? approximateLocalTime(ctx.timeStamp, lon)
+      ? localTimeOfDay(ctx.timeStamp, lon, civil)
       : undefined;
 
   let narrative: Awaited<ReturnType<typeof generateNarrative>>;
@@ -99,8 +102,9 @@ export async function handlePost(cmd: PostCommand, ctx: HandlePostContext): Prom
         lon,
         placeName,
         weather,
-        localTime: solar?.text,
-        isNight: solar?.isNight,
+        localTime: localTime?.text,
+        isNight: localTime?.isNight,
+        clockKnown: localTime?.clockKnown,
         env,
       }),
     );

@@ -5,7 +5,7 @@ import { currentWeatherDetail } from "../../adapters/location/weather.js";
 import { generateNarrative } from "../narrative.js";
 import { generateImage, ImageGenError } from "../../adapters/ai/replicate.js";
 import { buildImagePrompt } from "../imageprompt.js";
-import { approximateLocalTime } from "../localtime.js";
+import { type CivilTimeInfo, localTimeOfDay } from "../localtime.js";
 import { publishPost, publishPostWithImage } from "../../adapters/publish/github-pages.js";
 import { recordTransaction, recordImageTransaction } from "../ledger.js";
 import { appendEvent } from "../context.js";
@@ -75,6 +75,7 @@ export async function handlePostImg(
   const hasGps = lat !== undefined && lon !== undefined;
   let placeName: string | undefined;
   let weather: string | undefined;
+  let civil: CivilTimeInfo | undefined;
   let weatherCode: number | undefined;
   if (hasGps) {
     const [placeR, wxR] = await Promise.allSettled([
@@ -85,14 +86,15 @@ export async function handlePostImg(
     if (wxR.status === "fulfilled") {
       weather = wxR.value.text;
       weatherCode = wxR.value.code;
+      civil = wxR.value.civil;
     }
   }
 
   // One time-of-day derivation feeding both the narrative and the image prompt,
   // so the text and the picture agree on the hour (#240).
-  const solar =
+  const localTime =
     ctx.timeStamp !== undefined && lon !== undefined
-      ? approximateLocalTime(ctx.timeStamp, lon)
+      ? localTimeOfDay(ctx.timeStamp, lon, civil)
       : undefined;
 
   let narrative: Awaited<ReturnType<typeof generateNarrative>>;
@@ -104,8 +106,9 @@ export async function handlePostImg(
         lon,
         placeName,
         weather,
-        localTime: solar?.text,
-        isNight: solar?.isNight,
+        localTime: localTime?.text,
+        isNight: localTime?.isNight,
+        clockKnown: localTime?.clockKnown,
         env,
       }),
     );
@@ -137,8 +140,8 @@ export async function handlePostImg(
     place: placeName,
     weatherCode,
     altitudeM: ctx.altitude,
-    localTime: solar?.text,
-    isNight: solar?.isNight,
+    localTime: localTime?.text,
+    isNight: localTime?.isNight,
   });
 
   // If the metadata-only narrative produced nothing usable there is no subject

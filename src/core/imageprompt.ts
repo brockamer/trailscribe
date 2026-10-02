@@ -27,15 +27,66 @@ export interface ImagePromptInputs {
 }
 
 /**
- * Opening clause. Leads with the medium we actually want.
+ * Opening clause. Leads with the medium we actually want: a casual snapshot,
+ * not a composed photograph.
  *
  * The pre-#235 lead was "Photographic field journal illustration:" — which
  * asked for a photograph and an illustration in the same breath, and reliably
  * got the illustration. Verified against real generations on 2026-09-14:
  * removing the word flipped flux-schnell from cartoon output to photographic
  * output with no other change.
+ *
+ * #235's replacement, "A photorealistic photograph from a backcountry field
+ * journal.", drew the journal: an open notebook filled the frame, and on
+ * 2026-09-30 a woman sat writing in it (#267). An interim "…while out on the
+ * trail" put a trail down the middle of every render, lake camps and city
+ * streets included — the operator is not always on a trail. So the lead
+ * names the medium and nothing about the setting.
  */
-const PHOTO_LEAD = "A photorealistic photograph from a backcountry field journal.";
+const PHOTO_LEAD = "An ordinary, unposed phone photo taken handheld at eye level.";
+
+/**
+ * Who may appear in the picture: nobody, by default (#267).
+ *
+ * This sits second, straight after the lead. Real flux-2-max renders on
+ * 2026-10-01 showed that a "no people" clause at the end of the prompt still
+ * let distant hikers and beachgoers through in about one image in four; the
+ * same rule at the front held on mountain, lake and fog scenes. It is phrased
+ * as a property of the scene ("deserted") because a diffusion model reads a
+ * prompt as concepts, not logic, and a bare "no people" also names people.
+ *
+ * The final clause covers captions that mention someone: "met a hiker at the
+ * pass" drew that hiker on the trail until it existed.
+ */
+const PEOPLE_RULE =
+  "Nobody poses and nobody is the subject. The place is deserted, with no one else in sight, near or far, all the way to the horizon; anyone the note mentions has already gone, so draw only the place.";
+
+/**
+ * Whose eyes the picture is seen through (#267).
+ *
+ * Without it the model drew the journal keeper as the subject. Naming body
+ * parts that may enter the frame ("knees, boots, hands") put them in every
+ * render, and "holds the camera" drew a camera in the hand — so neither is
+ * named. The "I" sentence is for bare `!postimg`, whose narrative has been
+ * first-person since #240.
+ */
+const POINT_OF_VIEW =
+  'Seen first-person, from where the photographer stands, looking at the view as they saw it; the photographer is behind the camera, not in the picture. Any "I" in the text below is the photographer.';
+
+/**
+ * The only places where other people may appear (operator decisions,
+ * 2026-10-01): an empty city street looks wrong, and a popular public beach
+ * is treated like a town.
+ *
+ * Placed after the location, never at the front. With this exception at the
+ * front, the model applied it to mountain passes as well and drew hikers on
+ * the ridge in half the mountain renders; after the location it judges the
+ * exception against the actual place. Reverse geocoding cannot make this
+ * call instead: Malibu's city limits cover its wild bluffs and beaches, so
+ * the address says "city" for exactly the scenes that failed.
+ */
+const PEOPLE_EXCEPTION =
+  "The only exceptions are a busy town or city street and a popular public beach: there, a few ordinary people far in the background are normal, small and not facing the camera.";
 
 /**
  * Frames the operator's caption as mood and setting rather than a literal
@@ -50,9 +101,15 @@ const PHOTO_LEAD = "A photorealistic photograph from a backcountry field journal
 const CAPTION_FRAME =
   "Render the mood and setting evoked by this note, not a literal depiction of the objects or words in it:";
 
-/** Format/quality anchor. Goes last, where format stamps carry most weight. */
+/**
+ * Format/quality anchor. Goes last, where format stamps carry most weight.
+ *
+ * Asks for an everyday phone picture rather than a "real camera" shot, which
+ * came out as polished, wide-angle stock photography (#267, operator: "like a
+ * casual photo… a believable photo").
+ */
 const CAMERA_ANCHOR =
-  "Shot on a real camera: natural imperfections, true-to-life color and texture, no illustration or painterly style.";
+  "It looks like a real, unedited phone picture: natural exposure, true-to-life color, ordinary everyday framing, slight softness and sensor noise in the shadows. Not cinematic, not a staged stock photo, no HDR glow, no illustration or painterly style.";
 
 /**
  * Negative-space guard, kept as its own constant.
@@ -62,9 +119,11 @@ const CAMERA_ANCHOR =
  * Seedream 4 on 2026-09-14, validated against a control model that does have
  * one), so this has to ride inline. Keeping it separate means it can move to
  * a real field the day a model supports it, without unpicking the template.
+ * The people clause here is a backstop only; the rule that works is
+ * PEOPLE_RULE at the front (#267).
  */
 const NEGATIVE_GUARD =
-  "No readable text, signage, or watermarks; do not invent or label specific named landmarks beyond what is given.";
+  "No posed people, no close-up faces, no figure as the subject. No readable text, signage, or watermarks; do not invent or label specific named landmarks beyond what is given.";
 
 /**
  * WMO code → renderable light quality.
@@ -109,10 +168,12 @@ function nightLightQuality(code: number): string {
 /**
  * Build a deterministic prompt grounding the image in device telemetry.
  *
- * Clause order is: photographic lead → caption (framed as mood) → place →
- * light quality → time → altitude → camera anchor → negative guard. Earlier
- * tokens carry more weight, so the caption stays near the front; what changed
- * in #235 is how it is *framed*, not where it sits.
+ * Clause order is: photographic lead → people rule → point of view → caption
+ * (framed as mood) → place → people exception → light quality → time →
+ * altitude → camera anchor → negative guard. Earlier tokens carry more
+ * weight, so the caption stays near the front; what changed in #235 is how it
+ * is *framed*, not where it sits. The people rule and point of view precede
+ * it because, measured on real renders, they only hold there (#267).
  *
  * Optional axes are omitted gracefully — a no-GPS-fix `!postimg` still
  * produces a usable prompt from the caption alone. In particular the
@@ -124,7 +185,7 @@ function nightLightQuality(code: number): string {
  * diffusion model cannot use; the place name does that work.
  */
 export function buildImagePrompt(inputs: ImagePromptInputs): string {
-  const parts: string[] = [PHOTO_LEAD];
+  const parts: string[] = [PHOTO_LEAD, PEOPLE_RULE, POINT_OF_VIEW];
 
   const caption = inputs.caption?.trim();
   const narrative = inputs.narrativeSubject?.trim();
@@ -139,8 +200,11 @@ export function buildImagePrompt(inputs: ImagePromptInputs): string {
   }
 
   if (inputs.place !== undefined && inputs.place.length > 0) {
-    parts.push(`Location: ${inputs.place}.`);
+    parts.push(`Location: ${inputs.place}; show it the way it really looks there.`);
   }
+  // Always present: with no place name the model judges the exception from
+  // the note alone, which is still better than an empty city street.
+  parts.push(PEOPLE_EXCEPTION);
   if (inputs.weatherCode !== undefined) {
     parts.push(lightQuality(inputs.weatherCode, inputs.isNight));
   }

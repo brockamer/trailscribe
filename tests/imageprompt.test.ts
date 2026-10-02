@@ -25,7 +25,7 @@ describe("buildImagePrompt — telemetry profile snapshots", () => {
         weatherCode: 2,
       }),
     ).toMatchInlineSnapshot(
-      `"A photorealistic photograph from a backcountry field journal. Render the mood and setting evoked by this note, not a literal depiction of the objects or words in it: dawn light on the cirque. Location: Sierra Nevada, CA. Soft, filtered daylight with scattered clouds and gently diffused shadows. Local time: 07:42 — early morning; lighting and shadows match that time of day. Altitude: 3810 m. Shot on a real camera: natural imperfections, true-to-life color and texture, no illustration or painterly style. No readable text, signage, or watermarks; do not invent or label specific named landmarks beyond what is given."`,
+      `"An ordinary, unposed phone photo taken handheld at eye level. Nobody poses and nobody is the subject. The place is deserted, with no one else in sight, near or far, all the way to the horizon; anyone the note mentions has already gone, so draw only the place. Seen first-person, from where the photographer stands, looking at the view as they saw it; the photographer is behind the camera, not in the picture. Any "I" in the text below is the photographer. Render the mood and setting evoked by this note, not a literal depiction of the objects or words in it: dawn light on the cirque. Location: Sierra Nevada, CA; show it the way it really looks there. The only exceptions are a busy town or city street and a popular public beach: there, a few ordinary people far in the background are normal, small and not facing the camera. Soft, filtered daylight with scattered clouds and gently diffused shadows. Local time: 07:42 — early morning; lighting and shadows match that time of day. Altitude: 3810 m. It looks like a real, unedited phone picture: natural exposure, true-to-life color, ordinary everyday framing, slight softness and sensor noise in the shadows. Not cinematic, not a staged stock photo, no HDR glow, no illustration or painterly style. No posed people, no close-up faces, no figure as the subject. No readable text, signage, or watermarks; do not invent or label specific named landmarks beyond what is given."`,
     );
   });
 
@@ -38,7 +38,7 @@ describe("buildImagePrompt — telemetry profile snapshots", () => {
         weatherCode: 45,
       }),
     ).toMatchInlineSnapshot(
-      `"A photorealistic photograph from a backcountry field journal. Render the mood and setting evoked by this note, not a literal depiction of the objects or words in it: fog rolling in over the headland. Location: Marin Headlands, CA. Flat, diffused light through fog, muted colors and low-contrast edges. Local time: 16:10 — late afternoon; lighting and shadows match that time of day. Shot on a real camera: natural imperfections, true-to-life color and texture, no illustration or painterly style. No readable text, signage, or watermarks; do not invent or label specific named landmarks beyond what is given."`,
+      `"An ordinary, unposed phone photo taken handheld at eye level. Nobody poses and nobody is the subject. The place is deserted, with no one else in sight, near or far, all the way to the horizon; anyone the note mentions has already gone, so draw only the place. Seen first-person, from where the photographer stands, looking at the view as they saw it; the photographer is behind the camera, not in the picture. Any "I" in the text below is the photographer. Render the mood and setting evoked by this note, not a literal depiction of the objects or words in it: fog rolling in over the headland. Location: Marin Headlands, CA; show it the way it really looks there. The only exceptions are a busy town or city street and a popular public beach: there, a few ordinary people far in the background are normal, small and not facing the camera. Flat, diffused light through fog, muted colors and low-contrast edges. Local time: 16:10 — late afternoon; lighting and shadows match that time of day. It looks like a real, unedited phone picture: natural exposure, true-to-life color, ordinary everyday framing, slight softness and sensor noise in the shadows. Not cinematic, not a staged stock photo, no HDR glow, no illustration or painterly style. No posed people, no close-up faces, no figure as the subject. No readable text, signage, or watermarks; do not invent or label specific named landmarks beyond what is given."`,
     );
   });
 
@@ -51,7 +51,7 @@ describe("buildImagePrompt — telemetry profile snapshots", () => {
         weatherCode: 0,
       }),
     ).toMatchInlineSnapshot(
-      `"A photorealistic photograph from a backcountry field journal. Render the mood and setting evoked by this note, not a literal depiction of the objects or words in it: Joshua trees at golden hour. Bright, clear sunlight with crisp, well-defined shadows. Local time: 18:45 — golden hour; lighting and shadows match that time of day. Altitude: 1100 m. Shot on a real camera: natural imperfections, true-to-life color and texture, no illustration or painterly style. No readable text, signage, or watermarks; do not invent or label specific named landmarks beyond what is given."`,
+      `"An ordinary, unposed phone photo taken handheld at eye level. Nobody poses and nobody is the subject. The place is deserted, with no one else in sight, near or far, all the way to the horizon; anyone the note mentions has already gone, so draw only the place. Seen first-person, from where the photographer stands, looking at the view as they saw it; the photographer is behind the camera, not in the picture. Any "I" in the text below is the photographer. Render the mood and setting evoked by this note, not a literal depiction of the objects or words in it: Joshua trees at golden hour. The only exceptions are a busy town or city street and a popular public beach: there, a few ordinary people far in the background are normal, small and not facing the camera. Bright, clear sunlight with crisp, well-defined shadows. Local time: 18:45 — golden hour; lighting and shadows match that time of day. Altitude: 1100 m. It looks like a real, unedited phone picture: natural exposure, true-to-life color, ordinary everyday framing, slight softness and sensor noise in the shadows. Not cinematic, not a staged stock photo, no HDR glow, no illustration or painterly style. No posed people, no close-up faces, no figure as the subject. No readable text, signage, or watermarks; do not invent or label specific named landmarks beyond what is given."`,
     );
   });
 });
@@ -59,7 +59,7 @@ describe("buildImagePrompt — telemetry profile snapshots", () => {
 describe("buildImagePrompt — the #235 regressions", () => {
   test("never says 'illustration' as the medium — that word produced cartoons", () => {
     const out = buildImagePrompt({ caption: "x", place: "Malibu, California", weatherCode: 2 });
-    expect(out).toContain("A photorealistic photograph");
+    expect(out).toContain("An ordinary, unposed phone photo");
     expect(out).not.toContain("field journal illustration");
     // the only surviving mention is the negative form, telling the model to avoid it
     expect(out).toContain("no illustration or painterly style");
@@ -98,7 +98,7 @@ describe("buildImagePrompt — the #235 regressions", () => {
 describe("buildImagePrompt — graceful omission", () => {
   test("caption-only (no GPS, no enrichment)", () => {
     const out = buildImagePrompt({ caption: "test caption" });
-    expect(out).toContain("A photorealistic photograph from a backcountry field journal.");
+    expect(out).toContain("An ordinary, unposed phone photo taken handheld at eye level.");
     expect(out).toContain("it: test caption.");
     expect(out).not.toContain("Altitude:");
     expect(out).not.toContain("Location:");
@@ -125,7 +125,7 @@ describe("buildImagePrompt — graceful omission", () => {
     const minimal = buildImagePrompt({ caption: "x" });
     expect(minimal).toContain("No readable text, signage, or watermarks");
     expect(minimal).toContain("do not invent or label specific named landmarks");
-    expect(minimal).toContain("Shot on a real camera");
+    expect(minimal).toContain("a real, unedited phone picture");
   });
 });
 
@@ -178,8 +178,8 @@ describe("buildImagePrompt — bare !postimg, narrative as subject (#150)", () =
       weatherCode: 2,
     });
     expect(out).toContain(NARRATIVE);
-    expect(out).toContain("A photorealistic photograph");
-    expect(out).toContain("Location: Malibu, California.");
+    expect(out).toContain("An ordinary, unposed phone photo");
+    expect(out).toContain("Location: Malibu, California;");
   });
 
   test("the mood-framing qualifier is dropped for narrative subjects", () => {
@@ -199,14 +199,100 @@ describe("buildImagePrompt — bare !postimg, narrative as subject (#150)", () =
 
   test("guards and camera anchor still apply with no caption", () => {
     const out = buildImagePrompt({ narrativeSubject: NARRATIVE });
-    expect(out).toContain("Shot on a real camera");
+    expect(out).toContain("a real, unedited phone picture");
     expect(out).toContain("No readable text, signage, or watermarks");
   });
 
   test("neither caption nor narrative still yields a well-formed prompt", () => {
     const out = buildImagePrompt({ place: "Malibu, California", weatherCode: 0 });
-    expect(out).toContain("A photorealistic photograph");
+    expect(out).toContain("An ordinary, unposed phone photo");
     expect(out).not.toMatch(/\s{2,}/);
     expect(out).not.toContain("undefined");
+  });
+});
+
+describe("buildImagePrompt — first-person view, no invented people (#267)", () => {
+  // The 2026-09-30 production image drew a woman with a backpack beside an
+  // open journal. The prompt never said whose eyes the picture is seen
+  // through, so the model put the journal keeper in the scene. Real renders
+  // (2026-10-01) showed that a "no people" guard at the end of the prompt
+  // still let distant hikers and beachgoers through; only a rule near the
+  // front stopped them. Both clauses must therefore precede the subject.
+  const CAPTION = "met a hiker at the pass";
+  const NARRATIVE =
+    "Wind and Old Snow at the Saddle: Made the saddle at last. I'm watching the snow as much as the sky.";
+  const captioned = buildImagePrompt({ caption: CAPTION, place: "Inyo County, California" });
+  const bare = buildImagePrompt({ narrativeSubject: NARRATIVE, place: "Mono County, California" });
+  const subjectAt = (out: string) => Math.max(out.indexOf(CAPTION), out.indexOf(NARRATIVE));
+
+  test("both paths set the first-person view before the subject", () => {
+    for (const out of [captioned, bare]) {
+      const pov = out.search(/first-person/i);
+      expect(pov).toBeGreaterThan(-1);
+      expect(pov).toBeLessThan(subjectAt(out));
+    }
+  });
+
+  test("the photographer stays behind the camera, and the narrative's 'I' is the photographer", () => {
+    for (const out of [captioned, bare]) {
+      expect(out).toMatch(/behind the camera, not in the picture/);
+      expect(out).toMatch(/"I" in the text below is the photographer/);
+    }
+  });
+
+  test("both paths state the people rule before the subject", () => {
+    for (const out of [captioned, bare]) {
+      const rule = out.search(/nobody is the subject/i);
+      expect(rule).toBeGreaterThan(-1);
+      expect(rule).toBeLessThan(subjectAt(out));
+    }
+  });
+
+  test("the place is deserted, near and far — distant specks count", () => {
+    // Operator decision 2026-10-01: outside the exceptions, no figure of any
+    // size. Renders showed beachgoers and ridge hikers 5-30 px tall.
+    expect(captioned).toMatch(/the place is deserted, with no one else in sight, near or far/i);
+  });
+
+  test("people the note mentions are not drawn", () => {
+    // "met a hiker at the pass" drew the hiker until this clause existed.
+    expect(captioned).toMatch(/anyone the note mentions has already gone, so draw only the place/i);
+  });
+
+  test("town streets and popular beaches may have only small, far background people", () => {
+    // Operator decisions 2026-10-01: an empty city street looks wrong, and a
+    // busy public beach is treated like a town.
+    for (const out of [captioned, bare]) {
+      expect(out).toMatch(/busy town or city street and a popular public beach/i);
+      expect(out).toMatch(/far in the background are normal, small and not facing the camera/i);
+    }
+  });
+
+  test("the exceptions come after the location, never at the front", () => {
+    // With the town exception at the front (round 4), the model applied it to
+    // mountain passes too and drew hikers on the ridge. After the location it
+    // judges the exception against the actual place.
+    const out = buildImagePrompt({ caption: CAPTION, place: "Inyo County, California" });
+    const exception = out.search(/only exceptions are/i);
+    expect(exception).toBeGreaterThan(out.indexOf("Location:"));
+    expect(exception).toBeGreaterThan(out.search(/the place is deserted/i));
+  });
+
+  test("the end guard forbids posed people, close-up faces and a figure as the subject", () => {
+    const out = buildImagePrompt({ place: "Malibu, California", weatherCode: 0 });
+    expect(out).toMatch(/no posed people, no close-up faces, no figure as the subject/i);
+  });
+
+  test("the prompt never assumes a trail or a field journal", () => {
+    // "while out on the trail" put a trail down the middle of every render,
+    // including a lake camp and a city; "field journal" drew an open notebook
+    // and, on 2026-09-30, the person writing in it.
+    for (const out of [
+      buildImagePrompt({ caption: "coffee in the old town", place: "Reykjavík, Iceland" }),
+      buildImagePrompt({ narrativeSubject: "Fog at the point: grey and still." }),
+    ]) {
+      expect(out).not.toMatch(/trail/i);
+      expect(out).not.toMatch(/field journal/i);
+    }
   });
 });

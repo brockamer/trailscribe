@@ -480,6 +480,7 @@ describe("generateNarrative — bare post voice and time grounding (#240)", () =
       weather: "Clear · 66°F",
       localTime: "21:17 — night",
       isNight: true,
+      clockKnown: true,
       env,
     });
     expect(user).toMatch(/^Local time: 21:17 — night/m);
@@ -493,6 +494,7 @@ describe("generateNarrative — bare post voice and time grounding (#240)", () =
       weather: "Clear · 66°F",
       localTime: "21:17 — night",
       isNight: true,
+      clockKnown: true,
       env,
     });
     expect(user.toLowerCase()).toContain("dark");
@@ -505,6 +507,7 @@ describe("generateNarrative — bare post voice and time grounding (#240)", () =
       lon: -118.7,
       localTime: "13:05 — midday",
       isNight: false,
+      clockKnown: true,
       env,
     });
     expect(user).toMatch(/^Local time: 13:05 — midday/m);
@@ -534,6 +537,18 @@ describe("generateNarrative — bare post voice and time grounding (#240)", () =
       localTime: "night",
       isNight: true,
       clockKnown: false,
+      env,
+    });
+    expect(user).toMatch(/^Local time: night \(clock time unknown — state no clock time\)$/m);
+  });
+
+  test("a caller that omits clockKnown gets the safe line — no clock time asserted (#274)", async () => {
+    const { user } = await promptsFor({
+      placeName: "Malibu, CA",
+      lat: 34.0,
+      lon: -118.7,
+      localTime: "night",
+      isNight: true,
       env,
     });
     expect(user).toMatch(/^Local time: night \(clock time unknown — state no clock time\)$/m);

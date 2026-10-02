@@ -44,8 +44,10 @@ export interface NarrativeInput {
   /** True when `localTime` is in the night band; adds an explicit darkness line. */
   isNight?: boolean;
   /**
-   * False when `localTime` is a period only. The prompt line then tells the
-   * model no clock time is known, so it cannot invent one (#274).
+   * True only when `localTime` is a civil clock time. Otherwise (false or
+   * omitted) the prompt line tells the model no clock time is known, so it
+   * cannot invent one (#274). Omitted defaults to unknown on purpose: a caller
+   * that forgets the flag must not turn an estimate back into a stated time.
    */
   clockKnown?: boolean;
   env: Env;
@@ -289,9 +291,9 @@ function buildUserPrompt(input: NarrativeInput): string {
 
   if (input.localTime !== undefined && input.localTime.length > 0) {
     lines.push(
-      input.clockKnown === false
-        ? `Local time: ${input.localTime} (clock time unknown — state no clock time)`
-        : `Local time: ${input.localTime}`,
+      input.clockKnown === true
+        ? `Local time: ${input.localTime}`
+        : `Local time: ${input.localTime} (clock time unknown — state no clock time)`,
     );
     if (input.isNight) lines.push("It is dark outside: no daylight, sunset or evening light.");
   }

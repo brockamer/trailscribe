@@ -1,9 +1,9 @@
 # TrailScribe — Product Requirements Document
 
-**Status:** Signed off 2026-04-22. Phase 0 (scaffolding) shipped 2026-04-24. Phase 1 (α-MVP, six commands end-to-end on production) shipped 2026-04-26 with the prod-traffic close gate (#111) verified 2026-04-27. **Currently:** Phase 2 — extended commands. Plan: `plans/phase-2-extended-commands.md`.
+**Status:** Signed off 2026-04-22. Phase 0 (scaffolding) shipped 2026-04-24. Phase 1 (α-MVP, six commands end-to-end on production) shipped 2026-04-26 with the prod-traffic close gate (#111) verified 2026-04-27. Phase 2 (eight extended commands + `!postimg`, epic #98) shipped 2026-04-29. Mode B tracking sessions (#168) shipped 2026-05-04, hardening epic #187 work complete 2026-05-18 (closed 2026-09-11). **Currently:** milestone #10, _Field reliability_, closing with #226 and #224. **Next:** `!call` (#152, Phase 4b), then Phase 3 storage migration (epic #99). No active plan; shipped plans are archived under `plans/archived/` and `docs/superpowers/plans/archived/`.
 **Owner:** Brock Amer
-**Updated:** 2026-09-24 (§8 D11 added — published location precision, `JOURNAL_LOCATION_PRECISION`, #223). Previous: 2026-09-14 (§6 Cost Model amended — image-path cost ceiling raised to $0.20/image; text-path target and ceiling unchanged. Operator sign-off per CLAUDE.md "PRD is canonical".)
-**Scope:** α-MVP (Phase 1) is the canonical scope of this document. Phase 2 (the eight deferred commands) is detailed in `plans/phase-2-extended-commands.md`; Phase 3+ referenced here for alignment, not specified in full.
+**Updated:** 2026-10-02 (documentation catch-up, #226 and #224 — this header; archived plan paths; §8 Override cost-per-1K corrected; `wrangler.toml` named as the source of ledger pricing). Previous: 2026-10-02 (§8 D11, env gate on the webhook path, #212); 2026-10-01 (§LLM configuration — narrative model switched to Opus 5.5, #263; every LLM call sends `max_tokens`, #265); 2026-09-24 (§8 D11 added — published location precision, `JOURNAL_LOCATION_PRECISION`, #223); 2026-09-14 (§6 Cost Model amended — image-path cost ceiling raised to $0.20/image; text-path target and ceiling unchanged. Operator sign-off per CLAUDE.md "PRD is canonical".)
+**Scope:** α-MVP (Phase 1) is the canonical scope of this document. Phase 2 (the eight deferred commands) is detailed in `plans/archived/2026-04/phase-2-extended-commands.md`; Phase 3+ referenced here for alignment, not specified in full.
 
 ---
 
@@ -36,7 +36,7 @@ TrailScribe is an AI-native serverless agent that transforms satellite messages 
 ### Non-goals (MVP)
 
 - No web dashboard, no photo upload, no multi-user/team features, no SOS integration, no voice, no offline-device logic.
-- No `!where`, `!weather`, `!drop`, `!brief`, `!ai`, `!camp`, `!share`, `!blast` commands during α-MVP. All eight deferred to Phase 2 (see §2 deferrals table and `plans/phase-2-extended-commands.md`).
+- No `!where`, `!weather`, `!drop`, `!brief`, `!ai`, `!camp`, `!share`, `!blast` commands during α-MVP. All eight deferred to Phase 2 (see §2 deferrals table and `plans/archived/2026-04/phase-2-extended-commands.md`).
 - No Pipedream / n8n / generic deploy. Workers-only for α.
 - No non-inReach device support. Architecture is adapter-based; other devices deferred.
 
@@ -57,7 +57,7 @@ TrailScribe is an AI-native serverless agent that transforms satellite messages 
 
 ### Explicit deferrals (with reason)
 
-The eight commands deferred from α-MVP all ship in **Phase 2** (epic #98) — see `plans/phase-2-extended-commands.md` for sequencing and per-command acceptance. The "why deferred" column captures why each was _not_ in α-MVP; the "Phase 2 shape" column notes how Phase 2 absorbs the original concern. Earlier versions of this table split these across Phases 2/3/4 by complexity; that split has been collapsed into a single Phase 2 with internal sequencing because the transport boundary (Workers + KV + same orchestrator) is identical for all eight.
+The eight commands deferred from α-MVP all ship in **Phase 2** (epic #98) — see `plans/archived/2026-04/phase-2-extended-commands.md` for sequencing and per-command acceptance. The "why deferred" column captures why each was _not_ in α-MVP; the "Phase 2 shape" column notes how Phase 2 absorbs the original concern. Earlier versions of this table split these across Phases 2/3/4 by complexity; that split has been collapsed into a single Phase 2 with internal sequencing because the transport boundary (Workers + KV + same orchestrator) is identical for all eight.
 
 | Command / feature  | Deferred to | Why deferred from α                                                                                                                                      | Phase 2 shape                                                                                                                                      |
 | ------------------ | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -106,16 +106,16 @@ Endorsed by the deep research report and consistent with the original engineerin
 ┌─────────────────────────────────────────────────────────────────┐
 │  Layer 1 — Inbound Gateway                                      │
 │  Cloudflare Worker (Hono) — POST /garmin/ipc                    │
-│  • Verify bearer token (shared secret)                          │
+│  • Verify X-Outbound-Auth-Token (static shared secret, D1)      │
 │  • Parse Garmin Event Schema V2/V3                              │
-│  • Enforce IMEI allowlist                                        │
+│  • Enforce IMEI allowlist                                       │
 │  • Idempotency check (KV) — short-circuit on duplicate          │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │  Layer 2 — Command Processor                                    │
 │  parseCommand(freeText) → ParsedCommand                         │
-│  • Salvaged from existing src/agent/grammar.ts (with bugfixes)  │
+│  • Salvaged from pre-rewrite src/agent/grammar.ts (bugfixed)    │
 │  • Typed discriminated union                                    │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
@@ -135,28 +135,29 @@ Endorsed by the deep research report and consistent with the original engineerin
 │  • publish/github-pages.ts  (GitHub Contents API)               │
 │  • geocode.ts        (Nominatim, cached 24h)                    │
 │  • weather.ts        (Open-Meteo, cached 1h)                    │
-│  • ipc-inbound.ts    (Garmin POST /Messaging.svc)               │
+│  • garmin-ipc-inbound.ts (POST /api/Messaging/Message)          │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │  Layer 5 — Outbound Reply                                       │
-│  Garmin IPC Inbound /Messaging.svc (X-API-Key auth)             │
+│  Garmin IPC Inbound /api/Messaging/Message (X-API-Key auth)     │
 │  α: on failure, log degraded_reply (no email-fallback per D9)   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### KV namespaces (α-MVP)
+### KV namespaces
 
-| Binding          | Purpose                                                                      | Key pattern                              | TTL             |
-| ---------------- | ---------------------------------------------------------------------------- | ---------------------------------------- | --------------- |
-| `TS_IDEMPOTENCY` | Dedup processed msgIds + op-level checkpoints                                | `idem:<key>` / `op:<key>:<op>`           | 48h             |
-| `TS_LEDGER`      | Monthly usage (req count, tokens, USD)                                       | `ledger:<YYYY-MM>`                       | —               |
-| `TS_CONTEXT`     | Per-IMEI rolling window (last 5 positions/messages) for narrative continuity | `ctx:<imei>`                             | 30d             |
-| `TS_CACHE`       | Geocode + weather cache                                                      | `geo:<lat:4,lon:4>` / `wx:<lat:2,lon:2>` | geo 24h / wx 1h |
+| Binding          | Purpose                                                                                            | Key pattern                                                                                         | TTL                   |
+| ---------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- |
+| `TS_IDEMPOTENCY` | Message record per composite key (§5), with op-level checkpoints inside it; in-flight image marker | `idem:<key>` / `imgpend:<key>`                                                                      | 48h                   |
+| `TS_LEDGER`      | Monthly and daily usage (req count, tokens, USD; separate image bucket)                            | `ledger:<YYYY-MM>` / `ledger:<YYYY-MM-DD>`                                                          | monthly — / daily 8d  |
+| `TS_CONTEXT`     | Per-IMEI rolling window (last 5 positions/messages); FieldLog for `!drop` / `!brief`               | `ctx:<imei>` / `fieldlog:<imei>`                                                                    | 30d                   |
+| `TS_CACHE`       | Geocode + weather cache                                                                            | `geo:<lat:4>:<lon:4>` / `wx:v2:<lat:2>:<lon:2>`                                                     | geo 24h / wx 1h       |
+| `TS_TRACKS`      | Mode B tracking-session state and published-session records                                        | `track_start:<imei>` / `track_interval:<imei>` / `track_events:<imei>` / `track:<imei>:<sessionId>` | 24h / 24h / 7d / 365d |
 
 ### Phased evolution (for alignment beyond α)
 
-- **Phase 2 — Extended commands + `!postimg`.** Ship the eight α-deferred commands (see §2 deferrals table) **and `!postimg`** (image-augmented journal post; folded in 2026-04-28 from #125). Plan: `plans/phase-2-extended-commands.md`; epic #98. Single-operator scope. Storage stays on KV; FieldLog is per-IMEI bounded list (P2-01). Address book is env-var JSON. One new external dependency: an image-gen provider (Replicate Flux schnell locked for the first cut; provider-upgrade decision filed as P2-18b conditional on field-quality assessment). Active phase as of 2026-04-28.
+- **Phase 2 — Extended commands + `!postimg`.** Ship the eight α-deferred commands (see §2 deferrals table) **and `!postimg`** (image-augmented journal post; folded in 2026-04-28 from #125). Plan: `plans/archived/2026-04/phase-2-extended-commands.md`; epic #98. Single-operator scope. Storage stays on KV; FieldLog is per-IMEI bounded list (P2-01). Address book is env-var JSON. One new external dependency: an image-gen provider (Replicate Flux schnell locked for the first cut; provider-upgrade decision filed as P2-18b conditional on field-quality assessment — since swapped to `flux-2-max`, #235). Complete 2026-04-29.
 - **Phase 3 — Storage migration (DO + D1).** Migrate `TS_IDEMPOTENCY` → Durable Object (#153, serialized replay-storm handling); migrate `TS_CONTEXT` and FieldLog → Durable Objects (#154, strong consistency for rapid message sequences); migrate `TS_LEDGER` → D1 (#155, SQL analytics, retention beyond a month, budget alerts). `TS_CACHE` stays on KV. Cloudflare Queues for async retries deferred to a follow-up; not blocking the migration. Epic #99.
 - **Phase 4+ — Media.** R2 + Image Resizing for _operator-uploaded_ photos (schema V4 media events). Image _generation_ (`!postimg`, #125) was folded forward into Phase 2 — it commits binary images directly into the journal repo and does not need R2.
 
@@ -167,15 +168,15 @@ Endorsed by the deep research report and consistent with the original engineerin
 - **HTTP framework:** Hono (portable across Workers/Node/Bun; replaces Express from existing code)
 - **Validation:** zod (env schema, request body validation)
 - **Testing:** Vitest + Miniflare (replaces Jest — Workers-native)
-- **Build/Deploy:** Wrangler via `deploy-cloudflare.yml` GitHub Action
+- **Build/Deploy:** Wrangler via the `.github/workflows/deploy-cloudflare.yml` GitHub Action
 
 ### Salvaged from existing repo
 
-Per Verdict B in onboarding (preserved):
+Per Verdict B in onboarding (preserved). The source paths on the left are from the pre-rewrite repo and no longer exist.
 
 - `src/agent/grammar.ts` → `src/core/grammar.ts` (subset commands; fix `!mail subj` regex)
 - `ParsedCommand` discriminated union → `src/core/types.ts`
-- `src/tools/links.ts` → `src/core/links.ts`
+- `src/tools/links.ts` → `src/core/links.ts`, deleted in #95 (Google Maps links are built inline in `src/core/commands/where.ts`, `share.ts` and `blast.ts`; MapShare URLs come from `MAPSHARE_BASE` + `MAPSHARE_KEY`)
 - Zod env-schema pattern → `src/env.ts` (expanded)
 - All `docs/*` (updated for Workers target; n8n/Pipedream docs move to `docs/archive/`)
 - Wiring diagram (update to show Workers instead of generic "webhook")
@@ -250,7 +251,7 @@ Even with a valid token, we verify incoming `imei` is in `IMEI_ALLOWLIST` env va
 - **Timestamp:** `/Date(ms)/` format, must be now-ish (not future, not before 2011).
 - **Response:** `{ "count": N }` on 200 OK. Error responses carry `{ Code, Message, Description, URL, IMEI }`.
 
-**Reply-delivery failure.** Per D9 (§8), email-fallback to the device is **permanently skipped** under the single-operator assumption (`plans/phase-2-extended-commands.md`). If IPC Inbound returns 5xx/429 after 3 retries with exponential backoff, we write a ledger entry `reply_delivery: failed` and return 200 OK to Garmin. Side effects (blog post, email, task) still persist — only the reply confirmation failed. Surfaced via `!cost` and log inspection.
+**Reply-delivery failure.** Per D9 (§8), email-fallback to the device is **permanently skipped** under the single-operator assumption (`plans/archived/2026-04/phase-2-extended-commands.md`). If IPC Inbound returns 5xx/429 after 3 retries with exponential backoff, we write a ledger entry `reply_delivery: failed` and return 200 OK to Garmin. Side effects (blog post, email, task) still persist — only the reply confirmation failed. Surfaced via `!cost` and log inspection.
 
 ### Retry / failure handling
 
@@ -360,6 +361,8 @@ Image-bearing commands sit on the separate image-path budget above:
 | ---------- | ------------ | --------------- | ----------------- | -------- | --------------------------------- |
 | `!postimg` | $0.020–0.030 | ≤$0.20 (capped) | $0 (GitHub Pages) | $0.001   | **≤$0.23 typical, $0.28 ceiling** |
 
+The LLM column is the original α estimate. Measured on Opus 5.5 (2026-09-30, #263): about $0.012 per `!post` narrative and $0.021 per track narrative (§LLM configuration).
+
 **Headline:** on the text path `!post` dominates cost, and non-AI commands are effectively free. On the image path the image-generation call dominates by an order of magnitude, so model selection — not prompt length — is the cost lever.
 
 ### LLM configuration
@@ -373,7 +376,8 @@ Image-bearing commands sit on the separate image-path budget above:
 - **Rollback:** set `LLM_MODEL` to `anthropic/claude-sonnet-4-6` and `LLM_INPUT_COST_PER_1K` / `LLM_OUTPUT_COST_PER_1K` to `0.003` / `0.015` in all three `wrangler.toml` blocks. Nothing else; the raised caps are harmless on a non-reasoning model.
 - **Output mode:** JSON mode with schema `{ title: string ≤60ch, haiku: string ≤80ch, body: string ≤500ch }`.
 - **Prompt:** Concise system prompt with explicit length directives ("Respond in under 150 tokens", "haiku must be exactly 5-7-5").
-- **Target token use:** ≤300 tokens per `!post` narrative (prompt + response). Actual $/tx depends on the current model's pricing — will be set in env (`LLM_INPUT_COST_PER_1K`, `LLM_OUTPUT_COST_PER_1K`) from the OpenRouter or model-provider pricing page at deploy time and updated when prices change. **Design assumes the narrative-LLM cost remains under $0.05/tx on the text path ($0.08/tx hard ceiling on the image path — see §6); alert if drift above $0.03 sustained.**
+- **Target token use:** the α target was ≤300 tokens per `!post` narrative (prompt + response) on a non-reasoning model. On Opus 5.5 a call measures about 1,100, reasoning tokens included (above, #263); the daily budget (§8 D4) and `ESTIMATED_POST_TOKENS` use that figure. **Design assumes the narrative-LLM cost remains under $0.05/tx, with a hard ceiling of $0.08 for the narrative call on either path (§6); alert if drift above $0.03 sustained.**
+- **Ledger pricing — `wrangler.toml` is the source.** `LLM_INPUT_COST_PER_1K` and `LLM_OUTPUT_COST_PER_1K` in the three `[vars]` blocks of `wrangler.toml` (dev, staging, production) are the authoritative rates; the ledger reads them at runtime to price every call. Set them from the model provider's pricing page when the model or its price changes. Only `wrangler.toml` is live. Values quoted in this document are a recipe (the rollback above) or a dated record of what a past commit pinned (§8 Override), never the current rate — read that from `wrangler.toml`.
 
 ### Token accounting (ground truth)
 
@@ -455,13 +459,14 @@ Image-bearing commands sit on the separate image-path budget above:
 
 ### Override (2026-04-22)
 
-- **Model:** `claude-sonnet-4-6` (reverted from the brief `gpt-5-mini` swap after empirical burn-in failure on 2026-04-25 — see §LLM configuration). Per [#31](https://github.com/brockamer/trailscribe/issues/31), routed through OpenRouter as `anthropic/claude-sonnet-4-6`; env var is `LLM_MODEL` (provider-neutral). Cost per 1K pinned in `wrangler.toml`: `0.00015` input, `0.0006` output (OpenRouter pass-through pricing). Superseded by [#263](https://github.com/brockamer/trailscribe/issues/263): `anthropic/claude-opus-5.5`, see §LLM configuration.
+- **Model:** `claude-sonnet-4-6` (reverted from the brief `gpt-5-mini` swap after empirical burn-in failure on 2026-04-25 — see §LLM configuration). Per [#31](https://github.com/brockamer/trailscribe/issues/31), routed through OpenRouter as `anthropic/claude-sonnet-4-6`; env var is `LLM_MODEL` (provider-neutral). Superseded by [#263](https://github.com/brockamer/trailscribe/issues/263): `anthropic/claude-opus-5.5`, see §LLM configuration.
+  > **Corrected 2026-10-02 ([#224](https://github.com/brockamer/trailscribe/issues/224)).** This entry used to read "Cost per 1K pinned in `wrangler.toml`: `0.00015` input, `0.0006` output (OpenRouter pass-through pricing)". Those figures were never deployed: no commit on any ref of `wrangler.toml` ever held them (`git log --all -S`). The pin went from `"0.00"` placeholders (`77be978`) to `0.003` / `0.015`, the Sonnet 4.6 rate (`b098eb7`), and to `0.004` / `0.02` for Opus 5.5 (#263). This corrects the record; it is not a price change, and recorded ledger costs were always right because the ledger reads `wrangler.toml`, not this document. For the rates in use, see the `wrangler.toml` [vars] blocks (§LLM configuration).
 
 ### Resolved 2026-04-22 (replaces "Still open" section below)
 
 - **D5. Blog platform:** **GitHub Pages + markdown commits via GitHub Contents API.** Journal lives in a dedicated repo (e.g., `brockamer/trailscribe-journal`); Worker commits `_posts/YYYY-MM-DD-<slug>.md` with frontmatter. Theme TBD at Phase 0 (default: Jekyll `minima` for zero-config, swap to Hugo later if desired).
 - **D8. Outbound email:** **Resend.** `RESEND_API_KEY` secret; `RESEND_FROM_EMAIL=trailscribe@resend.dev` for α, move to own-domain later. Replaces all Gmail OAuth bindings in §3.
-- **D9. Email-fallback reply:** **permanently skipped** under the single-operator assumption. If IPC Inbound returns 5xx after 3 retries (1s/4s/16s backoff), write ledger entry `reply_delivery: failed` and return 200 OK to Garmin. Side effects (blog post, email, task) still persist. (Reconciled 2026-04-29 per `plans/phase-2-extended-commands.md` — was previously noted as "revisit in Phase 2.")
+- **D9. Email-fallback reply:** **permanently skipped** under the single-operator assumption. If IPC Inbound returns 5xx after 3 retries (1s/4s/16s backoff), write ledger entry `reply_delivery: failed` and return 200 OK to Garmin. Side effects (blog post, email, task) still persist. (Reconciled 2026-04-29 per `plans/archived/2026-04/phase-2-extended-commands.md` — was previously noted as "revisit in Phase 2.")
 
 ### Resolved 2026-04-29
 
@@ -564,6 +569,6 @@ The 2026-04-29 structural reshape introduced Phase 2.5 (UX polish, decoupled fro
 ## 10. Approval
 
 **Reviewer:** Brock Amer
-**Sign-off action:** Answer D1–D9 in §8, with any edits to the PRD. Once sign-off is recorded (in chat or by editing this file), we proceed to Phase 0 scaffolding plan (`plans/phase-0-scaffolding.md`).
+**Sign-off action:** Answer D1–D9 in §8, with any edits to the PRD. Once sign-off is recorded (in chat or by editing this file), we proceed to Phase 0 scaffolding plan (`plans/archived/2026-04/phase-0-scaffolding.md`).
 
 **Out of scope for this PRD:** code. No implementation until sign-off.

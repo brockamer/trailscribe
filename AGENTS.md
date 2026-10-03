@@ -55,9 +55,9 @@ src/
     types.ts                    # ParsedCommand, GarminEvent, TrailContext, LedgerEntry
     orchestrator.ts             # dispatch + checkpointed sub-ops + budget gate
     narrative.ts                # LLM JSON-mode → { title, haiku, body }
+    idempotency.ts              # composite key; idem:<key> record; withCheckpoint per-op replay guard
     context.ts                  # rolling window of recent positions/messages per IMEI
     ledger.ts                   # KV-backed ledger; real LLM token usage (post + track cost buckets, #173)
-    links.ts                    # Google Maps + MapShare link builders (salvaged)
     tracking.ts                 # Mode B tracking sessions: mc=12 Stop Track → KML pull → post (#168)
     track-metrics.ts            # distance/duration/elevation rollups from MapShare KML points
     units.ts                    # imperial rendering helpers (#195)
@@ -65,7 +65,9 @@ src/
     reply.ts                    # 320-char reply formatter + cost suffix
     fieldlog.ts                 # bounded per-IMEI journal entries (!drop / !brief)
     addressbook.ts              # ADDRESS_BOOK_JSON alias resolution (!share / !blast)
-    imageprompt.ts              # image-gen prompt builder (!postimg / !snapimg)
+    imageprompt.ts              # image-gen prompt builder (!postimg)
+    image-pending.ts            # in-flight Replicate prediction marker: resume + concurrency lease
+    localtime.ts                # civil local time of day from the Open-Meteo offset (#274)
     commands/                   # per-command handlers (one module per !command)
   app.ts                        # Hono app: routes GET / , GET /health, POST /garmin/ipc;
                                 #   bearer auth; env gate (#212); IMEI allowlist gate; idempotency; dispatch
@@ -76,7 +78,9 @@ src/
     publish/github-pages.ts     # commit markdown to journal repo via GitHub Contents API (was publish/posthaven.ts)
     location/geocode.ts         # Nominatim, cached
     location/weather.ts         # Open-Meteo, cached
+    location/mapshare.ts        # MapShare KML feed fetch + parse (Mode B)
     ai/openrouter.ts            # OpenRouter wrapper; real usage
+    ai/replicate.ts             # Replicate image generation (!postimg)
     storage/kv.ts               # typed KV helpers
     logging/worker-logs.ts      # structured JSON logfmt
 tests/                          # Vitest + Miniflare; fixtures/ for Garmin events
@@ -205,5 +209,5 @@ plans/                          # per-milestone sprint plans (none active; all a
 5. `materials/Garmin IPC Inbound.txt` — Inbound API contract (X-API-Key, 160-char limit, error codes)
 6. `src/core/grammar.ts` — command parser (note: `src/agent/` does not exist)
 7. `docs/field-commands.md` — command UX reference (operator-facing)
-8. `docs/superpowers/specs/archived/2026-09/2026-05-01-tracking-session-artifacts-design.md` — Mode B tracking design (archived 2026-09-13; plan alongside it under `plans/archived/2026-09/`)
+8. `docs/superpowers/specs/archived/2026-09/2026-05-01-tracking-session-artifacts-design.md` — Mode B tracking design (archived 2026-09-13; plan at `docs/superpowers/plans/archived/2026-09/2026-05-03-tracking-session-artifacts.md`)
 9. `docs/resume-2026-09.md` — state of play after the 2026-05 → 2026-09 dormancy

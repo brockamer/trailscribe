@@ -139,7 +139,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 - `GARMIN_IPC_INBOUND_API_KEY` — `X-API-Key` for Garmin IPC Inbound
 - `GARMIN_IPC_INBOUND_BASE_URL` — per-tenant; **host only, no path** (e.g. `https://ipcinbound.inreachapp.com`). Code appends `/api/Messaging/Message`. Found in Garmin Explore → IPC → Inbound Settings → "Inbound URL".
 - `IMEI_ALLOWLIST` — comma-sep accepted IMEIs (defense-in-depth)
-- `LLM_API_KEY` — OpenRouter API key (provider-neutral; supersedes `OPENAI_API_KEY` per #31)
+- `LLM_API_KEY` — OpenRouter API key (provider-neutral; supersedes `OPENAI_API_KEY` per #31). Two keys since 2026-10-03: prod on the production Worker only, dev in `.dev.vars` and on staging. Set with `scripts/set-llm-key.sh dev|prod`, never by pasting the value into a command.
 - `TODOIST_API_TOKEN`
 - `RESEND_API_KEY` — outbound email transactional
 - `GITHUB_JOURNAL_TOKEN` — fine-grained PAT with `contents:write` on journal repo

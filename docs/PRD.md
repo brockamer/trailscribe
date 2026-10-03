@@ -1,6 +1,6 @@
 # TrailScribe — Product Requirements Document
 
-**Status:** Signed off 2026-04-22. Phase 0 (scaffolding) shipped 2026-04-24. Phase 1 (α-MVP, six commands end-to-end on production) shipped 2026-04-26 with the prod-traffic close gate (#111) verified 2026-04-27. Phase 2 (eight extended commands + `!postimg`, epic #98) shipped 2026-04-29. Mode B tracking sessions (#168) shipped 2026-05-04, hardening epic #187 work complete 2026-05-18 (closed 2026-09-11). **Currently:** milestone #10, _Field reliability_, closing 2026-10-02. **Next:** `!call` (#152, Phase 4b), then Phase 3 storage migration (epic #99). No active plan; shipped plans are archived under `plans/archived/` and `docs/superpowers/plans/archived/`.
+**Status:** Signed off 2026-04-22. Phase 0 (scaffolding) shipped 2026-04-24. Phase 1 (α-MVP, six commands end-to-end on production) shipped 2026-04-26 with the prod-traffic close gate (#111) verified 2026-04-27. Phase 2 (eight extended commands + `!postimg`, epic #98) shipped 2026-04-29. Mode B tracking sessions (#168) shipped 2026-05-04, hardening epic #187 work complete 2026-05-18 (closed 2026-09-11). **Currently:** milestone #10, _Field reliability_, closing with #226 and #224. **Next:** `!call` (#152, Phase 4b), then Phase 3 storage migration (epic #99). No active plan; shipped plans are archived under `plans/archived/` and `docs/superpowers/plans/archived/`.
 **Owner:** Brock Amer
 **Updated:** 2026-10-02 (documentation catch-up, #226 and #224 — this header; archived plan paths; §8 Override cost-per-1K corrected; `wrangler.toml` named as the source of ledger pricing). Previous: 2026-10-02 (§8 D11, env gate on the webhook path, #212); 2026-10-01 (§LLM configuration — narrative model switched to Opus 5.5, #263; every LLM call sends `max_tokens`, #265); 2026-09-24 (§8 D11 added — published location precision, `JOURNAL_LOCATION_PRECISION`, #223); 2026-09-14 (§6 Cost Model amended — image-path cost ceiling raised to $0.20/image; text-path target and ceiling unchanged. Operator sign-off per CLAUDE.md "PRD is canonical".)
 **Scope:** α-MVP (Phase 1) is the canonical scope of this document. Phase 2 (the eight deferred commands) is detailed in `plans/archived/2026-04/phase-2-extended-commands.md`; Phase 3+ referenced here for alignment, not specified in full.
@@ -106,9 +106,9 @@ Endorsed by the deep research report and consistent with the original engineerin
 ┌─────────────────────────────────────────────────────────────────┐
 │  Layer 1 — Inbound Gateway                                      │
 │  Cloudflare Worker (Hono) — POST /garmin/ipc                    │
-│  • Verify bearer token (shared secret)                          │
+│  • Verify X-Outbound-Auth-Token (static shared secret, D1)      │
 │  • Parse Garmin Event Schema V2/V3                              │
-│  • Enforce IMEI allowlist                                        │
+│  • Enforce IMEI allowlist                                       │
 │  • Idempotency check (KV) — short-circuit on duplicate          │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
@@ -135,24 +135,25 @@ Endorsed by the deep research report and consistent with the original engineerin
 │  • publish/github-pages.ts  (GitHub Contents API)               │
 │  • geocode.ts        (Nominatim, cached 24h)                    │
 │  • weather.ts        (Open-Meteo, cached 1h)                    │
-│  • ipc-inbound.ts    (Garmin POST /Messaging.svc)               │
+│  • garmin-ipc-inbound.ts (POST /api/Messaging/Message)          │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │  Layer 5 — Outbound Reply                                       │
-│  Garmin IPC Inbound /Messaging.svc (X-API-Key auth)             │
+│  Garmin IPC Inbound /api/Messaging/Message (X-API-Key auth)     │
 │  α: on failure, log degraded_reply (no email-fallback per D9)   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### KV namespaces (α-MVP)
+### KV namespaces
 
-| Binding          | Purpose                                                                      | Key pattern                              | TTL             |
-| ---------------- | ---------------------------------------------------------------------------- | ---------------------------------------- | --------------- |
-| `TS_IDEMPOTENCY` | Dedup processed msgIds + op-level checkpoints                                | `idem:<key>` / `op:<key>:<op>`           | 48h             |
-| `TS_LEDGER`      | Monthly usage (req count, tokens, USD)                                       | `ledger:<YYYY-MM>`                       | —               |
-| `TS_CONTEXT`     | Per-IMEI rolling window (last 5 positions/messages) for narrative continuity | `ctx:<imei>`                             | 30d             |
-| `TS_CACHE`       | Geocode + weather cache                                                      | `geo:<lat:4,lon:4>` / `wx:<lat:2,lon:2>` | geo 24h / wx 1h |
+| Binding          | Purpose                                                                                            | Key pattern                                                                                         | TTL                   |
+| ---------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- |
+| `TS_IDEMPOTENCY` | Message record per composite key (§5), with op-level checkpoints inside it; in-flight image marker | `idem:<key>` / `imgpend:<key>`                                                                      | 48h                   |
+| `TS_LEDGER`      | Monthly and daily usage (req count, tokens, USD; separate image bucket)                            | `ledger:<YYYY-MM>` / `ledger:<YYYY-MM-DD>`                                                          | monthly — / daily 8d  |
+| `TS_CONTEXT`     | Per-IMEI rolling window (last 5 positions/messages); FieldLog for `!drop` / `!brief`               | `ctx:<imei>` / `fieldlog:<imei>`                                                                    | 30d                   |
+| `TS_CACHE`       | Geocode + weather cache                                                                            | `geo:<lat:4>:<lon:4>` / `wx:v2:<lat:2>:<lon:2>`                                                     | geo 24h / wx 1h       |
+| `TS_TRACKS`      | Mode B tracking-session state and published-session records                                        | `track_start:<imei>` / `track_interval:<imei>` / `track_events:<imei>` / `track:<imei>:<sessionId>` | 24h / 24h / 7d / 365d |
 
 ### Phased evolution (for alignment beyond α)
 
@@ -376,7 +377,7 @@ The LLM column is the original α estimate. Measured on Opus 5.5 (2026-09-30, #2
 - **Output mode:** JSON mode with schema `{ title: string ≤60ch, haiku: string ≤80ch, body: string ≤500ch }`.
 - **Prompt:** Concise system prompt with explicit length directives ("Respond in under 150 tokens", "haiku must be exactly 5-7-5").
 - **Target token use:** the α target was ≤300 tokens per `!post` narrative (prompt + response) on a non-reasoning model. On Opus 5.5 a call measures about 1,100, reasoning tokens included (above, #263); the daily budget (§8 D4) and `ESTIMATED_POST_TOKENS` use that figure. **Design assumes the narrative-LLM cost remains under $0.05/tx, with a hard ceiling of $0.08 for the narrative call on either path (§6); alert if drift above $0.03 sustained.**
-- **Ledger pricing — `wrangler.toml` is the source.** `LLM_INPUT_COST_PER_1K` and `LLM_OUTPUT_COST_PER_1K` in the three `[vars]` blocks of `wrangler.toml` (dev, staging, production) are the authoritative rates; the ledger reads them at runtime to price every call. Set them from the model provider's pricing page when the model or its price changes. This document deliberately does not repeat the current values, so a price change cannot leave a stale copy here; the rollback values above are a recipe, not a record of what is deployed.
+- **Ledger pricing — `wrangler.toml` is the source.** `LLM_INPUT_COST_PER_1K` and `LLM_OUTPUT_COST_PER_1K` in the three `[vars]` blocks of `wrangler.toml` (dev, staging, production) are the authoritative rates; the ledger reads them at runtime to price every call. Set them from the model provider's pricing page when the model or its price changes. Only `wrangler.toml` is live. Values quoted in this document are a recipe (the rollback above) or a dated record of what a past commit pinned (§8 Override), never the current rate — read that from `wrangler.toml`.
 
 ### Token accounting (ground truth)
 

@@ -124,7 +124,7 @@ pulls the session's breadcrumbs from the MapShare KML feed, rolls them up with
 replies with its link. The track narrative does not pass the daily token
 budget gate. Other tracking codes (mc=0, mc=11) are not dispatched; a nonzero
 `status.intervalChange` is latched for refusal hints. Design:
-[`2026-05-01-tracking-session-artifacts-design.md`](superpowers/specs/archived/2026-09/2026-05-01-tracking-session-artifacts-design.md).
+[`superpowers/specs/archived/2026-09/2026-05-01-tracking-session-artifacts-design.md`](superpowers/specs/archived/2026-09/2026-05-01-tracking-session-artifacts-design.md).
 
 ## Data contracts
 

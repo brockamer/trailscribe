@@ -57,9 +57,8 @@ describe("journalLocationPrecision helper (#223)", () => {
     expect(precision(" omit ")).toBe("omit");
   });
 
-  // parseEnv() is not on the request path, so a missing [vars] entry reaches
-  // this helper as undefined. It must fall back to the coarse default, never
-  // to full precision.
+  // If a missing [vars] entry reaches this helper as undefined, it must fall back
+  // to the coarse default, never to full precision.
   test("unset → default 3", () => {
     expect(precision(undefined)).toBe(3);
   });

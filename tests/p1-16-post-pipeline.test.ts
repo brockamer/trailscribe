@@ -14,6 +14,8 @@
  *   - Network failure mid-pipeline: markFailed; error reply delivered;
  *     subsequent retry resumes from the failed step.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { makeApp } from "../src/app.js";
 import { makeTestEnv } from "./helpers/env.js";
@@ -21,6 +23,11 @@ import type { Env } from "../src/env.js";
 import { monthlyTotals } from "../src/core/ledger.js";
 
 import { sendReply } from "../src/adapters/outbound/garmin-ipc-inbound.js";
+
+/** Open-Meteo `timezone=auto` response recorded live 2026-10-02 (#274). */
+const MALIBU_PDT = JSON.parse(
+  readFileSync(join(__dirname, "fixtures/open-meteo/malibu-pdt-2026-10-02.json"), "utf8"),
+) as unknown;
 
 vi.mock("../src/adapters/outbound/garmin-ipc-inbound.js", () => ({
   sendReply: vi.fn().mockResolvedValue({ count: 1 }),
@@ -316,7 +323,11 @@ describe("#124 bare !post — narrative built from metadata, no caption", () => 
     expect(userMsg).toMatch(/^Weather: /m);
   });
 
-  test("bare !post hands the narrative the same local time the image prompt uses (#240)", async () => {
+  async function barePostUserPrompt(
+    weatherBody: unknown,
+    gps: { lat: number; lon: number },
+    ts: number,
+  ): Promise<string> {
     fetchSpy = makeFetchRouter([
       {
         match: (u) => u.includes("nominatim.openstreetmap.org"),
@@ -324,8 +335,7 @@ describe("#124 bare !post — narrative built from metadata, no caption", () => 
       },
       {
         match: (u) => u.includes("api.open-meteo.com"),
-        respond: () =>
-          jsonResponse({ current: { temperature_2m: 19, wind_speed_10m: 6, weather_code: 0 } }),
+        respond: () => jsonResponse(weatherBody),
       },
       {
         match: (u) => u.includes("openrouter.ai"),
@@ -342,13 +352,7 @@ describe("#124 bare !post — narrative built from metadata, no caption", () => 
     ]);
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
 
-    // 05:17Z at 120°W is 21:17 mean solar time — night.
-    await postIpc(
-      envelope("!post", {
-        gps: { lat: 34.03, lon: -120 },
-        ts: Date.UTC(2026, 8, 16, 5, 17),
-      }),
-    );
+    await postIpc(envelope("!post", { gps, ts }));
 
     const orCall = fetchSpy.mock.calls.find(
       (c: unknown[]) => typeof c[0] === "string" && c[0].includes("openrouter.ai"),
@@ -356,8 +360,28 @@ describe("#124 bare !post — narrative built from metadata, no caption", () => 
     const orBody = JSON.parse((orCall![1] as RequestInit).body as string) as {
       messages: Array<{ role: string; content: string }>;
     };
-    const userMsg = orBody.messages.find((m) => m.role === "user")?.content ?? "";
-    expect(userMsg).toMatch(/^Local time: 21:17 — night/m);
+    return orBody.messages.find((m) => m.role === "user")?.content ?? "";
+  }
+
+  test("bare !post states the device's civil clock time — the 2026-10-02 Malibu case (#274)", async () => {
+    // Device timeStamp 1790936886000 = 10:28:06Z = 03:28 PDT. Mean solar time said 02:33.
+    const userMsg = await barePostUserPrompt(
+      MALIBU_PDT,
+      { lat: 34.026, lon: -118.76 },
+      1790936886000,
+    );
+    expect(userMsg).toMatch(/^Local time: 03:28 — night$/m);
+  });
+
+  test("bare !post with no UTC offset from the weather call gets the period only (#274)", async () => {
+    // 05:17Z at 120°W is 21:17 mean solar time — night.
+    const userMsg = await barePostUserPrompt(
+      { current: { temperature_2m: 19, wind_speed_10m: 6, weather_code: 0 } },
+      { lat: 34.03, lon: -120 },
+      Date.UTC(2026, 8, 16, 5, 17),
+    );
+    expect(userMsg).toMatch(/^Local time: night \(clock time unknown/m);
+    expect(userMsg).not.toMatch(/\d{2}:\d{2}/);
   });
 
   test("bare !post with no GPS fix → no-note prompt; minimal user prompt; journal post still produced", async () => {

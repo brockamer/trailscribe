@@ -1,4 +1,5 @@
 import type { Env } from "../../env.js";
+import type { CivilTimeInfo } from "../../core/localtime.js";
 import { log } from "../logging/worker-logs.js";
 
 const OPEN_METEO_BASE = "https://api.open-meteo.com/v1/forecast";
@@ -6,6 +7,8 @@ const CACHE_TTL_SECONDS = 3600;
 const FALLBACK = "weather unavailable";
 
 interface OpenMeteoResponse {
+  utc_offset_seconds?: number;
+  daily?: { sunrise?: string[]; sunset?: string[] };
   current?: {
     temperature_2m?: number;
     wind_speed_10m?: number;
@@ -46,6 +49,12 @@ export async function currentWeather(lat: number, lon: number, env: Env): Promis
 export interface WeatherDetail {
   text: string;
   code?: number;
+  /**
+   * The position's civil UTC offset and that day's sunrise/sunset (#274), from
+   * `timezone=auto` on the same call. Undefined on failure and on cache entries
+   * written before #274 — callers then state no clock time.
+   */
+  civil?: CivilTimeInfo;
 }
 
 export async function currentWeatherDetail(
@@ -65,6 +74,7 @@ export async function currentWeatherDetail(
   const url =
     `${OPEN_METEO_BASE}?latitude=${lat}&longitude=${lon}` +
     `&current=temperature_2m,wind_speed_10m,weather_code` +
+    `&daily=sunrise,sunset&forecast_days=1&timezone=auto` +
     `&temperature_unit=fahrenheit&wind_speed_unit=mph`;
 
   let res: Response;
@@ -99,6 +109,8 @@ export async function currentWeatherDetail(
     return { text: FALLBACK };
   }
   const detail: WeatherDetail = { text: formatted, code: data.current?.weather_code };
+  const civil = civilTime(data);
+  if (civil !== undefined) detail.civil = civil;
   await env.TS_CACHE.put(key, JSON.stringify(detail), { expirationTtl: CACHE_TTL_SECONDS });
   return detail;
 }
@@ -120,12 +132,38 @@ function parseCached(raw: string): WeatherDetail {
       typeof (parsed as WeatherDetail).text === "string"
     ) {
       const d = parsed as WeatherDetail;
-      return { text: d.text, code: typeof d.code === "number" ? d.code : undefined };
+      const detail: WeatherDetail = {
+        text: d.text,
+        code: typeof d.code === "number" ? d.code : undefined,
+      };
+      if (typeof d.civil?.utcOffsetSeconds === "number") detail.civil = d.civil;
+      return detail;
     }
   } catch {
     // legacy bare-string entry — fall through
   }
   return { text: raw };
+}
+
+/**
+ * Offset and sunrise/sunset from a `timezone=auto` response. Open-Meteo gives
+ * the daily times as local ISO (`"2026-10-02T06:50"`); keep the `HH:MM`. An
+ * offset of 0 (Iceland) is real — test the type, never truthiness.
+ */
+function civilTime(data: OpenMeteoResponse): CivilTimeInfo | undefined {
+  if (typeof data.utc_offset_seconds !== "number") return undefined;
+  const civil: CivilTimeInfo = { utcOffsetSeconds: data.utc_offset_seconds };
+  const sunrise = hhmm(data.daily?.sunrise?.[0]);
+  const sunset = hhmm(data.daily?.sunset?.[0]);
+  if (sunrise !== undefined && sunset !== undefined) {
+    civil.sunrise = sunrise;
+    civil.sunset = sunset;
+  }
+  return civil;
+}
+
+function hhmm(iso: string | undefined): string | undefined {
+  return iso === undefined ? undefined : /T(\d{2}:\d{2})/.exec(iso)?.[1];
 }
 
 function formatWeather(data: OpenMeteoResponse): string {

@@ -12,6 +12,8 @@
  *   - !cost breakout: with image_usd_cost > 0, the !cost reply formats both
  *     axes.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { makeApp } from "../src/app.js";
 import { makeTestEnv } from "./helpers/env.js";
@@ -437,8 +439,16 @@ describe("P2-18 !postimg — bare, no caption (#150)", () => {
   });
 });
 
+const MALIBU_PDT = JSON.parse(
+  readFileSync(join(__dirname, "fixtures/open-meteo/malibu-pdt-2026-10-02.json"), "utf8"),
+) as unknown;
+
 describe("P2-18 !postimg — narrative and image share one time of day (#240)", () => {
-  test("bare !postimg: the narrative prompt and the image prompt carry the same local time", async () => {
+  async function runBarePostimg(
+    weatherBody: unknown,
+    gps: { lat: number; lon: number },
+    ts: number,
+  ): Promise<{ narrativeUser: string; image: string }> {
     const seen: { narrative?: string; image?: string } = {};
     fetchSpy = vi.fn(async (url: URL | RequestInfo, init?: RequestInit) => {
       const u = typeof url === "string" ? url : url.toString();
@@ -446,9 +456,7 @@ describe("P2-18 !postimg — narrative and image share one time of day (#240)", 
         return jsonResponse({ address: { locality: "Malibu", state: "California" } });
       }
       if (u.includes("api.open-meteo.com")) {
-        return jsonResponse({
-          current: { temperature_2m: 19, wind_speed_10m: 6, weather_code: 0 },
-        });
+        return jsonResponse(weatherBody);
       }
       if (u.includes("openrouter.ai") || u.includes("/chat/completions")) {
         seen.narrative = init?.body as string;
@@ -485,13 +493,7 @@ describe("P2-18 !postimg — narrative and image share one time of day (#240)", 
     });
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
 
-    // 05:17Z at 120°W is 21:17 mean solar time — night.
-    await postIpc(
-      envelope("!postimg", {
-        gps: { lat: 34.03, lon: -120 },
-        ts: Date.UTC(2026, 8, 16, 5, 17),
-      }),
-    );
+    await postIpc(envelope("!postimg", { gps, ts }));
 
     expect(seen.narrative).toBeDefined();
     expect(seen.image).toBeDefined();
@@ -499,7 +501,29 @@ describe("P2-18 !postimg — narrative and image share one time of day (#240)", 
       (
         JSON.parse(seen.narrative!) as { messages: Array<{ role: string; content: string }> }
       ).messages.find((m) => m.role === "user")?.content ?? "";
-    expect(narrativeUser).toMatch(/^Local time: 21:17 — night/m);
-    expect(seen.image).toContain("21:17 — night");
+    return { narrativeUser, image: seen.image! };
+  }
+
+  test("the 2026-10-02 Malibu case: both prompts carry the device's civil clock time (#274)", async () => {
+    // Device timeStamp 1790936886000 = 10:28:06Z = 03:28 PDT. Mean solar time said 02:33.
+    const { narrativeUser, image } = await runBarePostimg(
+      MALIBU_PDT,
+      { lat: 34.026, lon: -118.76 },
+      1790936886000,
+    );
+    expect(narrativeUser).toMatch(/^Local time: 03:28 — night$/m);
+    expect(image).toContain("Local time: 03:28 — night;");
+  });
+
+  test("no UTC offset from the weather call: both prompts get the period only, no clock time (#274)", async () => {
+    // 05:17Z at 120°W is 21:17 mean solar time — night.
+    const { narrativeUser, image } = await runBarePostimg(
+      { current: { temperature_2m: 19, wind_speed_10m: 6, weather_code: 0 } },
+      { lat: 34.03, lon: -120 },
+      Date.UTC(2026, 8, 16, 5, 17),
+    );
+    expect(narrativeUser).toMatch(/^Local time: night \(clock time unknown/m);
+    expect(narrativeUser).not.toMatch(/\d{2}:\d{2}/);
+    expect(image).toContain("Local time: night;");
   });
 });

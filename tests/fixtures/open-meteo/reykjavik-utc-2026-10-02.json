@@ -1,0 +1,33 @@
+{
+  "latitude": 64.139565,
+  "longitude": -21.971603,
+  "generationtime_ms": 0.10073184967041016,
+  "utc_offset_seconds": 0,
+  "timezone": "Atlantic/Reykjavik",
+  "timezone_abbreviation": "GMT",
+  "elevation": 0.0,
+  "current_units": {
+    "time": "iso8601",
+    "interval": "seconds",
+    "temperature_2m": "\u00b0F",
+    "wind_speed_10m": "mp/h",
+    "weather_code": "wmo code"
+  },
+  "current": {
+    "time": "2026-10-02T22:00",
+    "interval": 900,
+    "temperature_2m": 46.4,
+    "wind_speed_10m": 6.9,
+    "weather_code": 3
+  },
+  "daily_units": {
+    "time": "iso8601",
+    "sunrise": "iso8601",
+    "sunset": "iso8601"
+  },
+  "daily": {
+    "time": ["2026-10-02"],
+    "sunrise": ["2026-10-02T07:39"],
+    "sunset": ["2026-10-02T18:53"]
+  }
+}

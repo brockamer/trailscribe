@@ -34,13 +34,22 @@ export interface NarrativeInput {
   /** Weather summary (P1-10). Optional — omitted prompt when absent. */
   weather?: string;
   /**
-   * Approximate local time of day, e.g. `"21:17 — night"` (#240). Must be the
-   * same value the image prompt receives, so a bare post's text and its image
-   * agree on the hour. Omitted prompt line when absent.
+   * Local time of day from `localTimeOfDay()`: the civil clock time, e.g.
+   * `"03:28 — night"`, or the period alone (`"night"`) when no UTC offset is
+   * known (#274). Must be the same value the image prompt receives, so a bare
+   * post's text and its image agree on the hour (#240). Omitted prompt line
+   * when absent.
    */
   localTime?: string;
   /** True when `localTime` is in the night band; adds an explicit darkness line. */
   isNight?: boolean;
+  /**
+   * True only when `localTime` is a civil clock time. Otherwise (false or
+   * omitted) the prompt line tells the model no clock time is known, so it
+   * cannot invent one (#274). Omitted defaults to unknown on purpose: a caller
+   * that forgets the flag must not turn an estimate back into a stated time.
+   */
+  clockKnown?: boolean;
   env: Env;
 }
 
@@ -109,7 +118,7 @@ const SYSTEM_PROMPT_POST_NO_NOTE = [
   '- "haiku": exactly three lines separated by newlines, in 5/7/5 syllables, ≤ 110 characters total (count strictly — including spaces and newlines). Plain English. No formatting marks. Anchor to observable detail (place, weather, time, terrain).',
   '- "body": ≤ 500 characters. First-person present, like a private journal line, not a weather report. Do not invent activities, feelings, companions, or specifics that are not present in the location or weather context. If context is sparse, keep the body short rather than padding.',
   "- Do not open with coordinates. Describe this moment, not what is typical for the region or season.",
-  '- A "Local time" line, when present, fixes the time of day: make the light and sky agree with it, and never describe daylight, sunset or evening when it says night.',
+  '- A "Local time" line, when present, fixes the time of day: make the light and sky agree with it, and never describe daylight, sunset or evening when it says night. State a clock time only when the Local time line gives one; otherwise name only the part of the day.',
 ].join("\n");
 
 /** Model used when `LLM_MODEL` is empty (#263). */
@@ -281,7 +290,11 @@ function buildUserPrompt(input: NarrativeInput): string {
   }
 
   if (input.localTime !== undefined && input.localTime.length > 0) {
-    lines.push(`Local time: ${input.localTime} (approximate, mean solar time)`);
+    lines.push(
+      input.clockKnown === true
+        ? `Local time: ${input.localTime}`
+        : `Local time: ${input.localTime} (clock time unknown — state no clock time)`,
+    );
     if (input.isNight) lines.push("It is dark outside: no daylight, sunset or evening light.");
   }
 

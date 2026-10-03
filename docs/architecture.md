@@ -80,6 +80,7 @@ suspends the tenant.
 | `src/core/imageprompt.ts`                     | Image-generation prompt for `!postimg`                                                                  |
 | `src/core/image-pending.ts`                   | In-flight Replicate prediction marker: resume a paid prediction, lease against concurrent redelivery    |
 | `src/core/localtime.ts`                       | Civil local time of day from the Open-Meteo offset and sunrise/sunset (#274)                            |
+| `src/core/plaintext.ts`                       | Plain-text prompt sentence and bold-marker strip for `!ai`, `!camp` and `!brief` replies (#271)         |
 | `src/core/context.ts`                         | Per-IMEI rolling window (last 5 events) in `TS_CONTEXT`                                                 |
 | `src/core/fieldlog.ts`                        | Per-IMEI journal entries for `!drop` / `!brief`, in `TS_CONTEXT`                                        |
 | `src/core/addressbook.ts`                     | `ADDRESS_BOOK_JSON` alias resolution for `!share` / `!blast`                                            |

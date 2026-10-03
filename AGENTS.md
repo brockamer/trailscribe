@@ -68,6 +68,7 @@ src/
     imageprompt.ts              # image-gen prompt builder (!postimg)
     image-pending.ts            # in-flight Replicate prediction marker: resume + concurrency lease
     localtime.ts                # civil local time of day from the Open-Meteo offset (#274)
+    plaintext.ts                # plain-text prompt sentence + bold-marker strip for !ai/!camp/!brief replies (#271)
     commands/                   # per-command handlers (one module per !command)
   app.ts                        # Hono app: routes GET / , GET /health, POST /garmin/ipc;
                                 #   bearer auth; env gate (#212); IMEI allowlist gate; idempotency; dispatch

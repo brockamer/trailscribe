@@ -6,6 +6,7 @@ import { recordTransaction } from "../ledger.js";
 import { withCheckpoint, markFailed } from "../idempotency.js";
 import { BUDGET_REJECTION_MESSAGE, checkBudget } from "../budget.js";
 import { log } from "../../adapters/logging/worker-logs.js";
+import { PLAIN_TEXT_INSTRUCTION, stripMarkdownEmphasis } from "../plaintext.js";
 
 type CampCommand = Extract<ParsedCommand, { type: "camp" }>;
 
@@ -27,7 +28,8 @@ const SYSTEM_PROMPT =
   "You are TrailScribe's outdoors-knowledge assistant. The user is in the " +
   "field with no internet. Answer their question about camping, water " +
   "sources, or outdoor features concisely. Be conservative — say " +
-  '"uncertain" rather than guess. Aim for 280 characters.';
+  '"uncertain" rather than guess. Aim for 280 characters. ' +
+  PLAIN_TEXT_INSTRUCTION;
 
 /**
  * `!camp <query>` pipeline (plan P2-08). LLM-only first cut: the model
@@ -103,7 +105,7 @@ export async function handleCamp(
     });
   }
 
-  const content = result.content.trim();
+  const content = stripMarkdownEmphasis(result.content.trim());
   if (content.length === 0) {
     return { body: "Camp lookup returned empty. Try rephrasing." };
   }

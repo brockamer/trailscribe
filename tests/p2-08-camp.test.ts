@@ -292,3 +292,68 @@ describe("P2-08 !camp — output cap (#265)", () => {
     expect(warnLines.some((l: string) => l.includes('"event":"camp_truncated"'))).toBe(false);
   });
 });
+
+describe("P2-08 !camp — plain text (#271)", () => {
+  // The device shows Markdown emphasis as literal asterisks and they use reply
+  // budget. The prompt asks for plain text; stripping is the backstop.
+  function systemPrompt(): string {
+    const call = fetchSpy.mock.calls.find((c: unknown[]) =>
+      String(c[0]).includes("/chat/completions"),
+    );
+    const body = JSON.parse((call![1] as RequestInit).body as string) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    return body.messages.find((m) => m.role === "system")!.content;
+  }
+
+  function llmRouter(content: string) {
+    return makeFetchRouter([
+      {
+        match: (u) => u.includes("openrouter.ai") || u.includes("/chat/completions"),
+        respond: () => jsonResponse(chatCompletionResponse(content)),
+      },
+    ]);
+  }
+
+  test("the system prompt asks for plain text, no Markdown", async () => {
+    fetchSpy = llmRouter("Water at the inlet.");
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!camp water near lake sabrina"));
+
+    const prompt = systemPrompt().toLowerCase();
+    expect(prompt).toContain("plain text");
+    expect(prompt).toContain("asterisks");
+  });
+
+  test("paired ** in the answer is stripped, and the staleness prefix stays", async () => {
+    fetchSpy = llmRouter("**Yes, likely.** Water at the inlet (JMT), **fill early**.");
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!camp water near lake sabrina"));
+
+    const [, messages] = sendReplyMock.mock.calls[0];
+    expect(messages).toEqual([
+      "(may be outdated) Yes, likely. Water at the inlet (JMT), fill early.",
+    ]);
+  });
+
+  test("markers are stripped before the length check, so a clean answer that fits is not emailed", async () => {
+    // 54 bold one-letter words: with the 18-char staleness prefix that is 341
+    // chars with markers (over the 320 budget, so it would overflow to email)
+    // and 125 without (one SMS page).
+    const marked = Array.from({ length: 54 }, () => "**a**").join(" ");
+    const clean = Array.from({ length: 54 }, () => "a").join(" ");
+    expect(("(may be outdated) " + marked).length).toBeGreaterThan(320);
+    expect(("(may be outdated) " + clean).length).toBeLessThanOrEqual(320);
+    fetchSpy = llmRouter(marked);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!camp water near lake sabrina"));
+
+    const [, messages] = sendReplyMock.mock.calls[0];
+    expect(messages).toEqual(["(may be outdated) " + clean]);
+    const calls = fetchSpy.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(calls.some((u: string) => u.includes("api.resend.com"))).toBe(false);
+  });
+});

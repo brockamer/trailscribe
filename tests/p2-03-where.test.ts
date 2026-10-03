@@ -180,6 +180,49 @@ describe("P2-03 !where — happy path with GPS", () => {
   });
 });
 
+/**
+ * #261 — the worst case: a 60-char place name (`MAX_NAME_LENGTH` in
+ * geocode.ts), 38 chars of full-precision coordinates, MapShare on. Before the
+ * fix the body was 185 chars and the cut at char 155 fell inside a URL.
+ */
+describe("!where — long place name never splits a link (#261)", () => {
+  const W_LAT = -34.130980971234564;
+  const W_LON = -118.7622714123456;
+  const LOCALITY = "Sequoia and Kings Canyon National Park Wilderness Area";
+
+  for (const suffix of ["false", "true"] as const) {
+    test(`APPEND_COST_SUFFIX=${suffix}: every page ≤160, both links whole on one page`, async () => {
+      env = makeTestEnv({
+        MAPSHARE_BASE: MAPSHARE_HOST,
+        MAPSHARE_KEY: "trailscribe",
+        APPEND_COST_SUFFIX: suffix,
+      });
+      globalThis.fetch = makeFetchRouter([
+        {
+          match: (u) => u.includes("nominatim.openstreetmap.org"),
+          respond: () => jsonResponse({ address: { locality: LOCALITY, state: "California" } }),
+        },
+      ]) as unknown as typeof globalThis.fetch;
+
+      await postIpc(envelope("!where", { gps: { lat: W_LAT, lon: W_LON } }));
+
+      const maps = `https://www.google.com/maps/search/?api=1&query=${W_LAT},${W_LON}`;
+      const mapShare = `${MAPSHARE_HOST}/trailscribe`;
+      expect(`${W_LAT},${W_LON}`).toHaveLength(38);
+
+      const [, messages] = sendReplyMock.mock.calls[0];
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toBe(`${`${LOCALITY}, California`.slice(0, 60)}(1/2)`);
+      for (const page of messages) expect(page.length).toBeLessThanOrEqual(160);
+      for (const link of [maps, mapShare]) {
+        expect(messages.filter((p) => p.includes(link))).toHaveLength(1);
+      }
+      expect(messages[1].startsWith(`${maps} ${mapShare}`)).toBe(true);
+      expect(messages[1].endsWith("(2/2)")).toBe(true);
+    });
+  }
+});
+
 describe("P2-03 !where — no GPS fix", () => {
   test("returns the canonical 'Need GPS fix' prompt; never calls Nominatim", async () => {
     fetchSpy = vi.fn(async () => {

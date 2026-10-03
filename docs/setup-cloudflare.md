@@ -387,8 +387,17 @@ other malformed var or secret (for example a newline-damaged `IMEI_ALLOWLIST`).
   and Garmin Portal Connect atomically (brief 200-OK-but-log-warn window is OK).
 - `GARMIN_IPC_INBOUND_API_KEY`: yearly. Generate new key in Garmin UI (up to
   3 concurrent keys supported), `wrangler secret put`, then revoke the old.
-- Other API keys (OpenRouter `LLM_API_KEY`, Todoist, Resend, GitHub PAT):
-  rotate per your normal cadence or on suspected compromise.
+- OpenRouter `LLM_API_KEY`: two keys, so production spend is its own number.
+  A **prod** key lives only on the production Worker. A **dev** key lives in
+  `.dev.vars` and on the staging Worker, with a credit limit. Set either with
+  `scripts/set-llm-key.sh prod` or `scripts/set-llm-key.sh dev`. The script
+  takes the key at a hidden prompt, checks it with OpenRouter, records it in
+  `~/.secrets` as `OPENROUTER_TRAILSCRIBE_PROD` or `OPENROUTER_TRAILSCRIBE_DEV`
+  (OpenRouter shows a key once), then sets the secret and calls `/health`.
+  It cannot prove a key reaches the model: after a prod change, send one `!ai`
+  and check the key's usage on OpenRouter, which updates after about a minute.
+- Other API keys (Todoist, Resend, GitHub PAT): rotate per your normal cadence
+  or on suspected compromise.
 - After any `wrangler secret put`, run `curl -s "$URL/health" | jq .env_ok`.
   Secrets are write-only, so this is the only read-back: `false` means a value
   fails the schema in `src/env.ts`, and while it is `false` every webhook is

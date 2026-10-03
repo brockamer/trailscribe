@@ -68,7 +68,7 @@ src/
     imageprompt.ts              # image-gen prompt builder (!postimg / !snapimg)
     commands/                   # per-command handlers (one module per !command)
   app.ts                        # Hono app: routes GET / , GET /health, POST /garmin/ipc;
-                                #   bearer auth; IMEI allowlist gate (:163); idempotency; dispatch
+                                #   bearer auth; env gate (#212); IMEI allowlist gate; idempotency; dispatch
   adapters/
     outbound/garmin-ipc-inbound.ts # POST /api/Messaging/Message; X-API-Key
     mail/resend.ts              # Resend transactional email API (was mail/gmail.ts in spec)
@@ -190,8 +190,8 @@ plans/                          # per-milestone sprint plans (none active; all a
 - **Reply budget is sacred:** ≤320 chars out (incl. cost suffix if enabled). Longer content goes to email/blog.
 - **Serverless ephemerality:** all state in KV (or later DO/D1). No in-memory idempotency/ledger.
 - **Auth before processing:** verify `GARMIN_INBOUND_TOKEN` bearer on every Outbound webhook; IMEI must be in allowlist.
-- **A rejected IMEI is silent by design:** `src/app.ts:163` logs `imei_not_allowed` and returns; the route still answers HTTP 200, so Garmin never retries and the device gets nothing. Identical symptom to a dead network — check this first when replies stop.
-- **`parseEnv()` is NOT called on the request path** (`src/app.ts` uses `c.env` directly), so the zod `IMEI_ALLOWLIST` regex in `src/env.ts:116` is documentation, not a runtime gate. A malformed secret fails silently.
+- **A rejected IMEI is silent by design:** `handleEvent()` in `src/app.ts` logs `imei_not_allowed` and returns; the route still answers HTTP 200, so Garmin never retries and the device gets nothing. Identical symptom to a dead network — check this first when replies stop.
+- **A malformed env stops `/garmin/ipc` with one error line** (#212). `checkEnv()` in `src/env.ts` runs the zod schema on every authenticated webhook; any failure, or `IPC_INBOUND_DRY_RUN=true` in production, logs `env_invalid` (level error, with variable and rule names, never values) and answers HTTP 200 without reading the events. 200 is deliberate: Garmin's retries cannot repair config, and a fault left for 5 days suspends the tenant. Messages sent during the fault are lost and must be resent. The device symptom is the same as a rejected IMEI, so when replies stop, look for `env_invalid` and `imei_not_allowed` in Workers Logs. `GET /health` runs the same check and returns `env_ok` (boolean only; a failure also logs `env_invalid` with the names). Curl it after every deploy or `wrangler secret put` — secrets are write-only, and this is the only read-back.
 - **Never commit secrets.** Wrangler Secrets only. `.dev.vars` gitignored; `.dev.vars.example` tracked.
 - **Salvage aggressively per Verdict B:** keep grammar, `ParsedCommand`, env schema shape, docs, link builders. Rebuild tool adapters, idempotency/ledger stores, Garmin adapters, webhook auth.
 - **Test seams with fixtures** (`tests/fixtures/` with recorded Garmin event payloads), not mocks of Garmin's API shape.

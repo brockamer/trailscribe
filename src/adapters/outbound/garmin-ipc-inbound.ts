@@ -90,7 +90,8 @@ export async function sendReply(
 
   // Dry-run short-circuit: log what would have been sent, return success
   // without contacting Garmin. Validation above still runs so dry-run callers
-  // catch length-cap regressions. Production sets are blocked by parseEnv.
+  // catch length-cap regressions. Production sets are blocked by the
+  // /garmin/ipc env gate (checkEnv, #212).
   if (ipcInboundDryRun(env)) {
     const totalChars = messages.reduce((n, m) => n + m.length, 0);
     log({

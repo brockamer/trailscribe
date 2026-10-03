@@ -4,7 +4,10 @@ import type { Env } from "../../env.js";
 // Old `/rest/v2/tasks` returns HTTP 410 Gone (verified against live API
 // 2026-04-25). Request/response shape is unchanged.
 const TODOIST_URL = "https://api.todoist.com/api/v1/tasks";
-const TODOIST_TASK_URL = "https://todoist.com/showTask?id=";
+// `showTask?id=` (pre-v1-migration deep link) chain-redirects to a 404 on the
+// current site (verified live 2026-09-11). `app.todoist.com/app/task/<id>` is
+// the form Doist's own CLI emits for the same bare numeric/opaque id.
+const TODOIST_TASK_URL = "https://app.todoist.com/app/task/";
 const RETRY_DELAYS_MS = [1000, 4000, 16000] as const;
 
 export interface AddTaskArgs {

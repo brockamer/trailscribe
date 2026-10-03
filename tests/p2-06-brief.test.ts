@@ -373,3 +373,22 @@ describe("P2-06 !brief — output cap (#265)", () => {
     expect(warnLines.some((l: string) => l.includes('"event":"brief_truncated"'))).toBe(false);
   });
 });
+
+describe("P2-06 !brief — plain text backstop (#271)", () => {
+  test("paired ** in the brief is stripped before the device reply", async () => {
+    await seedEntries(2);
+    fetchSpy = makeFetchRouter([
+      {
+        match: (u) => u.includes("openrouter.ai") || u.includes("/chat/completions"),
+        respond: () =>
+          jsonResponse(chatCompletionResponse("**Logged 2 observations.**\nWeather steady.")),
+      },
+    ]);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!brief"));
+
+    const [, messages] = sendReplyMock.mock.calls[0];
+    expect(messages).toEqual(["Logged 2 observations.\nWeather steady."]);
+  });
+});

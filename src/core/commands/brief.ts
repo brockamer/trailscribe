@@ -7,6 +7,7 @@ import { getEntries, type FieldLogEntry } from "../fieldlog.js";
 import { withCheckpoint, markFailed } from "../idempotency.js";
 import { BUDGET_REJECTION_MESSAGE, checkBudget } from "../budget.js";
 import { log } from "../../adapters/logging/worker-logs.js";
+import { stripMarkdownEmphasis } from "../plaintext.js";
 
 type BriefCommand = Extract<ParsedCommand, { type: "brief" }>;
 
@@ -111,7 +112,7 @@ export async function handleBrief(
     });
   }
 
-  const content = result.content.trim();
+  const content = stripMarkdownEmphasis(result.content.trim());
   if (content.length === 0) {
     return { body: "Brief returned empty. Try again." };
   }

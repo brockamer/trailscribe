@@ -6,6 +6,7 @@ import { recordTransaction } from "../ledger.js";
 import { withCheckpoint, markFailed } from "../idempotency.js";
 import { BUDGET_REJECTION_MESSAGE, checkBudget } from "../budget.js";
 import { log } from "../../adapters/logging/worker-logs.js";
+import { PLAIN_TEXT_INSTRUCTION, stripMarkdownEmphasis } from "../plaintext.js";
 
 type AiCommand = Extract<ParsedCommand, { type: "ai" }>;
 
@@ -28,7 +29,8 @@ const OVERFLOW_REPLY = "Long answer sent by email.";
 const SYSTEM_PROMPT =
   "You are TrailScribe's field research assistant. Answer the user's " +
   "question concisely. Aim for 280 characters or fewer; if more is needed, " +
-  "write the full answer and we will route it to email.";
+  "write the full answer and we will route it to email. " +
+  PLAIN_TEXT_INSTRUCTION;
 
 /**
  * `!ai <question>` pipeline (plan P2-07). Open-ended LLM Q&A via OpenRouter.
@@ -107,7 +109,7 @@ export async function handleAi(cmd: AiCommand, ctx: OrchestratorContext): Promis
     });
   }
 
-  const content = result.content.trim();
+  const content = stripMarkdownEmphasis(result.content.trim());
   if (content.length === 0) {
     return { body: "AI returned empty reply. Try rephrasing." };
   }

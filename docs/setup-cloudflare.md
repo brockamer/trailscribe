@@ -314,7 +314,8 @@ curl -s "$STAGING_URL/"
 # Expect: TrailScribe α-MVP (Phase 0)
 
 curl -s "$STAGING_URL/health" | jq .
-# Expect: { ok: true, env: "staging", timestamp: "..." }
+# Expect: { ok: true, env: "staging", timestamp: "...", dry_run: ..., env_ok: true }
+# env_ok: false means a var or secret fails the schema; the env_invalid log line names it.
 
 # Post the canonical V2 fixture:
 curl -s -X POST "$STAGING_URL/garmin/ipc" \
@@ -374,9 +375,11 @@ When ON, `sendReply` short-circuits the Garmin POST and emits a structured
 showing IMEI, sender, page count, total chars, and the full text of each page
 (`pages_text`). Real sends log one `reply_sent` line per delivered page instead.
 
-**Production is locked.** `parseEnv` throws at Worker startup if
-`TRAILSCRIBE_ENV=production` AND `IPC_INBOUND_DRY_RUN=true` — production must
-always deliver real replies.
+**Production is locked.** If `TRAILSCRIBE_ENV=production` AND
+`IPC_INBOUND_DRY_RUN=true`, the `/garmin/ipc` env gate (`checkEnv`, #212)
+refuses every webhook: it logs `env_invalid` at level error and processes no
+event — production must always deliver real replies. The same gate catches any
+other malformed var or secret (for example a newline-damaged `IMEI_ALLOWLIST`).
 
 ## Rotation
 
@@ -386,6 +389,10 @@ always deliver real replies.
   3 concurrent keys supported), `wrangler secret put`, then revoke the old.
 - Other API keys (OpenRouter `LLM_API_KEY`, Todoist, Resend, GitHub PAT):
   rotate per your normal cadence or on suspected compromise.
+- After any `wrangler secret put`, run `curl -s "$URL/health" | jq .env_ok`.
+  Secrets are write-only, so this is the only read-back: `false` means a value
+  fails the schema in `src/env.ts`, and while it is `false` every webhook is
+  refused (#212).
 
 ## Required GitHub Actions secrets
 
@@ -408,3 +415,7 @@ add at Settings → Secrets and variables → Actions:
 - **Garmin queue grows but we never see posts:** check `wrangler tail`. If
   you see `auth_fail`, your `GARMIN_INBOUND_TOKEN` drifted between Cloudflare
   and Portal Connect.
+- **Replies stop and the log shows `env_invalid`:** a var or secret fails the
+  schema. The line's `variables` field names it (never the value); re-put that
+  secret and confirm with `/health` → `env_ok: true`. Messages sent during the
+  fault were answered 200 and dropped, so resend them from the device.

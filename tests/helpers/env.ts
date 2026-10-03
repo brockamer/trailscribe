@@ -10,12 +10,20 @@ interface MemKV extends KVNamespace {
  * Minimal in-memory KV mock that implements the slice of KVNamespace the app
  * actually uses (get/put/delete/list). TTL is honored via a per-key expiry.
  * Exposes `_size` / `_keys` / `_has` for test assertions.
+ *
+ * Like workerd's bindings, every method refuses a foreign `this` (#212): a
+ * copy or wrapper of the binding — e.g. zod's parse output — must fail here
+ * as it would in production, not pass because the mock is closure-based.
  */
 export function makeMemKV(): MemKV {
   const store = new Map<string, { value: string; expires?: number }>();
+  function assertReceiver(self: unknown): void {
+    if (self !== ns) throw new TypeError("Illegal invocation");
+  }
 
   const ns = {
     async get(key: string, options?: unknown) {
+      assertReceiver(this);
       const rec = store.get(key);
       if (!rec) return null;
       if (rec.expires && Date.now() > rec.expires) {
@@ -29,19 +37,23 @@ export function makeMemKV(): MemKV {
       return rec.value;
     },
     async put(key: string, value: string, opts?: { expirationTtl?: number }) {
+      assertReceiver(this);
       const expires = opts?.expirationTtl ? Date.now() + opts.expirationTtl * 1000 : undefined;
       store.set(key, { value: String(value), expires });
     },
     async delete(key: string) {
+      assertReceiver(this);
       store.delete(key);
     },
     async list() {
+      assertReceiver(this);
       return {
         keys: Array.from(store.keys()).map((name) => ({ name })),
         list_complete: true,
       };
     },
     async getWithMetadata(key: string) {
+      assertReceiver(this);
       const v = await ns.get(key);
       return { value: v, metadata: null };
     },

@@ -61,8 +61,8 @@ export interface Env {
 
 /**
  * Zod schema for runtime validation of the Env binding.
- * Call `parseEnv(env)` once at the start of each request to assert all required
- * bindings are present. Throws on missing/invalid keys with a clear message.
+ * `/garmin/ipc` runs `checkEnv(env)` on every authenticated request (#212);
+ * `parseEnv(env)` is the throwing form. Both reject missing/invalid keys.
  *
  * KV namespaces are validated structurally (have `get`/`put` methods) rather than
  * by instanceof check — keeps the schema testable with mock bindings.
@@ -73,6 +73,15 @@ const KVNamespaceLike = z.object({
   delete: z.function(),
   list: z.function(),
 });
+
+/**
+ * Check a secret after trimming surrounding whitespace. The gate must not be
+ * stricter than the value's consumer (#212): a trailing newline from a pasted
+ * secret that works today must not stop every request.
+ */
+function trimmed<T extends z.ZodTypeAny>(schema: T) {
+  return z.preprocess((v) => (typeof v === "string" ? v.trim() : v), schema);
+}
 
 export const EnvSchema = z.object({
   TS_IDEMPOTENCY: KVNamespaceLike,
@@ -116,12 +125,24 @@ export const EnvSchema = z.object({
   GARMIN_INBOUND_TOKEN: z.string().min(16),
   GARMIN_IPC_INBOUND_API_KEY: z.string().min(8),
   GARMIN_IPC_INBOUND_BASE_URL: z.string().url(),
-  IMEI_ALLOWLIST: z.string().regex(/^\d{15}(,\d{15})*$/, "comma-separated 15-digit IMEIs"),
+  // Trim each entry first, exactly as imeiAllowSet() does: the gate must not be
+  // stricter than its consumer, or a value that works today (a trailing
+  // newline from a pasted secret) would stop every request (#212).
+  IMEI_ALLOWLIST: z.preprocess(
+    (v) =>
+      typeof v === "string"
+        ? v
+            .split(",")
+            .map((s) => s.trim())
+            .join(",")
+        : v,
+    z.string().regex(/^\d{15}(,\d{15})*$/, "comma-separated 15-digit IMEIs"),
+  ),
   LLM_API_KEY: z.string().min(8),
   TODOIST_API_TOKEN: z.string().min(8),
   RESEND_API_KEY: z.string().min(8),
   GITHUB_JOURNAL_TOKEN: z.string().min(8),
-  GITHUB_JOURNAL_REPO: z.string().regex(/^[\w.-]+\/[\w.-]+$/, "owner/repo format"),
+  GITHUB_JOURNAL_REPO: trimmed(z.string().regex(/^[\w.-]+\/[\w.-]+$/, "owner/repo format")),
   GITHUB_JOURNAL_BRANCH: z.string().min(1),
   // Empty string = no aliases configured (resolve() will throw on lookup).
   // Non-empty must parse via parseAddressBookJson — single source of truth for
@@ -145,27 +166,76 @@ export const EnvSchema = z.object({
   MAPSHARE_PASSWORD: z.string(),
 });
 
+/** One failed env check, named by variable and rule only — never by value (#212). */
+export interface EnvProblem {
+  /** Variable name (or binding path, e.g. `TS_CACHE.get`). */
+  variable: string;
+  /** zod rule (`regex`, `url`, `invalid_type`, `too_small`, …) or `forbidden_in_production`. */
+  rule: string;
+}
+
+export type EnvCheck =
+  | { ok: true; env: Env }
+  | {
+      ok: false;
+      /** Safe to log: names only. */
+      problems: EnvProblem[];
+      /** zod's readable messages. Not safe to log: an enum message echoes the received value. */
+      detail: string;
+    };
+
 /**
- * Validate and return the typed Env. Throws with a readable message on failure.
- * Call once per request (cheap — zod is fast), near the top of the handler.
+ * Validate the Env without throwing. Reports every problem at once, including
+ * the production dry-run rule, so one fix pass covers them all.
  */
-export function parseEnv(env: unknown): Env {
+export function checkEnv(env: unknown): EnvCheck {
+  const problems: EnvProblem[] = [];
+  const details: string[] = [];
+
   const result = EnvSchema.safeParse(env);
   if (!result.success) {
-    const issues = result.error.issues
-      .map((i) => `  - ${i.path.join(".")}: ${i.message}`)
-      .join("\n");
-    throw new Error(`Invalid Worker Env bindings:\n${issues}`);
+    for (const issue of result.error.issues) {
+      const variable = issue.path.join(".") || "(env)";
+      const rule =
+        "validation" in issue && typeof issue.validation === "string"
+          ? issue.validation
+          : issue.code;
+      problems.push({ variable, rule });
+      details.push(`  - ${variable}: ${issue.message}`);
+    }
   }
-  const parsed = result.data as Env;
+
   // Prod must never silently mute device sends. Dry-run is a staging/dev-only
-  // safety rail; in prod it would hide real delivery failures.
-  if (parsed.TRAILSCRIBE_ENV === "production" && ipcInboundDryRun(parsed)) {
-    throw new Error(
-      "Invalid Worker Env: IPC_INBOUND_DRY_RUN must not be 'true' when TRAILSCRIBE_ENV=production",
-    );
+  // safety rail; in prod it would hide real delivery failures. Read raw so it
+  // is reported even when the schema also failed.
+  const raw = (env ?? {}) as Record<string, unknown>;
+  if (
+    raw.TRAILSCRIBE_ENV === "production" &&
+    typeof raw.IPC_INBOUND_DRY_RUN === "string" &&
+    raw.IPC_INBOUND_DRY_RUN.toLowerCase() === "true"
+  ) {
+    problems.push({ variable: "IPC_INBOUND_DRY_RUN", rule: "forbidden_in_production" });
+    details.push("  - IPC_INBOUND_DRY_RUN must not be 'true' when TRAILSCRIBE_ENV=production");
   }
-  return parsed;
+
+  if (problems.length > 0) {
+    return { ok: false, problems, detail: `Invalid Worker Env bindings:\n${details.join("\n")}` };
+  }
+  // Return the input, not zod's output: zod rebuilds each object (dropping
+  // keys it does not know, e.g. KV `getWithMetadata`) and wraps each function,
+  // so a KV method would run with the wrong `this` — workerd's bindings throw
+  // "Illegal invocation" on that.
+  return { ok: true, env: env as Env };
+}
+
+/**
+ * Validate and return the typed Env. Throws with a readable message on failure.
+ * The message may contain values; never log it — log `checkEnv().problems`.
+ */
+export function parseEnv(env: unknown): Env {
+  const result = checkEnv(env);
+  if (!result.ok) throw new Error(result.detail);
+  return result.env;
 }
 
 /** Parse the comma-separated IMEI allowlist into a Set for O(1) lookup. */
@@ -182,7 +252,7 @@ export function appendCostSuffix(env: Env): boolean {
  * Parse IPC_INBOUND_DRY_RUN. When true, `sendReply` short-circuits without
  * calling Garmin IPC Inbound. Used to exercise the full pipeline (parse →
  * orchestrate → narrative → publish → ledger) in staging without delivering
- * real SMS to the operator's device. Forbidden in production (see parseEnv).
+ * real SMS to the operator's device. Forbidden in production (see checkEnv).
  */
 export function ipcInboundDryRun(env: Env): boolean {
   return env.IPC_INBOUND_DRY_RUN.toLowerCase() === "true";
@@ -208,7 +278,8 @@ const DEFAULT_LOCATION_PRECISION = 3;
  * decimal places (~100 m) — never to full precision.
  */
 export function journalLocationPrecision(env: Env): LocationPrecision {
-  // parseEnv() is not on the request path, so a missing [vars] entry arrives here as undefined.
+  // The /garmin/ipc gate (#212) stops a request with a missing [vars] entry, but
+  // other callers can still pass undefined.
   const raw = (env.JOURNAL_LOCATION_PRECISION ?? "").trim().toLowerCase();
   if (raw === "omit") return "omit";
   if (/^[0-6]$/.test(raw)) return Number(raw);

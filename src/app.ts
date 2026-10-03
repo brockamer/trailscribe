@@ -1,6 +1,12 @@
 import { Hono } from "hono";
-import type { Env } from "./env.js";
-import { appendCostSuffix, imeiAllowSet, ipcInboundDryRun, logTrackPayloads } from "./env.js";
+import type { Env, EnvProblem } from "./env.js";
+import {
+  appendCostSuffix,
+  checkEnv,
+  imeiAllowSet,
+  ipcInboundDryRun,
+  logTrackPayloads,
+} from "./env.js";
 import type { CommandResult, GarminEnvelope, GarminEvent } from "./core/types.js";
 import {
   idempotencyKey,
@@ -66,6 +72,20 @@ async function safeOrchestrate(
 }
 
 /**
+ * Log a failed env check (#212): variable and rule names only, never values.
+ * Level error, so it stands out from the routine warn-level drops.
+ */
+function logEnvInvalid(path: string, problems: EnvProblem[]): void {
+  log({
+    event: "env_invalid",
+    level: "error",
+    path,
+    variables: [...new Set(problems.map((p) => p.variable))],
+    problems,
+  });
+}
+
+/**
  * Hono app factory. Lives in its own module so tests can call `makeApp()`
  * and drive the handler via `app.request(...)` without Miniflare.
  */
@@ -74,21 +94,28 @@ export function makeApp() {
 
   app.get("/", (c) => c.text("TrailScribe α-MVP (Phase 0)"));
 
-  app.get("/health", (c) =>
-    c.json({
+  // `env_ok` lets the operator confirm write-only secrets after a deploy or a
+  // rotation without sending from the device (#212). The body says only
+  // whether the env is valid; which variable failed goes to the log.
+  app.get("/health", (c) => {
+    const envCheck = checkEnv(c.env);
+    if (!envCheck.ok) logEnvInvalid("/health", envCheck.problems);
+    return c.json({
       ok: true,
       env: c.env.TRAILSCRIBE_ENV,
       timestamp: new Date().toISOString(),
-      dry_run: ipcInboundDryRun(c.env),
-    }),
-  );
+      dry_run: typeof c.env.IPC_INBOUND_DRY_RUN === "string" && ipcInboundDryRun(c.env),
+      env_ok: envCheck.ok,
+    });
+  });
 
   /**
    * Garmin IPC Outbound receiver.
    *
    * Per PRD §4, §5 + plan P1-01 + P1-13:
    *   1. Verify bearer token (static, configured on Garmin Portal Connect).
-   *   2. Parse body as Garmin V2 envelope.
+   *   2. Validate the env (`checkEnv`, #212); on failure log `env_invalid`
+   *      and stop. Then parse body as Garmin V2 envelope.
    *   3. Per event: verify IMEI allowlist; compute idempotency key; on
    *      `status="completed"` replay short-circuit immediately. Other states
    *      (received/processing/failed) fall through; per-op `withCheckpoint`
@@ -150,6 +177,17 @@ export function makeApp() {
         : null,
       rawBodySample: rawBody.slice(0, 1024),
     });
+
+    // Env gate (#212). A malformed secret (a newline-damaged IMEI_ALLOWLIST, a
+    // production dry-run) would otherwise degrade to "accept nothing" or "send
+    // nothing" with no error. Stop here, after `ipc_received` has put the lost
+    // message on record. Still 200: Garmin's retry escalator cannot repair
+    // config, and a fault left for 5 days suspends the tenant (decision on #212).
+    const envCheck = checkEnv(c.env);
+    if (!envCheck.ok) {
+      logEnvInvalid("/garmin/ipc", envCheck.problems);
+      return c.text("ok", 200);
+    }
 
     if (!isGarminEnvelope(body)) {
       log({ event: "bad_envelope", level: "warn" });

@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { parseEnv, ipcInboundDryRun, journalLocationPrecision } from "../src/env.js";
+import { checkEnv, parseEnv, ipcInboundDryRun, journalLocationPrecision } from "../src/env.js";
 import { makeTestEnv } from "./helpers/env.js";
 
 describe("parseEnv — IPC_INBOUND_DRY_RUN production guard", () => {
@@ -30,6 +30,88 @@ describe("parseEnv — IPC_INBOUND_DRY_RUN production guard", () => {
   });
 });
 
+describe("checkEnv — problems by variable and rule, never by value (#212)", () => {
+  test("valid env → ok with the typed env", () => {
+    const env = makeTestEnv();
+    const result = checkEnv(env);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.env.IMEI_ALLOWLIST).toBe(env.IMEI_ALLOWLIST);
+  });
+
+  test("returns the bindings it was given, not zod's rebuilt copies", () => {
+    const env = makeTestEnv();
+    const result = checkEnv(env);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.env.TS_CACHE).toBe(env.TS_CACHE);
+    expect(parseEnv(env).TS_IDEMPOTENCY).toBe(env.TS_IDEMPOTENCY);
+  });
+
+  test("IMEI_ALLOWLIST tolerates exactly the whitespace imeiAllowSet trims", () => {
+    for (const ok of ["123456789012345\n", " 123456789012345 , 123456789012346\r\n"]) {
+      expect(checkEnv(makeTestEnv({ IMEI_ALLOWLIST: ok })).ok).toBe(true);
+    }
+  });
+
+  test("GITHUB_JOURNAL_REPO tolerates surrounding whitespace, not a bad shape", () => {
+    // The REST publish path builds a URL, which drops a trailing newline, so a
+    // pasted value works today; the gate must not reject it (#212).
+    expect(checkEnv(makeTestEnv({ GITHUB_JOURNAL_REPO: "owner/repo\n" })).ok).toBe(true);
+    const bad = checkEnv(makeTestEnv({ GITHUB_JOURNAL_REPO: "owner repo" }));
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.problems).toEqual([{ variable: "GITHUB_JOURNAL_REPO", rule: "regex" }]);
+  });
+
+  test("malformed IMEI_ALLOWLIST → one problem naming the variable", () => {
+    for (const bad of [
+      "",
+      "12345678901234",
+      "123456789012345,",
+      "123456789012345;123456789012346",
+      "1234567 89012345",
+    ]) {
+      const result = checkEnv(makeTestEnv({ IMEI_ALLOWLIST: bad }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.problems).toEqual([{ variable: "IMEI_ALLOWLIST", rule: "regex" }]);
+      }
+    }
+  });
+
+  test("missing variable → rule invalid_type", () => {
+    const env = makeTestEnv() as unknown as Record<string, unknown>;
+    delete env.GARMIN_IPC_INBOUND_API_KEY;
+    const result = checkEnv(env);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.problems).toEqual([
+        { variable: "GARMIN_IPC_INBOUND_API_KEY", rule: "invalid_type" },
+      ]);
+    }
+  });
+
+  test("production dry-run is reported alongside schema problems, not instead of them", () => {
+    const result = checkEnv(
+      makeTestEnv({
+        TRAILSCRIBE_ENV: "production",
+        IPC_INBOUND_DRY_RUN: "TRUE",
+        IMEI_ALLOWLIST: "",
+      }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.problems).toEqual([
+        { variable: "IMEI_ALLOWLIST", rule: "regex" },
+        { variable: "IPC_INBOUND_DRY_RUN", rule: "forbidden_in_production" },
+      ]);
+    }
+  });
+
+  test("a non-object env does not throw", () => {
+    const result = checkEnv(undefined);
+    expect(result.ok).toBe(false);
+  });
+});
+
 describe("ipcInboundDryRun helper", () => {
   test("returns true for 'true' (case-insensitive), false otherwise", () => {
     expect(ipcInboundDryRun(makeTestEnv({ IPC_INBOUND_DRY_RUN: "true" }))).toBe(true);
@@ -57,9 +139,9 @@ describe("journalLocationPrecision helper (#223)", () => {
     expect(precision(" omit ")).toBe("omit");
   });
 
-  // parseEnv() is not on the request path, so a missing [vars] entry reaches
-  // this helper as undefined. It must fall back to the coarse default, never
-  // to full precision.
+  // The /garmin/ipc gate (#212) stops a request with a missing [vars] entry,
+  // but other routes and direct callers can still pass undefined. It must
+  // fall back to the coarse default, never to full precision.
   test("unset → default 3", () => {
     expect(precision(undefined)).toBe(3);
   });

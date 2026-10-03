@@ -262,6 +262,16 @@ describe("buildReply — atomic links (#261)", () => {
     expect(out.join("")).not.toContain("kkkk");
   });
 
+  test("no link fits → page 2 is the cost suffix alone, with no leading space", () => {
+    const out = buildReply({
+      body: NAME_60,
+      links: [`https://x.test/${"y".repeat(150)}`],
+      costUsdMtd: 1,
+      env: envWith({ APPEND_COST_SUFFIX: "true" }),
+    });
+    expect(out[1]).toBe("· $1.00(2/2)");
+  });
+
   test("journalUrl and links together: journal URL first, with its hint", () => {
     const out = buildReply({
       body: "Posted: Fog",

@@ -118,7 +118,8 @@ function buildLinkReply(body: string, links: string[], tail: string): string[] {
   if (single.length <= SMS_MAX) return [single];
 
   const page1 = body.slice(0, SMS_MAX - MARKER_LEN) + "(1/2)";
-  const page2 = fitLinks(links, SMS_MAX - MARKER_LEN - tail.length) + tail + "(2/2)";
+  const linkLine = fitLinks(links, SMS_MAX - MARKER_LEN - tail.length);
+  const page2 = (linkLine === "" ? tail.trimStart() : linkLine + tail) + "(2/2)";
   assertWithinLimit(page1);
   assertWithinLimit(page2);
   return [page1, page2];

@@ -1,6 +1,12 @@
 import { Hono } from "hono";
 import type { Env } from "./env.js";
-import { appendCostSuffix, imeiAllowSet, ipcInboundDryRun, logTrackPayloads } from "./env.js";
+import {
+  appendCostSuffix,
+  imeiAllowSet,
+  ipcInboundDryRun,
+  logTrackPayloads,
+  parseEnv,
+} from "./env.js";
 import type { CommandResult, GarminEnvelope, GarminEvent } from "./core/types.js";
 import {
   idempotencyKey,
@@ -104,8 +110,21 @@ export function makeApp() {
    *      cascade for app-level failures.
    */
   app.post("/garmin/ipc", async (c) => {
+    let env: Env;
+    try {
+      env = parseEnv(c.env);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log({
+        event: "env_invalid",
+        level: "error",
+        error: msg,
+      });
+      return c.text("ok", 200);
+    }
+
     const auth = c.req.header("x-outbound-auth-token");
-    const expected = c.env.GARMIN_INBOUND_TOKEN;
+    const expected = env.GARMIN_INBOUND_TOKEN;
     if (!auth || auth !== expected) {
       log({ event: "auth_fail", level: "warn", path: "/garmin/ipc" });
       return c.text("ok", 200);
@@ -156,9 +175,9 @@ export function makeApp() {
       return c.text("ok", 200);
     }
 
-    const allow = imeiAllowSet(c.env);
+    const allow = imeiAllowSet(env);
     for (const event of body.Events) {
-      await handleEvent(event, c.env, allow);
+      await handleEvent(event, env, allow);
     }
 
     return c.text("ok", 200);

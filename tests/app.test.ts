@@ -136,6 +136,70 @@ describe("Worker /garmin/ipc — Phase 0 behavior", () => {
 
     expect(keysEnv1).toEqual(keysEnv2);
   });
+
+  test("malformed IMEI_ALLOWLIST produces error-level log and returns 200 without processing events", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const badEnv = makeTestEnv({ IMEI_ALLOWLIST: "not-a-valid-allowlist" });
+    const res = await app.request(
+      "/garmin/ipc",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-outbound-auth-token": badEnv.GARMIN_INBOUND_TOKEN,
+        },
+        body: JSON.stringify(fixture),
+      },
+      badEnv,
+    );
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
+    expect(kvSize(badEnv.TS_IDEMPOTENCY)).toBe(0);
+    expect(sendReplyMock).not.toHaveBeenCalled();
+
+    expect(errSpy).toHaveBeenCalled();
+    const calls = errSpy.mock.calls.map((c) => c[0] as string);
+    const envInvalidCall = calls.find((line) => line.includes('"event":"env_invalid"'));
+    expect(envInvalidCall).toBeDefined();
+    const parsed = JSON.parse(envInvalidCall!);
+    expect(parsed.level).toBe("error");
+    expect(parsed.error).toContain("IMEI_ALLOWLIST");
+    expect(parsed.error).not.toContain("not-a-valid-allowlist");
+    errSpy.mockRestore();
+  });
+
+  test("refuses TRAILSCRIBE_ENV=production with IPC_INBOUND_DRY_RUN=true at runtime with error-level log", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const badEnv = makeTestEnv({
+      TRAILSCRIBE_ENV: "production",
+      IPC_INBOUND_DRY_RUN: "true",
+    });
+    const res = await app.request(
+      "/garmin/ipc",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-outbound-auth-token": badEnv.GARMIN_INBOUND_TOKEN,
+        },
+        body: JSON.stringify(fixture),
+      },
+      badEnv,
+    );
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
+    expect(kvSize(badEnv.TS_IDEMPOTENCY)).toBe(0);
+    expect(sendReplyMock).not.toHaveBeenCalled();
+
+    expect(errSpy).toHaveBeenCalled();
+    const calls = errSpy.mock.calls.map((c) => c[0] as string);
+    const envInvalidCall = calls.find((line) => line.includes('"event":"env_invalid"'));
+    expect(envInvalidCall).toBeDefined();
+    const parsed = JSON.parse(envInvalidCall!);
+    expect(parsed.level).toBe("error");
+    expect(parsed.error).toContain("IPC_INBOUND_DRY_RUN");
+    errSpy.mockRestore();
+  });
 });
 
 describe("Worker /garmin/ipc — intercept policy (PRD §8 D10, #122)", () => {

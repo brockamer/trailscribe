@@ -74,6 +74,15 @@ const KVNamespaceLike = z.object({
   list: z.function(),
 });
 
+/**
+ * Check a secret after trimming surrounding whitespace. The gate must not be
+ * stricter than the value's consumer (#212): a trailing newline from a pasted
+ * secret that works today must not stop every request.
+ */
+function trimmed<T extends z.ZodTypeAny>(schema: T) {
+  return z.preprocess((v) => (typeof v === "string" ? v.trim() : v), schema);
+}
+
 export const EnvSchema = z.object({
   TS_IDEMPOTENCY: KVNamespaceLike,
   TS_LEDGER: KVNamespaceLike,
@@ -133,7 +142,7 @@ export const EnvSchema = z.object({
   TODOIST_API_TOKEN: z.string().min(8),
   RESEND_API_KEY: z.string().min(8),
   GITHUB_JOURNAL_TOKEN: z.string().min(8),
-  GITHUB_JOURNAL_REPO: z.string().regex(/^[\w.-]+\/[\w.-]+$/, "owner/repo format"),
+  GITHUB_JOURNAL_REPO: trimmed(z.string().regex(/^[\w.-]+\/[\w.-]+$/, "owner/repo format")),
   GITHUB_JOURNAL_BRANCH: z.string().min(1),
   // Empty string = no aliases configured (resolve() will throw on lookup).
   // Non-empty must parse via parseAddressBookJson — single source of truth for

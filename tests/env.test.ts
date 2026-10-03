@@ -52,6 +52,15 @@ describe("checkEnv — problems by variable and rule, never by value (#212)", ()
     }
   });
 
+  test("GITHUB_JOURNAL_REPO tolerates surrounding whitespace, not a bad shape", () => {
+    // The REST publish path builds a URL, which drops a trailing newline, so a
+    // pasted value works today; the gate must not reject it (#212).
+    expect(checkEnv(makeTestEnv({ GITHUB_JOURNAL_REPO: "owner/repo\n" })).ok).toBe(true);
+    const bad = checkEnv(makeTestEnv({ GITHUB_JOURNAL_REPO: "owner repo" }));
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.problems).toEqual([{ variable: "GITHUB_JOURNAL_REPO", rule: "regex" }]);
+  });
+
   test("malformed IMEI_ALLOWLIST → one problem naming the variable", () => {
     for (const bad of [
       "",

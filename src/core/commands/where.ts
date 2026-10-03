@@ -7,12 +7,12 @@ import { log } from "../../adapters/logging/worker-logs.js";
 type WhereCommand = Extract<ParsedCommand, { type: "where" }>;
 
 const NO_FIX_REPLY = "Need GPS fix — try again outdoors.";
-const REPLY_MAX = 320;
 
 /**
  * `!where` pipeline (plan P2-03). Reverse-geocode the device's current GPS
- * fix and reply with `<place>. <Maps link> <MapShare link>` capped at the
- * 320-char two-SMS budget. No LLM call, no idempotency-checkpointed step:
+ * fix and reply with the place name, then the Maps and MapShare links.
+ * `buildReply` keeps each link whole (#261): a long place name is truncated,
+ * never a URL. No LLM call, no idempotency-checkpointed step:
  * `reverseGeocode` is a pure read with KV caching, so a Garmin retry is
  * naturally a cache hit.
  *
@@ -36,15 +36,9 @@ export async function handleWhere(
   const mapsUrl = `${env.GOOGLE_MAPS_BASE}${lat},${lon}`;
   const mapShareUrl =
     env.MAPSHARE_BASE.length > 0 ? `${env.MAPSHARE_BASE}/${env.MAPSHARE_KEY}` : "";
-  const links = mapShareUrl ? `${mapsUrl} ${mapShareUrl}` : mapsUrl;
-  const body = capReply(`${placeName}. ${links}`);
 
   await recordWhereLedger(ctx);
-  return { body };
-}
-
-function capReply(s: string): string {
-  return s.length > REPLY_MAX ? s.slice(0, REPLY_MAX) : s;
+  return { body: placeName, links: mapShareUrl ? [mapsUrl, mapShareUrl] : [mapsUrl] };
 }
 
 async function recordWhereLedger(ctx: OrchestratorContext): Promise<void> {

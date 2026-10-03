@@ -68,10 +68,13 @@ export interface GarminEnvelope {
 /**
  * The orchestrator's reply shape. `body` must be ≤320 chars total
  * (two SMS; paged into 160-char chunks at the IPC Inbound boundary). With
- * `journalUrl` set, the URL takes a page of its own and `body` gets ≤155.
+ * `journalUrl` or `links` set, the links take a page of their own and `body`
+ * gets ≤155.
  */
 export interface CommandResult {
   body: string;
   /** Journal post URL; `buildReply` keeps it whole and adds the live hint (#249). */
   journalUrl?: string;
+  /** Other links, e.g. `!where` map links; `buildReply` keeps each whole (#261). */
+  links?: string[];
 }

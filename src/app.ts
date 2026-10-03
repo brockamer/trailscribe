@@ -447,6 +447,7 @@ async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Pr
   const messages = buildReply({
     body: result.body,
     journalUrl: result.journalUrl,
+    links: result.links,
     costUsdMtd,
     env,
   });

@@ -205,3 +205,76 @@ describe("buildReply — journal link (#249)", () => {
     expect(buildReply({ body: "pong", env: envWith() })).toEqual(["pong"]);
   });
 });
+
+/**
+ * #261 — `links` are atomic, the same rule as the journal URL. Worst case is a
+ * `!where` reply: a 60-char place name (`MAX_NAME_LENGTH` in geocode.ts), a
+ * Maps URL with 38 chars of full-precision coordinates, and the MapShare URL.
+ */
+describe("buildReply — atomic links (#261)", () => {
+  const NAME_60 = "N".repeat(52) + ", Calif.";
+  const MAPS =
+    "https://www.google.com/maps/search/?api=1&query=-34.130980971234564,-118.7622714123456";
+  const MAPSHARE = "https://share.garmin.com/trailscribe";
+
+  function expectLinksIntact(pages: string[], links: string[]): void {
+    for (const link of links) expect(pages.filter((p) => p.includes(link))).toHaveLength(1);
+  }
+
+  test("worst-case inputs have the lengths the issue measured", () => {
+    expect(NAME_60.length).toBe(60);
+    expect(MAPS.length).toBe(48 + 38);
+    expect(MAPSHARE.length).toBe(36);
+  });
+
+  test("short body + links → one page: body, links on their own line", () => {
+    const out = buildReply({
+      body: "Lake Sabrina, California",
+      links: [MAPS, MAPSHARE],
+      env: envWith(),
+    });
+    expect(out).toEqual([`Lake Sabrina, California\n${MAPS} ${MAPSHARE}`]);
+  });
+
+  test("worst case → two pages; no link is cut and no marker sits inside one", () => {
+    const out = buildReply({ body: NAME_60, links: [MAPS, MAPSHARE], env: envWith() });
+    expect(out).toEqual([`${NAME_60}(1/2)`, `${MAPS} ${MAPSHARE}(2/2)`]);
+    expectLinksIntact(out, [MAPS, MAPSHARE]);
+  });
+
+  test("worst case with the cost suffix on: every page fits, links whole", () => {
+    const out = buildReply({
+      body: NAME_60,
+      links: [MAPS, MAPSHARE],
+      costUsdMtd: 12.34,
+      env: envWith({ APPEND_COST_SUFFIX: "true" }),
+    });
+    for (const page of out) expect(page.length).toBeLessThanOrEqual(SMS_MAX);
+    expectLinksIntact(out, [MAPS, MAPSHARE]);
+    expect(out[out.length - 1]).toBe(`${MAPS} ${MAPSHARE} · $12.34(2/2)`);
+  });
+
+  test("links that cannot share a page are dropped whole, from the end, never split", () => {
+    const longShare = `https://share.garmin.com/${"k".repeat(60)}`;
+    const out = buildReply({ body: NAME_60, links: [MAPS, longShare], env: envWith() });
+    for (const page of out) expect(page.length).toBeLessThanOrEqual(SMS_MAX);
+    expectLinksIntact(out, [MAPS]);
+    expect(out.join("")).not.toContain("kkkk");
+  });
+
+  test("journalUrl and links together: journal URL first, with its hint", () => {
+    const out = buildReply({
+      body: "Posted: Fog",
+      journalUrl: "https://example.test/fog.html",
+      links: [MAPSHARE],
+      env: envWith(),
+    });
+    expect(out).toEqual([
+      `Posted: Fog\nhttps://example.test/fog.html${JOURNAL_LIVE_HINT} ${MAPSHARE}`,
+    ]);
+  });
+
+  test("empty links → behaviour unchanged", () => {
+    expect(buildReply({ body: "pong", links: [], env: envWith() })).toEqual(["pong"]);
+  });
+});

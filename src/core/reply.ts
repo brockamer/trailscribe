@@ -23,6 +23,11 @@ export interface BuildReplyArgs {
    * {@link JOURNAL_LIVE_HINT}; only `body` is ever truncated around it.
    */
   journalUrl?: string;
+  /**
+   * Other links (#261), e.g. the `!where` Maps and MapShare URLs. Atomic like
+   * `journalUrl`, and placed after it.
+   */
+  links?: string[];
   costUsdMtd?: number;
   env: Env;
 }
@@ -38,17 +43,25 @@ export interface BuildReplyArgs {
  * precedence over body completeness).
  *
  * This function adds no map links of its own; location stays in the journal
- * post's YAML frontmatter (see `src/adapters/publish/github-pages.ts`). A
- * `journalUrl` is the one link it places, via {@link buildLinkReply}.
+ * post's YAML frontmatter (see `src/adapters/publish/github-pages.ts`). It
+ * places only the links the caller passes — `journalUrl` and `links` — via
+ * {@link buildLinkReply}.
  *
  * Throws if any output page exceeds {@link SMS_MAX} — that's a caller bug
  * (logic mistake here, not a runtime input error).
  */
-export function buildReply({ body, journalUrl, costUsdMtd, env }: BuildReplyArgs): string[] {
+export function buildReply({
+  body,
+  journalUrl,
+  links = [],
+  costUsdMtd,
+  env,
+}: BuildReplyArgs): string[] {
   const tail =
     appendCostSuffix(env) && typeof costUsdMtd === "number" ? ` · $${costUsdMtd.toFixed(2)}` : "";
 
-  if (journalUrl !== undefined) return buildLinkReply(body, journalUrl, tail);
+  const allLinks = journalUrl !== undefined ? [journalUrl + JOURNAL_LIVE_HINT, ...links] : links;
+  if (allLinks.length > 0) return buildLinkReply(body, allLinks, tail);
 
   // Single-page case: body + tail fits within 160 with no marker overhead.
   if (body.length + tail.length <= SMS_MAX) {
@@ -89,23 +102,37 @@ export function buildReply({ body, journalUrl, costUsdMtd, env }: BuildReplyArgs
 }
 
 /**
- * Reply that carries a journal URL (#249). The URL is atomic: a URL cut across
+ * Reply that carries links (#249, #261). Each link is atomic: a URL cut across
  * two pages, or with a `(1/2)` marker glued inside it, cannot be tapped. One
  * page when everything fits; otherwise page 1 is the (possibly truncated) body
- * and page 2 is the URL, hint and cost suffix. Worst case page 2 is a 117-char
- * URL + 17 + 8 + 5 = 147.
+ * and page 2 is the links and cost suffix. Worst cases for page 2: a 117-char
+ * journal URL + 17 hint + 8 suffix + 5 marker = 147; `!where` with an 86-char
+ * Maps URL + 1 + 36-char MapShare URL + 8 + 5 = 136.
+ *
+ * A link that does not fit on page 2 with the ones before it is dropped whole,
+ * never split. Only a per-tenant `MAPSHARE_KEY` far longer than `trailscribe`
+ * can trigger that; every current caller's first link fits.
  */
-function buildLinkReply(body: string, url: string, tail: string): string[] {
-  const linkLine = url + JOURNAL_LIVE_HINT;
-
-  const single = `${body}\n${linkLine}${tail}`;
+function buildLinkReply(body: string, links: string[], tail: string): string[] {
+  const single = `${body}\n${links.join(" ")}${tail}`;
   if (single.length <= SMS_MAX) return [single];
 
   const page1 = body.slice(0, SMS_MAX - MARKER_LEN) + "(1/2)";
-  const page2 = linkLine + tail + "(2/2)";
+  const page2 = fitLinks(links, SMS_MAX - MARKER_LEN - tail.length) + tail + "(2/2)";
   assertWithinLimit(page1);
   assertWithinLimit(page2);
   return [page1, page2];
+}
+
+/** Space-joins `links` in order, stopping before the first one that would pass `budget`. */
+function fitLinks(links: string[], budget: number): string {
+  let line = "";
+  for (const link of links) {
+    const next = line === "" ? link : `${line} ${link}`;
+    if (next.length > budget) break;
+    line = next;
+  }
+  return line;
 }
 
 function assertWithinLimit(s: string): void {

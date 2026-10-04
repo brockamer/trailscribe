@@ -243,6 +243,22 @@ export function imeiAllowSet(env: Env): Set<string> {
   return new Set(env.IMEI_ALLOWLIST.split(",").map((s) => s.trim()));
 }
 
+/**
+ * The one IMEI an IPC Outbound event came from, or `null` when none of its
+ * IMEIs is allowlisted. Since Outbound v2.0.9 a message sent via Internet from
+ * a multi-device account carries every account IMEI, comma-separated; the
+ * first allowlisted one is taken as the sender and reply recipient (decision
+ * on #282). The allowlist is defense in depth behind the bearer token, so one
+ * match is enough.
+ */
+export function resolveSenderImei(imei: string, allow: Set<string>): string | null {
+  for (const candidate of imei.split(",")) {
+    const trimmed = candidate.trim();
+    if (allow.has(trimmed)) return trimmed;
+  }
+  return null;
+}
+
 /** Parse the boolean-ish APPEND_COST_SUFFIX var. */
 export function appendCostSuffix(env: Env): boolean {
   return env.APPEND_COST_SUFFIX.toLowerCase() === "true";

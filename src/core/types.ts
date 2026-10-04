@@ -33,11 +33,17 @@ export const AI_COMMANDS: ReadonlySet<ParsedCommand["type"]> = new Set([
 ]);
 
 /**
- * Canonical Garmin IPC Outbound event (schema V2).
- * We tolerate extra fields from V3/V4 but only consume the V2 subset.
- * See materials/Garmin IPC Outbound.txt for the authoritative contract.
+ * Canonical Garmin IPC Outbound event (schema V2, plus the optional V3/V4
+ * fields). The routing logic consumes only the V2 subset; the V3/V4 fields
+ * feed diagnostics and the idempotency key.
+ * See `materials/Garmin IPC Outbound.pdf` (v2.0.10) for the authoritative contract.
  */
 export interface GarminEvent {
+  /**
+   * One IMEI, or since Outbound v2.0.9 a comma-separated list of every IMEI on
+   * the account when the message was sent via Internet from a multi-device
+   * account. `handleEvent` in `src/app.ts` reduces it to one sender (#282).
+   */
   imei: string;
   messageCode: number;
   freeText?: string;
@@ -58,6 +64,16 @@ export interface GarminEvent {
     resetDetected?: number;
   };
   payload?: string;
+  /** V3: "Satellite" or "Internet". */
+  transportMode?: string;
+  /** V4: Base64 file content. Never logged or hashed. */
+  mediaBytes?: string;
+  /** V4: GUID of the media file; replaces the text in the idempotency key. */
+  mediaId?: string;
+  /** V4: MIME type, `image/avif` or `audio/ogg`. */
+  mediaType?: string;
+  /** V4: speech-to-text of an `audio/ogg` file, when Garmin provides one. Never logged. */
+  transcription?: string;
 }
 
 export interface GarminEnvelope {

@@ -129,13 +129,16 @@ budget gate. Other tracking codes (mc=0, mc=11) are not dispatched; a nonzero
 
 ## Data contracts
 
-- **Inbound (Garmin → us):** `{ Version, Events: [GarminEvent, …] }` — schema V2 with tolerance for V3/V4 extras. See [`materials/Garmin IPC Outbound.pdf`](../materials/Garmin%20IPC%20Outbound.pdf).
-- **Outbound (us → Garmin):** `POST /api/Messaging/Message` with `{ Messages: [{ Recipients: [imei], Sender, Timestamp: "/Date(ms)/", Message }] }`. 160-char hard cap; we paginate for two-SMS replies. See [`materials/Garmin IPC Inbound.pdf`](../materials/Garmin%20IPC%20Inbound.pdf).
+- **Inbound (Garmin → us):** `{ Version, Events: [GarminEvent, …] }` — schema V2 with tolerance for V3/V4 extras. Since Outbound v2.0.9, `imei` can be a comma-separated list (a message sent via Internet from a multi-device account); `handleEvent` takes the first allowlisted IMEI as the sender and reply recipient, and logs `imei_multi`. A V4 media event logs `media_event` with its metadata, never the bytes or the transcription. See [`materials/Garmin IPC Outbound.pdf`](../materials/Garmin%20IPC%20Outbound.pdf) (v2.0.10).
+- **Outbound (us → Garmin):** `POST /api/Messaging/Message` with `{ Messages: [{ Recipients: [imei], Sender, Timestamp: "/Date(ms)/", Message }] }`. We send at most 160 chars per message and paginate for two-SMS replies; the API maximum has been 1600 since Inbound v3.1.2, and #284 probes what the device shows. See [`materials/Garmin IPC Inbound.pdf`](../materials/Garmin%20IPC%20Inbound.pdf) (v3.1.4).
 - **Auth:** incoming = the raw `GARMIN_INBOUND_TOKEN` in the `X-Outbound-Auth-Token` header (Garmin does not use `Authorization: Bearer`; PRD §8 D1); outgoing = `X-API-Key: <GARMIN_IPC_INBOUND_API_KEY>`.
 
 ## Idempotency
 
-Key = `sha256(imei : timeStamp : messageCode : sha256(freeText||payload||""))`.
+Key = `sha256(imei : timeStamp : messageCode : sha256(content))`, where
+`content` is `"media:" + mediaId` on a V4 media event and
+`freeText||payload||""` otherwise (#282). `imei` is the single sender — see
+the allowlist note under Data contracts.
 Stored under `idem:<key>` in `TS_IDEMPOTENCY` with TTL 48h. A replay of a
 completed message short-circuits before any side-effecting work. A replay of a
 partly finished message re-runs, and `withCheckpoint` skips each sub-op that

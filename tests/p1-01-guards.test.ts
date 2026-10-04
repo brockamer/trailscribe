@@ -26,6 +26,20 @@
  *   free-text-zero-coords.json
  *     Constructed defensive scenario: gpsFix=2 (claims 3D fix) while coords
  *     are 0,0. Exercises the second clause of `hasFix` in P1-01.
+ *
+ *   v4-media-audio.json
+ *     Constructed from Garmin Outbound v2.0.10 §Example Media Message (#282).
+ *     IMEI swapped for the test allowlist one. The spec truncates mediaBytes;
+ *     the fixture keeps its first 92 characters, which decode to 69 bytes
+ *     starting with the Ogg header "OggS". Not yet seen from a real device;
+ *     #284 records one.
+ *
+ *   free-text-internet-multi-imei.json
+ *     Constructed from Garmin Outbound v2.0.9+ §Event Schema V2 `imei`: a
+ *     message sent via Internet from an account with several devices carries
+ *     every account IMEI, comma-separated (#282). The allowlisted IMEI is
+ *     second, so the test proves the first allowlisted one is chosen, not the
+ *     first listed.
  */
 import { describe, test, expect, beforeEach, vi, type MockInstance } from "vitest";
 import { makeApp } from "../src/app.js";

@@ -1,5 +1,11 @@
 import { describe, test, expect } from "vitest";
-import { checkEnv, parseEnv, ipcInboundDryRun, journalLocationPrecision } from "../src/env.js";
+import {
+  checkEnv,
+  parseEnv,
+  ipcInboundDryRun,
+  journalLocationPrecision,
+  resolveSenderImei,
+} from "../src/env.js";
 import { makeTestEnv } from "./helpers/env.js";
 
 describe("parseEnv — IPC_INBOUND_DRY_RUN production guard", () => {
@@ -159,5 +165,22 @@ describe("journalLocationPrecision helper (#223)", () => {
     expect(() => parseEnv(makeTestEnv({ JOURNAL_LOCATION_PRECISION: "7" }))).toThrow(
       /JOURNAL_LOCATION_PRECISION/,
     );
+  });
+});
+
+describe("resolveSenderImei (Outbound v2.0.9 comma-separated imei, #282)", () => {
+  const allow = new Set(["123456789012345"]);
+
+  test("a single allowlisted IMEI is returned as is", () => {
+    expect(resolveSenderImei("123456789012345", allow)).toBe("123456789012345");
+  });
+
+  test("the first allowlisted IMEI in a list is returned, trimmed", () => {
+    expect(resolveSenderImei("999999999999999, 123456789012345", allow)).toBe("123456789012345");
+  });
+
+  test("no allowlisted IMEI → null", () => {
+    expect(resolveSenderImei("999999999999999,888888888888888", allow)).toBeNull();
+    expect(resolveSenderImei("", allow)).toBeNull();
   });
 });

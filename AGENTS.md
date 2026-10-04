@@ -3,7 +3,7 @@
 Living context file for Claude Code. Keep concise; update as decisions are made.
 
 **Canonical PRD:** `docs/PRD.md` (source of truth for product scope, architecture, and phased plan — read it first).
-**Input materials:** `materials/` (PDFs + spec + deep research report + Garmin IPC docs). **Only the PDFs are tracked** — `.gitignore:25` ignores `materials/*.txt`, so the extracted text does not survive a fresh clone. Regenerate on demand with `pdftotext -layout "materials/<name>.pdf" out.txt` (a harmless `xref num ... not found` warning on stderr does not affect the output). The tracked PDFs are IPC Inbound 3.1.1 (2024-10-10) and IPC Outbound 2.0.8 (2025-09-08); Garmin's current revisions are 3.1.4 and 2.0.10 (2026-09-01) — #282 refreshes them, #283 watches for the next change.
+**Input materials:** `materials/` (PDFs + spec + deep research report + Garmin IPC docs). **Only the PDFs are tracked** — `.gitignore:25` ignores `materials/*.txt`, so the extracted text does not survive a fresh clone. Regenerate on demand with `pdftotext -layout "materials/<name>.pdf" out.txt` (a harmless `xref num ... not found` warning on stderr does not affect the output). The tracked PDFs are IPC Inbound 3.1.4 and IPC Outbound 2.0.10, both dated 2026-09-01 (refreshed in #282 from 3.1.1 and 2.0.8; the revision summary is on #282). #283 watches for the next change.
 
 ## Commands
 
@@ -110,7 +110,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 
 - **Strict TS**, JSDoc on exported functions, short focused functions.
 - **Reply budget:** total outgoing ≤320 chars including the cost suffix (when `APPEND_COST_SUFFIX=true`).
-- **Idempotency key:** `sha256(imei + ":" + timeStamp + ":" + messageCode + ":" + content_hash)` — Garmin has no `msgId` field, so we derive a composite key (see PRD §5).
+- **Idempotency key:** `sha256(imei + ":" + timeStamp + ":" + messageCode + ":" + content_hash)` — Garmin has no `msgId` field, so we derive a composite key (see PRD §5). On a V4 media event `content_hash` hashes `"media:" + mediaId`, never `mediaBytes` (#282).
 - **Intercept policy (PRD §8 D10):** non-`!`-prefixed device messages are silent-dropped at the webhook (200 OK, no IPC Inbound reply, structured `intercept_skipped` log). `!`-prefixed unknowns still get `"Try !help"`. Operator's casual messages to friends/family bypass TrailScribe entirely.
 - **Env:** validated via zod schema in `src/env.ts`; access via typed `Env` binding in Worker handlers.
 - **Tool adapters** live in `src/adapters/*` and accept `{ ...args, env: Env }`.
@@ -119,7 +119,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 
 - **D1 Inbound auth:** static bearer token (`GARMIN_INBOUND_TOKEN`)
 - **D2 Pro tier:** YES — full IPC path enabled
-- **D3 Schema:** V2 (tolerate V3/V4)
+- **D3 Schema:** V2 (tolerate V3/V4). Observed 2026-10-04: the production tenant is set to V4; `IPC_SCHEMA_VERSION` is still `"2"` and no code reads it.
 - **D4 Token budget:** 50,000/day
 - **D6 Reply:** IPC Inbound primary + email fallback (fallback gated by D9)
 - **D7 Branch:** rename `master` → `main` at Phase 0
@@ -175,10 +175,10 @@ plans/                          # per-milestone sprint plans (none active; all a
 
 ## Garmin IPC quick-ref (authoritative sources in `materials/`)
 
-- **IPC Outbound v2.0.8** (device → us): HTTPS POST. Schema V2/V3/V4 (α uses V2). Fields we need: `imei` (15-digit), `messageCode` (3=Free Text), `freeText`, `timeStamp` (ms epoch), `point{latitude,longitude,altitude}`, `addresses[]`, `status{lowBattery,...}`. Auth via OAuth bearer OR static token (α uses static bearer). **Must respond 200** or Garmin retries at 2/4/8/16/32/64/128s then 12h pauses × 5 days → suspension.
-- **IPC Inbound v3.1.1** (us → device): POST `{base}/api/Messaging/Message`. Auth: `X-API-Key` header. Body: `{ Messages: [{ Recipients: [imei], Sender, Timestamp: "/Date(ms)/", Message }] }`. **Message body 160 chars MAX** (Iridium hard limit — 422 on overage). **Correction 2026-10-03:** that sentence came from IPC Inbound 3.1.1; revision 3.1.2 (2024-11-27) raised the API maximum to 1600 characters, and the current guide (3.1.4, 2026-09-01) also documents a `/api/Messaging/Media` endpoint (AVIF photo, Opus voice). What the device shows for a long message is unverified; #284 probes it and #282 refreshes `materials/`. The code keeps 160 until then.. Returns `{ count: N }`.
+- **IPC Outbound v2.0.10** (device → us): HTTPS POST. Schema V2/V3/V4 (α uses V2). Fields we need: `imei` (15-digit; since 2.0.9 a comma-separated list for an Internet message from a multi-device account — see the allowlist rule above), `messageCode` (3=Free Text), `freeText`, `timeStamp` (ms epoch), `point{latitude,longitude,altitude}`, `addresses[]`, `status{lowBattery,...}`. Auth via OAuth bearer OR static token (α uses static bearer). **Must respond 200** or Garmin retries at 2/4/8/16/32/64/128s then 12h pauses × 5 days → suspension.
+- **IPC Inbound v3.1.4** (us → device): POST `{base}/api/Messaging/Message`. Auth: `X-API-Key` header (new keys expire after 6 months by default). Body: `{ Messages: [{ Recipients: [imei], Sender, Timestamp: "/Date(ms)/", Message }] }`. Returns `{ count: N }`. **Message maximum: 1600 characters at the API level since 3.1.2** (2024-11-27). "160 chars MAX, 422 on overage" was the 3.1.1 text and is no longer the API limit. What the device shows for a message over 160 is unverified; #284 probes it, and the code keeps 160 (`SMS_MAX`, `MAX_MESSAGE_CHARS`) until then. 3.1.4 also documents `POST /api/Messaging/Media` (multipart/form-data; images AVIF YUV444 ≤1080×1080 ≤1 MB; audio Opus in OGG, 8000 bps VBR, ≤30 s, ≤90 KB).
 - **Tier requirement:** IPC Outbound + Inbound are **Professional/Enterprise only**. Consumer inReach does not expose these APIs — gates the whole architecture (see PRD §8 D2).
-- **Message Codes Table** (IPC Outbound rev 2.0.8, p.9 — the authoritative list). Codes TrailScribe routes: `0` Position Report, `3` Free Text, `4` Declare SOS, `10` Start Track, `11` Track Interval, `12` Stop Track. Codes the device also emits that we silent-drop by design: `2` Locate Response, `13` Unknown Index, `14`–`16` Puck Message 1–3, `17` Map Share, **`20` Mail Check**, **`21` Am I Alive**, `24`–`63` Pre-defined Message, `64`–`69` encrypted/binary classes, `3099` Canned Message.
+- **Message Codes Table** (IPC Outbound rev 2.0.10, p.9 — the authoritative list; unchanged since 2.0.8). Codes TrailScribe routes: `0` Position Report, `3` Free Text, `4` Declare SOS, `10` Start Track, `11` Track Interval, `12` Stop Track. Codes the device also emits that we silent-drop by design: `2` Locate Response, `13` Unknown Index, `14`–`16` Puck Message 1–3, `17` Map Share, **`20` Mail Check**, **`21` Am I Alive**, `24`–`63` Pre-defined Message, `64`–`69` encrypted/binary classes, `3099` Canned Message.
 - **mc=20 ("Mail Check") is the device polling for queued inbound messages** (confirmed 2026-09-16 from the spec table, closing #207). It is routine housekeeping, not an error — silent-drop is correct. **Diagnostic value:** because Iridium cannot push, a reply only reaches the device when the device asks for it, so mc=20 arrival timestamps mark exactly when the mailbox was checked. That is the missing timeline in the open "Worker hands off in <6s but the Mini 3 Plus takes up to 75s" question.
 - **Device autonomously flaps tracking interval based on motion** (Mini 3 Plus confirmed 2026-05-17 during #197 investigation): `status.intervalChange` toggles between the configured interval (e.g. 120s) and a long stationary-saver value (observed 14400s = 4hr) when the device detects no motion, then reverts when motion resumes. Emitted as mc=11 ("Track Interval") with the new value in `status.intervalChange` (seconds; 0 = unchanged). Short or mostly-stationary sessions can therefore hit MapShare with very few breadcrumbs even when the UI shows a fast interval. **MapShare KML and IPC Outbound mc=0 stream are independent** — MapShare may carry more pings than IPC Outbound delivers for the same window. See #201 for decoding/persisting the current interval to use in refusal SMS hints.
 
@@ -196,6 +196,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 - **Reply budget is sacred:** ≤320 chars out (incl. cost suffix if enabled). Longer content goes to email/blog.
 - **Serverless ephemerality:** all state in KV (or later DO/D1). No in-memory idempotency/ledger.
 - **Auth before processing:** verify `GARMIN_INBOUND_TOKEN` bearer on every Outbound webhook; IMEI must be in allowlist.
+- **A comma-separated `imei` is reduced to one sender** (#282). Since Outbound 2.0.9, a message sent via Internet from an account with several devices carries every account IMEI, comma-separated. `resolveSenderImei()` in `src/env.ts` accepts the event when at least one listed IMEI is allowlisted and takes the first allowlisted one as the sender and reply recipient; `handleEvent()` logs `imei_multi` and rewrites `event.imei` before the idempotency key, so nothing downstream sees the list. No listed IMEI allowlisted → `imei_not_allowed`, as below.
 - **A rejected IMEI is silent by design:** `handleEvent()` in `src/app.ts` logs `imei_not_allowed` and returns; the route still answers HTTP 200, so Garmin never retries and the device gets nothing. Identical symptom to a dead network — check this first when replies stop.
 - **A malformed env stops `/garmin/ipc` with one error line** (#212). `checkEnv()` in `src/env.ts` runs the zod schema on every authenticated webhook; any failure, or `IPC_INBOUND_DRY_RUN=true` in production, logs `env_invalid` (level error, with variable and rule names, never values) and answers HTTP 200 without reading the events. 200 is deliberate: Garmin's retries cannot repair config, and a fault left for 5 days suspends the tenant. Messages sent during the fault are lost and must be resent. The device symptom is the same as a rejected IMEI, so when replies stop, look for `env_invalid` and `imei_not_allowed` in Workers Logs. `GET /health` runs the same check and returns `env_ok` (boolean only; a failure also logs `env_invalid` with the names). Curl it after every deploy or `wrangler secret put` — secrets are write-only, and this is the only read-back.
 - **Never commit secrets.** Wrangler Secrets only. `.dev.vars` gitignored; `.dev.vars.example` tracked.
@@ -207,8 +208,8 @@ plans/                          # per-milestone sprint plans (none active; all a
 1. `docs/PRD.md` — canonical product/engineering spec (sign-off pending)
 2. `materials/TrailScribe_ Your AI Companion for Off-Grid Adventures.pptx.txt` — personas + product vision
 3. `materials/TrailScribe Deep Research Report.txt` — architecture rationale (Workers, phased KV→DO→D1)
-4. `materials/Garmin IPC Outbound.txt` — Outbound webhook contract (auth, schema, retry)
-5. `materials/Garmin IPC Inbound.txt` — Inbound API contract (X-API-Key, 160-char limit, error codes)
+4. `materials/Garmin IPC Outbound.pdf` (v2.0.10) — Outbound webhook contract (auth, schema, retry)
+5. `materials/Garmin IPC Inbound.pdf` (v3.1.4) — Inbound API contract (X-API-Key, message limit, media, error codes)
 6. `src/core/grammar.ts` — command parser (note: `src/agent/` does not exist)
 7. `docs/field-commands.md` — command UX reference (operator-facing)
 8. `docs/superpowers/specs/archived/2026-09/2026-05-01-tracking-session-artifacts-design.md` — Mode B tracking design (archived 2026-09-13; plan at `docs/superpowers/plans/archived/2026-09/2026-05-03-tracking-session-artifacts.md`)

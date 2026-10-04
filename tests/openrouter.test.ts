@@ -21,10 +21,11 @@ const originalFetch = globalThis.fetch;
 function completion(
   content: string,
   finishReason: string,
-  opts: { prompt?: number; completion?: number; native?: string } = {},
+  opts: { prompt?: number; completion?: number; native?: string; cost?: number } = {},
 ): Response {
   const prompt = opts.prompt ?? 367;
   const done = opts.completion ?? 500;
+  const cost = opts.cost === undefined ? {} : { cost: opts.cost };
   return new Response(
     JSON.stringify({
       id: "chatcmpl-test",
@@ -35,7 +36,12 @@ function completion(
           native_finish_reason: opts.native ?? (finishReason === "stop" ? "end_turn" : "refusal"),
         },
       ],
-      usage: { prompt_tokens: prompt, completion_tokens: done, total_tokens: prompt + done },
+      usage: {
+        prompt_tokens: prompt,
+        completion_tokens: done,
+        total_tokens: prompt + done,
+        ...cost,
+      },
     }),
     { status: 200, headers: { "content-type": "application/json" } },
   );
@@ -129,6 +135,37 @@ describe("chatCompletion — content_filter retry (#270)", () => {
     await call();
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("chatCompletion — usage.cost (#162)", () => {
+  test("OpenRouter's usage.cost is returned with the token counts", async () => {
+    fetchSpy.mockResolvedValueOnce(completion("4 entries.", "stop", { cost: 0.0123 }));
+
+    const res = await call();
+
+    expect(res.usage.cost).toBe(0.0123);
+  });
+
+  test("the retry adds the cost of both attempts, because OpenRouter bills the filtered one", async () => {
+    fetchSpy
+      .mockResolvedValueOnce(completion("", "content_filter", { cost: 0.0071 }))
+      .mockResolvedValueOnce(completion("4 entries.", "stop", { cost: 0.0123 }));
+
+    const res = await call();
+
+    expect(res.usage.cost).toBeCloseTo(0.0194, 10);
+  });
+
+  test("the retry drops the cost when one attempt has none, so the ledger estimates both", async () => {
+    fetchSpy
+      .mockResolvedValueOnce(filtered())
+      .mockResolvedValueOnce(completion("4 entries.", "stop", { cost: 0.0123 }));
+
+    const res = await call();
+
+    expect(res.usage.cost).toBeUndefined();
+    expect(res.usage.completion_tokens).toBe(814);
   });
 });
 

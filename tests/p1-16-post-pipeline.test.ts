@@ -585,3 +585,33 @@ describe("P1-16 !post — journal link reaches the device whole (#249)", () => {
     expect(pages.join("")).toContain("(live in ~1 min)");
   });
 });
+
+describe("P1-16 !post — OpenRouter actual cost reaches the ledger (#162)", () => {
+  test("the narrative call's usage.cost is recorded instead of the env-rate estimate", async () => {
+    fetchSpy = makeFetchRouter([
+      {
+        match: (u) => u.includes("openrouter.ai"),
+        respond: () =>
+          jsonResponse({
+            ...NARRATIVE_RESPONSE,
+            usage: { ...NARRATIVE_RESPONSE.usage, cost: 0.0421 },
+          }),
+      },
+      {
+        match: (u, i) => u.includes("api.github.com") && i?.method === "GET",
+        respond: () => new Response(null, { status: 404 }),
+      },
+      {
+        match: (u, i) => u.includes("api.github.com") && i?.method === "PUT",
+        respond: () => jsonResponse(PUBLISH_RESPONSE),
+      },
+    ]);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!post Lake Sabrina basin glowing pink at sunset."));
+
+    const snap = await monthlyTotals(env);
+    // The env rates would give 0.192 for these tokens.
+    expect(snap.usd_cost).toBe(0.0421);
+  });
+});

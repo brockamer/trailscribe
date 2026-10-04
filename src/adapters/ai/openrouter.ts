@@ -30,6 +30,13 @@ export interface ChatCompletionResponse {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
+    /**
+     * USD that OpenRouter charged for this call (#162). Sent on every
+     * non-streaming response without a request flag (probed 2026-10-04).
+     * Optional because a direct-provider `LLM_BASE_URL` does not send it;
+     * the ledger then falls back to the `LLM_*_COST_PER_1K` estimate.
+     */
+    cost?: number;
   };
 }
 
@@ -68,7 +75,8 @@ export interface ChatCompletionArgs {
  * (#270): the provider's safety classifier stops about 1 in 20 identical,
  * benign requests (measured 2026-10-04, `native_finish_reason: refusal`), so
  * the same request usually succeeds next time. The returned `usage` adds both
- * attempts, because the filtered one is billed. A second filtered answer is
+ * attempts, because the filtered one is billed; `cost` is added only when both
+ * attempts carry one, so a partial figure never reaches the ledger. A second filtered answer is
  * returned as-is for the caller to report. Every finish other than `stop`
  * logs one `llm_finish_reason` warn line.
  */
@@ -107,11 +115,13 @@ function addUsage(
   a: ChatCompletionResponse["usage"],
   b: ChatCompletionResponse["usage"],
 ): ChatCompletionResponse["usage"] {
-  return {
+  const sum = {
     prompt_tokens: a.prompt_tokens + b.prompt_tokens,
     completion_tokens: a.completion_tokens + b.completion_tokens,
     total_tokens: a.total_tokens + b.total_tokens,
   };
+  if (a.cost === undefined || b.cost === undefined) return sum;
+  return { ...sum, cost: a.cost + b.cost };
 }
 
 /** One logical request: the HTTP attempt loop with 5xx/network retries. */

@@ -447,3 +447,24 @@ describe("P2-06 !brief — plain text backstop (#271)", () => {
     expect(messages).toEqual(["Logged 2 observations.\nWeather steady."]);
   });
 });
+
+describe("brief — OpenRouter actual cost reaches the ledger (#162)", () => {
+  test("usage.cost is recorded instead of the env-rate estimate", async () => {
+    await seedEntries(3);
+    fetchSpy = makeFetchRouter([
+      {
+        match: (u) => u.includes("openrouter.ai") || u.includes("/chat/completions"),
+        respond: () => {
+          const res = chatCompletionResponse("Logged 3 observations.");
+          return jsonResponse({ ...res, usage: { ...res.usage, cost: 0.0421 } });
+        },
+      },
+    ]);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!brief"));
+
+    const snap = await monthlyTotals(env);
+    expect(snap.by_command["brief"]?.usd_cost).toBe(0.0421);
+  });
+});

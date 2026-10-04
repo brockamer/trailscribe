@@ -2,7 +2,7 @@ import type { CommandResult, ParsedCommand } from "../types.js";
 import type { OrchestratorContext } from "../orchestrator.js";
 import { chatCompletion, LLMError } from "../../adapters/ai/openrouter.js";
 import { sendEmail, ResendError } from "../../adapters/mail/resend.js";
-import { recordTransaction } from "../ledger.js";
+import { recordTransaction, type LedgerUsage } from "../ledger.js";
 import { withCheckpoint, markFailed } from "../idempotency.js";
 import { BUDGET_REJECTION_MESSAGE, checkBudget } from "../budget.js";
 import { log } from "../../adapters/logging/worker-logs.js";
@@ -56,7 +56,7 @@ export async function handleCamp(
   let result: {
     content: string;
     filtered?: boolean;
-    usage: { prompt_tokens: number; completion_tokens: number };
+    usage: LedgerUsage;
   };
   try {
     result = await withCheckpoint(env, idemKey, "camp", async () => {
@@ -80,6 +80,7 @@ export async function handleCamp(
         usage: {
           prompt_tokens: completion.usage.prompt_tokens,
           completion_tokens: completion.usage.completion_tokens,
+          cost_usd: completion.usage.cost,
         },
       };
     });

@@ -7,6 +7,12 @@ const DAILY_TTL_SECONDS = 60 * 60 * 24 * 8;
 export interface LedgerUsage {
   prompt_tokens: number;
   completion_tokens: number;
+  /**
+   * USD that OpenRouter charged (`usage.cost`, #162). When present and valid
+   * it is the recorded cost; otherwise the ledger estimates from tokens and
+   * `LLM_*_COST_PER_1K`.
+   */
+  cost_usd?: number;
 }
 
 export interface LedgerEntry {
@@ -52,7 +58,7 @@ export interface ImageLedgerEntry {
  * failures are logged but do not throw.
  */
 export async function recordTransaction(entry: LedgerEntry): Promise<{ usd_cost: number }> {
-  const usd_cost = computeCost(entry.usage, entry.env);
+  const usd_cost = resolveCost(entry);
   const now = Date.now();
   const yyyymm = formatMonth(now);
   const yyyymmdd = formatDay(now);
@@ -191,6 +197,34 @@ function emptySnapshot(period: string): LedgerSnapshot {
   };
 }
 
+/**
+ * The cost to record (#162): OpenRouter's `cost_usd` when it is a finite,
+ * non-negative number, else the env-rate estimate. Logs one `ledger_cost`
+ * line per LLM call with both figures, so a drift between them (provider
+ * routing, prompt caching, a price change) shows in Workers Logs. Commands
+ * that made no LLM call (zero tokens) log nothing.
+ */
+function resolveCost(entry: LedgerEntry): number {
+  const { usage, command } = entry;
+  const estimate_usd = computeCost(usage, entry.env);
+  const actual = usage.cost_usd;
+  const hasActual = typeof actual === "number" && Number.isFinite(actual) && actual >= 0;
+  const usd_cost = hasActual ? actual : estimate_usd;
+  if (usage.prompt_tokens > 0 || usage.completion_tokens > 0) {
+    log({
+      event: "ledger_cost",
+      command,
+      cost_source: hasActual ? "actual" : "estimate",
+      usd_cost,
+      estimate_usd,
+      prompt_tokens: usage.prompt_tokens,
+      completion_tokens: usage.completion_tokens,
+    });
+  }
+  return usd_cost;
+}
+
+/** Env-rate estimate; the fallback when OpenRouter sends no `usage.cost`. */
 function computeCost(usage: LedgerUsage, env: Env): number {
   const inPer1k = Number.parseFloat(env.LLM_INPUT_COST_PER_1K) || 0;
   const outPer1k = Number.parseFloat(env.LLM_OUTPUT_COST_PER_1K) || 0;

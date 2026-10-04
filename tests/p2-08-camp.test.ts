@@ -397,3 +397,23 @@ describe("P2-08 !camp — plain text (#271)", () => {
     expect(calls.some((u: string) => u.includes("api.resend.com"))).toBe(false);
   });
 });
+
+describe("camp — OpenRouter actual cost reaches the ledger (#162)", () => {
+  test("usage.cost is recorded instead of the env-rate estimate", async () => {
+    fetchSpy = makeFetchRouter([
+      {
+        match: (u) => u.includes("openrouter.ai") || u.includes("/chat/completions"),
+        respond: () => {
+          const res = chatCompletionResponse("Onion Valley has dispersed sites.");
+          return jsonResponse({ ...res, usage: { ...res.usage, cost: 0.0421 } });
+        },
+      },
+    ]);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!camp water Onion Valley"));
+
+    const snap = await monthlyTotals(env);
+    expect(snap.by_command["camp"]?.usd_cost).toBe(0.0421);
+  });
+});

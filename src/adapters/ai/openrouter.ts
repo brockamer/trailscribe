@@ -1,4 +1,5 @@
 import type { Env } from "../../env.js";
+import { log } from "../logging/worker-logs.js";
 
 const RETRY_DELAYS_MS = [1000, 4000, 16000] as const;
 
@@ -22,6 +23,8 @@ export interface ChatCompletionResponse {
   choices: Array<{
     message: { role: string; content: string };
     finish_reason: string;
+    /** The provider's own stop reason, e.g. Anthropic `refusal` behind `content_filter`. */
+    native_finish_reason?: string | null;
   }>;
   usage: {
     prompt_tokens: number;
@@ -47,6 +50,8 @@ export class LLMError extends Error {
 export interface ChatCompletionArgs {
   req: ChatCompletionRequest;
   env: Env;
+  /** Names the caller in the `llm_finish_reason` log line (e.g. `brief`, `narrative_post`). */
+  label?: string;
   /** Injectable sleep helper for tests; defaults to setTimeout. */
   delay?: (ms: number) => Promise<void>;
 }
@@ -58,8 +63,59 @@ export interface ChatCompletionArgs {
  * uses `HTTP-Referer` + `X-Title` for analytics. 4xx surfaces immediately
  * (caller's prompt or auth is broken; retry won't help). 5xx + network errors
  * retry at 1s/4s/16s (initial + 3 retries = 4 attempts).
+ *
+ * A 200 with `finish_reason: content_filter` and no content is retried once
+ * (#270): the provider's safety classifier stops about 1 in 20 identical,
+ * benign requests (measured 2026-10-04, `native_finish_reason: refusal`), so
+ * the same request usually succeeds next time. The returned `usage` adds both
+ * attempts, because the filtered one is billed. A second filtered answer is
+ * returned as-is for the caller to report. Every finish other than `stop`
+ * logs one `llm_finish_reason` warn line.
  */
 export async function chatCompletion(args: ChatCompletionArgs): Promise<ChatCompletionResponse> {
+  const first = await postWithRetry(args);
+  logFinish(args, first, 1);
+  if (!isEmptyFilter(first)) return first;
+
+  const second = await postWithRetry(args);
+  logFinish(args, second, 2);
+  return { ...second, usage: addUsage(first.usage, second.usage) };
+}
+
+function isEmptyFilter(res: ChatCompletionResponse): boolean {
+  const choice = res.choices[0];
+  return choice?.finish_reason === "content_filter" && !choice.message?.content;
+}
+
+function logFinish(args: ChatCompletionArgs, res: ChatCompletionResponse, attempt: 1 | 2): void {
+  const choice = res.choices[0];
+  if (!choice || choice.finish_reason === "stop") return;
+  log({
+    event: "llm_finish_reason",
+    level: "warn",
+    label: args.label ?? null,
+    model: args.req.model,
+    finish_reason: choice.finish_reason,
+    native_finish_reason: choice.native_finish_reason ?? null,
+    max_tokens: args.req.max_tokens ?? null,
+    completion_tokens: res.usage?.completion_tokens ?? null,
+    attempt,
+  });
+}
+
+function addUsage(
+  a: ChatCompletionResponse["usage"],
+  b: ChatCompletionResponse["usage"],
+): ChatCompletionResponse["usage"] {
+  return {
+    prompt_tokens: a.prompt_tokens + b.prompt_tokens,
+    completion_tokens: a.completion_tokens + b.completion_tokens,
+    total_tokens: a.total_tokens + b.total_tokens,
+  };
+}
+
+/** One logical request: the HTTP attempt loop with 5xx/network retries. */
+async function postWithRetry(args: ChatCompletionArgs): Promise<ChatCompletionResponse> {
   const { req, env } = args;
   const delay = args.delay ?? defaultDelay;
   const url = `${stripTrailingSlash(env.LLM_BASE_URL)}/chat/completions`;

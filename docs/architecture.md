@@ -91,7 +91,7 @@ suspends the tenant.
 | `src/core/track-metrics.ts`                   | Distance, elevation, pace and stationary/at-rest classification from MapShare KML points                |
 | `src/core/units.ts`                           | Metric → imperial display helpers (#195)                                                                |
 | `src/adapters/outbound/garmin-ipc-inbound.ts` | `sendReply()` — `POST /api/Messaging/Message`                                                           |
-| `src/adapters/ai/openrouter.ts`               | `chatCompletion()` — OpenAI-compatible chat API on OpenRouter; returns real `usage`                     |
+| `src/adapters/ai/openrouter.ts`               | `chatCompletion()` — OpenRouter chat API; real `usage`; one retry on `content_filter` (#270)            |
 | `src/adapters/ai/replicate.ts`                | `generateImage()` — Replicate predictions API (`!postimg`)                                              |
 | `src/adapters/mail/resend.ts`                 | `sendEmail()` — Resend transactional API                                                                |
 | `src/adapters/tasks/todoist.ts`               | `addTask()` — Todoist REST                                                                              |

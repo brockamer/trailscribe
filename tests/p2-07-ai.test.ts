@@ -272,26 +272,66 @@ describe("P2-07 !ai — output cap (#265)", () => {
     expect(llmRequestBody().max_tokens).toBe(3000);
   });
 
-  test("an answer cut off at the cap logs ai_truncated and is still delivered", async () => {
+  test("an answer cut off at the cap logs llm_finish_reason labelled ai and is still delivered", async () => {
     fetchSpy = llmRouter("length");
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
 
     await postIpc(envelope("!ai what is granite"));
 
     const warnLines = errSpy.mock.calls.map((c: unknown[]) => String(c[0]));
-    expect(warnLines.some((l: string) => l.includes('"event":"ai_truncated"'))).toBe(true);
+    expect(
+      warnLines.some(
+        (l: string) => l.includes('"event":"llm_finish_reason"') && l.includes('"label":"ai"'),
+      ),
+    ).toBe(true);
     const [, messages] = sendReplyMock.mock.calls[0];
     expect(messages).toEqual(["Short answer."]);
   });
 
-  test("a complete answer logs no ai_truncated", async () => {
+  test("a complete answer logs no llm_finish_reason", async () => {
     fetchSpy = llmRouter("stop");
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
 
     await postIpc(envelope("!ai what is granite"));
 
     const warnLines = errSpy.mock.calls.map((c: unknown[]) => String(c[0]));
-    expect(warnLines.some((l: string) => l.includes('"event":"ai_truncated"'))).toBe(false);
+    expect(warnLines.some((l: string) => l.includes('"event":"llm_finish_reason"'))).toBe(false);
+  });
+
+  // #270: the provider's safety filter stops about 1 in 20 identical requests
+  // with no content. The adapter retries once; a second block gets its own reply.
+  function filterRouter(outcomes: Array<"filter" | "ok">) {
+    let n = 0;
+    return makeFetchRouter([
+      {
+        match: (u) => u.includes("openrouter.ai") || u.includes("/chat/completions"),
+        respond: () =>
+          outcomes[n++] === "filter"
+            ? jsonResponse(chatCompletionResponse("", 100, 314, "content_filter"))
+            : jsonResponse(chatCompletionResponse("Short answer.", 100, 150, "stop")),
+      },
+    ]);
+  }
+
+  test("an answer filtered once is retried and delivered (#270)", async () => {
+    fetchSpy = filterRouter(["filter", "ok"]);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!ai what is granite"));
+
+    const [, messages] = sendReplyMock.mock.calls[0];
+    expect(messages).toEqual(["Short answer."]);
+  });
+
+  test("an answer filtered twice tells the device the provider's filter blocked it (#270)", async () => {
+    fetchSpy = filterRouter(["filter", "filter"]);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!ai what is granite"));
+
+    const [, messages] = sendReplyMock.mock.calls[0];
+    expect(messages).toEqual(["AI answer blocked by the provider's filter. Try again."]);
+    expect(messages).not.toEqual(["AI returned empty reply. Try rephrasing."]);
   });
 });
 

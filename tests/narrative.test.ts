@@ -643,4 +643,61 @@ describe("reasoning-model token caps (#263)", () => {
     await generateTrackNarrative({ metrics: TRACK_METRICS, env });
     expect(sentBody().model).toBe("anthropic/claude-opus-5.5");
   });
+
+  test("a track narrative call names itself in the llm_finish_reason log (#270)", async () => {
+    fetchSpy
+      .mockResolvedValueOnce(filteredResponse())
+      .mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
+    await generateTrackNarrative({ metrics: TRACK_METRICS, env });
+    expect(finishLogLabels()).toEqual(["narrative_track"]);
+  });
+});
+
+// #270: the provider's safety filter stops about 1 in 20 identical requests
+// with no content. The adapter retries once; on a second block the narrative
+// error must say so, because post, postimg and track replies show its message.
+function filteredResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      id: "chatcmpl-test",
+      choices: [
+        {
+          message: { role: "assistant", content: "" },
+          finish_reason: "content_filter",
+          native_finish_reason: "refusal",
+        },
+      ],
+      usage: { prompt_tokens: 240, completion_tokens: 314, total_tokens: 554 },
+    }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
+}
+
+function finishLogLabels(): unknown[] {
+  return errSpy.mock.calls
+    .map((c: unknown[]) => JSON.parse(String(c[0])) as Record<string, unknown>)
+    .filter((l: Record<string, unknown>) => l.event === "llm_finish_reason")
+    .map((l: Record<string, unknown>) => l.label);
+}
+
+describe("generateNarrative — provider content filter (#270)", () => {
+  test("a post narrative filtered once is retried and returned", async () => {
+    fetchSpy
+      .mockResolvedValueOnce(filteredResponse())
+      .mockResolvedValueOnce(jsonResponse({ title: "T", haiku: "a\nb\nc", body: "B" }));
+
+    const out = await generateNarrative({ note: "x", env });
+
+    expect(out.title).toBe("T");
+    expect(out.usage.completion_tokens).toBe(314 + 180);
+    expect(finishLogLabels()).toEqual(["narrative_post"]);
+  });
+
+  test("a post narrative filtered twice throws a NarrativeError naming the provider's filter", async () => {
+    fetchSpy.mockResolvedValueOnce(filteredResponse()).mockResolvedValueOnce(filteredResponse());
+
+    await expect(generateNarrative({ note: "x", env })).rejects.toThrow(
+      /blocked by the provider's filter/,
+    );
+  });
 });

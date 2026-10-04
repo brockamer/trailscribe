@@ -177,6 +177,7 @@ async function runNarrativeCall<T>(
       max_tokens: opts.maxTokens,
     },
     env: opts.env,
+    label: `narrative_${opts.diagKind}`,
   });
 
   const content = response.choices[0]?.message?.content;
@@ -197,6 +198,11 @@ async function runNarrativeCall<T>(
         usage: response.usage ?? null,
       },
     });
+    // chatCompletion already retried a filtered answer once (#270). The post,
+    // postimg and track replies show this message, so name the cause.
+    if (choice0?.finish_reason === "content_filter") {
+      throw new NarrativeError("LLM answer blocked by the provider's filter.");
+    }
     throw new NarrativeError(
       opts.diagKind === "track"
         ? "LLM returned no content for track narrative"

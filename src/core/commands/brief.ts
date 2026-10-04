@@ -64,7 +64,11 @@ export async function handleBrief(
   const ledgerSnap = await monthlyTotals(env);
   const userPrompt = buildUserPrompt(entries, ledgerSnap, windowDays);
 
-  let result: { content: string; usage: { prompt_tokens: number; completion_tokens: number } };
+  let result: {
+    content: string;
+    filtered?: boolean;
+    usage: { prompt_tokens: number; completion_tokens: number };
+  };
   try {
     result = await withCheckpoint(env, idemKey, "brief", async () => {
       const completion = await chatCompletion({
@@ -77,20 +81,13 @@ export async function handleBrief(
           max_tokens: BRIEF_MAX_TOKENS,
         },
         env,
+        label: "brief",
       });
       const choice = completion.choices[0];
-      if (choice?.finish_reason === "length") {
-        log({
-          event: "brief_truncated",
-          level: "warn",
-          imei,
-          max_tokens: BRIEF_MAX_TOKENS,
-          completion_tokens: completion.usage.completion_tokens,
-        });
-      }
       const content = choice?.message.content ?? "";
       return {
         content,
+        filtered: choice?.finish_reason === "content_filter",
         usage: {
           prompt_tokens: completion.usage.prompt_tokens,
           completion_tokens: completion.usage.completion_tokens,
@@ -114,6 +111,8 @@ export async function handleBrief(
 
   const content = stripMarkdownEmphasis(result.content.trim());
   if (content.length === 0) {
+    // The adapter already retried once (#270); the answer was blocked twice.
+    if (result.filtered) return { body: "Brief blocked by the provider's filter. Try again." };
     return { body: "Brief returned empty. Try again." };
   }
   if (content.length <= REPLY_MAX) {

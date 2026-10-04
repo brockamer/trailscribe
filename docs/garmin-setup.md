@@ -40,13 +40,11 @@ have multiple devices).
 2. **URL:** `https://<your-worker>.workers.dev/garmin/ipc`
    (staging + production Workers are separate endpoints — wire each
    environment against the right URL).
-3. **Event Schema:** **V2**. V3 adds `transportMode` and V4 adds media; both
-   are fine (the Worker tolerates extra fields) but V2 is smallest and matches
-   what TrailScribe is tested against. **Observed 2026-10-04: the production
-   tenant is set to Event Schema V4**, so media fields and `transportMode`
-   can arrive; the Worker handles them (#282). V4 is what the Media work
-   (#284, #285) needs. Do not downgrade without a decision — Garmin only lets
-   you go back to the earliest version the account used.
+3. **Event Schema:** **V4** (PRD §8 D3, amended 2026-10-04). V3 adds
+   `transportMode` and V4 adds media (`mediaBytes`, `mediaId`, `mediaType`,
+   `transcription`). The Worker routes on the V2 fields, logs `media_event`
+   for media, and keys idempotency on `mediaId` (#282). Garmin only allows a
+   downgrade to the earliest version the account has used.
 4. **Authorization:** **Static Token**. Paste the value of
    `GARMIN_INBOUND_TOKEN` (generate via `openssl rand -hex 32`; see
    [`setup-cloudflare.md`](setup-cloudflare.md) §2).

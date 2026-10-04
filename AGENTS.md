@@ -119,7 +119,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 
 - **D1 Inbound auth:** static bearer token (`GARMIN_INBOUND_TOKEN`)
 - **D2 Pro tier:** YES — full IPC path enabled
-- **D3 Schema:** V2 (tolerate V3/V4). Observed 2026-10-04: the production tenant is set to V4; `IPC_SCHEMA_VERSION` is still `"2"` and no code reads it.
+- **D3 Schema:** V4 (amended 2026-10-04; was V2). The production tenant was already sending V4, and the Media work needs it. Code still routes on the V2 fields; V3/V4 fields are typed and logged (#282). Garmin only allows a downgrade to the earliest version the account has used.
 - **D4 Token budget:** 50,000/day
 - **D6 Reply:** IPC Inbound primary + email fallback (fallback gated by D9)
 - **D7 Branch:** rename `master` → `main` at Phase 0
@@ -161,7 +161,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 - `LLM_PROVIDER_HEADERS_JSON` — optional JSON blob for OpenRouter `HTTP-Referer` + `X-Title` analytics headers
 - `APPEND_COST_SUFFIX` — bool (α default: false)
 - `DAILY_TOKEN_BUDGET` — `50000`
-- `IPC_SCHEMA_VERSION` — `"2"`
+- `IPC_SCHEMA_VERSION` — `"4"` (records the Portal Connect setting; no code reads it)
 - `IPC_INBOUND_SENDER` — `Sender` field for outbound IPC Inbound messages (the on-device "From" string); defaults to `RESEND_FROM_EMAIL` but decoupled
 - `RESEND_FROM_EMAIL` — e.g. `trailscribe@resend.dev`
 - `RESEND_FROM_NAME` — e.g. `TrailScribe`
@@ -175,7 +175,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 
 ## Garmin IPC quick-ref (authoritative sources in `materials/`)
 
-- **IPC Outbound v2.0.10** (device → us): HTTPS POST. Schema V2/V3/V4 (α uses V2). Fields we need: `imei` (15-digit; since 2.0.9 a comma-separated list for an Internet message from a multi-device account — see the allowlist rule above), `messageCode` (3=Free Text), `freeText`, `timeStamp` (ms epoch), `point{latitude,longitude,altitude}`, `addresses[]`, `status{lowBattery,...}`. Auth via OAuth bearer OR static token (α uses static bearer). **Must respond 200** or Garmin retries at 2/4/8/16/32/64/128s then 12h pauses × 5 days → suspension.
+- **IPC Outbound v2.0.10** (device → us): HTTPS POST. Schema V2/V3/V4 (the tenant sends V4 since D3 was amended 2026-10-04; routing uses the V2 fields). Fields we need: `imei` (15-digit; since 2.0.9 a comma-separated list for an Internet message from a multi-device account — see the allowlist rule above), `messageCode` (3=Free Text), `freeText`, `timeStamp` (ms epoch), `point{latitude,longitude,altitude}`, `addresses[]`, `status{lowBattery,...}`. Auth via OAuth bearer OR static token (α uses static bearer). **Must respond 200** or Garmin retries at 2/4/8/16/32/64/128s then 12h pauses × 5 days → suspension.
 - **IPC Inbound v3.1.4** (us → device): POST `{base}/api/Messaging/Message`. Auth: `X-API-Key` header (new keys expire after 6 months by default). Body: `{ Messages: [{ Recipients: [imei], Sender, Timestamp: "/Date(ms)/", Message }] }`. Returns `{ count: N }`. **Message maximum: 1600 characters at the API level since 3.1.2** (2024-11-27). "160 chars MAX, 422 on overage" was the 3.1.1 text and is no longer the API limit. What the device shows for a message over 160 is unverified; #284 probes it, and the code keeps 160 (`SMS_MAX`, `MAX_MESSAGE_CHARS`) until then. 3.1.4 also documents `POST /api/Messaging/Media` (multipart/form-data; images AVIF YUV444 ≤1080×1080 ≤1 MB; audio Opus in OGG, 8000 bps VBR, ≤30 s, ≤90 KB).
 - **Tier requirement:** IPC Outbound + Inbound are **Professional/Enterprise only**. Consumer inReach does not expose these APIs — gates the whole architecture (see PRD §8 D2).
 - **Message Codes Table** (IPC Outbound rev 2.0.10, p.9 — the authoritative list; unchanged since 2.0.8). Codes TrailScribe routes: `0` Position Report, `3` Free Text, `4` Declare SOS, `10` Start Track, `11` Track Interval, `12` Stop Track. Codes the device also emits that we silent-drop by design: `2` Locate Response, `13` Unknown Index, `14`–`16` Puck Message 1–3, `17` Map Share, **`20` Mail Check**, **`21` Am I Alive**, `24`–`63` Pre-defined Message, `64`–`69` encrypted/binary classes, `3099` Canned Message.

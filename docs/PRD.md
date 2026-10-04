@@ -195,7 +195,7 @@ Every `src/tools/*.ts`, `src/runtime/*.ts`, `src/http/*.ts`. CI workflow. Pipedr
 
 **Endpoint:** `POST https://trailscribe.<subdomain>.workers.dev/garmin/ipc`
 
-**Schema version for MVP: V2.** Rationale: simplest payload, covers all fields we need (`imei`, `messageCode`, `freeText`, `timeStamp`, `point{latitude,longitude,altitude}`, `addresses`, `status`). V3 adds only `transportMode` (satellite|internet); not worth the cost of having to handle two schemas at once. V4 adds media — deferred with photos. **We will configure Portal Connect for V2; code will tolerate V3/V4 fields if present.** Routing ignores them; a V4 media event logs `media_event` (`mediaType`, `mediaId`, decoded byte length, transcription length, `messageCode`, `transportMode` — never the bytes or the transcription text), and `mediaId` replaces the text in the idempotency key (§5) (#282).
+**Schema version for MVP: V2.** Rationale: simplest payload, covers all fields we need (`imei`, `messageCode`, `freeText`, `timeStamp`, `point{latitude,longitude,altitude}`, `addresses`, `status`). V3 adds only `transportMode` (satellite|internet); not worth the cost of having to handle two schemas at once. V4 adds media — deferred with photos. **We will configure Portal Connect for V2; code will tolerate V3/V4 fields if present.** _Observed 2026-10-04: the production tenant is actually set to Event Schema V4 (Explore → Settings → Portal Connect); D3 is not yet updated to match._ Routing ignores them; a V4 media event logs `media_event` (`mediaType`, `mediaId`, decoded byte length, transcription length, `messageCode`, `transportMode` — never the bytes or the transcription text), and `mediaId` replaces the text in the idempotency key (§5) (#282).
 
 **Request contract (Garmin → us):**
 

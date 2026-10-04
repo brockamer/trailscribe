@@ -42,7 +42,11 @@ have multiple devices).
    environment against the right URL).
 3. **Event Schema:** **V2**. V3 adds `transportMode` and V4 adds media; both
    are fine (the Worker tolerates extra fields) but V2 is smallest and matches
-   what TrailScribe is tested against.
+   what TrailScribe is tested against. **Observed 2026-10-04: the production
+   tenant is set to Event Schema V4**, so media fields and `transportMode`
+   can arrive; the Worker handles them (#282). V4 is what the Media work
+   (#284, #285) needs. Do not downgrade without a decision — Garmin only lets
+   you go back to the earliest version the account used.
 4. **Authorization:** **Static Token**. Paste the value of
    `GARMIN_INBOUND_TOKEN` (generate via `openssl rand -hex 32`; see
    [`setup-cloudflare.md`](setup-cloudflare.md) §2).

@@ -119,7 +119,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 
 - **D1 Inbound auth:** static bearer token (`GARMIN_INBOUND_TOKEN`)
 - **D2 Pro tier:** YES — full IPC path enabled
-- **D3 Schema:** V2 (tolerate V3/V4)
+- **D3 Schema:** V2 (tolerate V3/V4). Observed 2026-10-04: the production tenant is set to V4; `IPC_SCHEMA_VERSION` is still `"2"` and no code reads it.
 - **D4 Token budget:** 50,000/day
 - **D6 Reply:** IPC Inbound primary + email fallback (fallback gated by D9)
 - **D7 Branch:** rename `master` → `main` at Phase 0

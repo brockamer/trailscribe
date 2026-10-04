@@ -139,12 +139,12 @@ describe("P2-05 !drop — happy path", () => {
 
 describe("P2-05 !drop — empty note", () => {
   test("rejected at parse time; no FieldLog write", async () => {
-    // Grammar requires a non-empty rest-of-line. An argless !drop falls through
-    // to the unknown-command path, so the handler never runs.
+    // Grammar requires a non-empty rest-of-line. An argless !drop gets the
+    // !drop usage hint (#294), so the handler never runs.
     await postIpc(envelope("!drop"));
 
     const [, messages] = sendReplyMock.mock.calls[0];
-    expect(messages).toEqual(["Unknown command. Try !help"]);
+    expect(messages).toEqual(["!drop needs a note. Example: !drop pika calling near the outlet"]);
 
     const entries = await getEntries(env, IMEI);
     expect(entries).toHaveLength(0);

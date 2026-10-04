@@ -19,7 +19,7 @@ import {
 } from "./core/idempotency.js";
 import { log } from "./adapters/logging/worker-logs.js";
 import { imageGenerationInFlight } from "./core/image-pending.js";
-import { parseCommand } from "./core/grammar.js";
+import { parseCommand, usageHint } from "./core/grammar.js";
 import { orchestrate } from "./core/orchestrator.js";
 import { sendReply } from "./adapters/outbound/garmin-ipc-inbound.js";
 import { buildReply } from "./core/reply.js";
@@ -391,7 +391,8 @@ async function handleEvent(incoming: GarminEvent, env: Env, allow: Set<string>):
   // Intercept policy (PRD §8 D10): silent-drop messages that don't begin with
   // `!` so casual operator traffic to friends/family is invisible to TrailScribe.
   // `!`-prefixed unknowns still receive "Try !help" so command typos remain
-  // recoverable. See #122.
+  // recoverable. See #122. A known verb without its argument gets that verb's
+  // usage line instead (#294).
   const trimmed = (event.freeText ?? "").trim();
   if (!trimmed.startsWith("!")) {
     log({
@@ -407,6 +408,22 @@ async function handleEvent(incoming: GarminEvent, env: Env, allow: Set<string>):
   }
 
   const command = parseCommand(trimmed);
+  const hint = command ? undefined : usageHint(trimmed);
+  if (hint) {
+    // A known verb with a missing or malformed argument gets that verb's usage
+    // line, not "Unknown command" (#294).
+    log({
+      event: "parse_usage",
+      level: "info",
+      imei: event.imei,
+      verb: hint.verb,
+      freeText: event.freeText ?? null,
+      key,
+    });
+    await trySendReplyWithCheckpoint(env, key, event.imei, buildReply({ body: hint.text, env }));
+    await markCompleted(env, key);
+    return;
+  }
   if (!command) {
     log({
       event: "parse_unknown",

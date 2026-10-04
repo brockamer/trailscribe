@@ -237,7 +237,28 @@ describe("P2-08 !camp — empty query", () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
     const [, messages] = sendReplyMock.mock.calls[0];
-    expect(messages).toEqual(["Unknown command. Try !help"]);
+    expect(messages).toEqual(["!camp needs a question. Example: !camp water near Onion Valley"]);
+  });
+
+  test("logs parse_usage with the verb, not parse_unknown (#294)", async () => {
+    globalThis.fetch = vi.fn() as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!camp"));
+
+    const events = logSpy.mock.calls.map(
+      (c: unknown[]) => JSON.parse(String(c[0])) as Record<string, unknown>,
+    );
+    expect(events.find((e) => e.event === "parse_usage")).toMatchObject({ verb: "camp" });
+    expect(events.some((e) => e.event === "parse_unknown")).toBe(false);
+  });
+
+  test("a Garmin retry of the same bare !camp sends the hint once (#294)", async () => {
+    globalThis.fetch = vi.fn() as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!camp", { ts: 1700000001234 }));
+    await postIpc(envelope("!camp", { ts: 1700000001234 }));
+
+    expect(sendReplyMock).toHaveBeenCalledTimes(1);
   });
 });
 

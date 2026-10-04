@@ -240,7 +240,9 @@ describe("P2-07 !ai — empty question", () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
     const [, messages] = sendReplyMock.mock.calls[0];
-    expect(messages).toEqual(["Unknown command. Try !help"]);
+    expect(messages).toEqual([
+      "!ai needs a question. Example: !ai how cold is a Sierra lake in October",
+    ]);
   });
 });
 

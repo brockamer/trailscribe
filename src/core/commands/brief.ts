@@ -2,7 +2,7 @@ import type { CommandResult, ParsedCommand } from "../types.js";
 import type { OrchestratorContext } from "../orchestrator.js";
 import { chatCompletion, LLMError } from "../../adapters/ai/openrouter.js";
 import { sendEmail, ResendError } from "../../adapters/mail/resend.js";
-import { recordTransaction, monthlyTotals } from "../ledger.js";
+import { recordTransaction, monthlyTotals, type LedgerUsage } from "../ledger.js";
 import { getEntries, type FieldLogEntry } from "../fieldlog.js";
 import { withCheckpoint, markFailed } from "../idempotency.js";
 import { BUDGET_REJECTION_MESSAGE, checkBudget } from "../budget.js";
@@ -67,7 +67,7 @@ export async function handleBrief(
   let result: {
     content: string;
     filtered?: boolean;
-    usage: { prompt_tokens: number; completion_tokens: number };
+    usage: LedgerUsage;
   };
   try {
     result = await withCheckpoint(env, idemKey, "brief", async () => {
@@ -91,6 +91,7 @@ export async function handleBrief(
         usage: {
           prompt_tokens: completion.usage.prompt_tokens,
           completion_tokens: completion.usage.completion_tokens,
+          cost_usd: completion.usage.cost,
         },
       };
     });

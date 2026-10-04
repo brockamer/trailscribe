@@ -402,3 +402,23 @@ describe("P2-07 !ai — plain text (#271)", () => {
     expect(calls.some((u: string) => u.includes("api.resend.com"))).toBe(false);
   });
 });
+
+describe("ai — OpenRouter actual cost reaches the ledger (#162)", () => {
+  test("usage.cost is recorded instead of the env-rate estimate", async () => {
+    fetchSpy = makeFetchRouter([
+      {
+        match: (u) => u.includes("openrouter.ai") || u.includes("/chat/completions"),
+        respond: () => {
+          const res = chatCompletionResponse("Granite is an igneous rock.");
+          return jsonResponse({ ...res, usage: { ...res.usage, cost: 0.0421 } });
+        },
+      },
+    ]);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!ai what is granite"));
+
+    const snap = await monthlyTotals(env);
+    expect(snap.by_command["ai"]?.usd_cost).toBe(0.0421);
+  });
+});

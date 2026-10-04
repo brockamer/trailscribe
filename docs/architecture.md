@@ -84,7 +84,7 @@ suspends the tenant.
 | `src/core/context.ts`                         | Per-IMEI rolling window (last 5 events) in `TS_CONTEXT`                                                 |
 | `src/core/fieldlog.ts`                        | Per-IMEI journal entries for `!drop` / `!brief`, in `TS_CONTEXT`                                        |
 | `src/core/addressbook.ts`                     | `ADDRESS_BOOK_JSON` alias resolution for `!share` / `!blast`                                            |
-| `src/core/ledger.ts`                          | Monthly and daily rollups in `TS_LEDGER` from real OpenRouter `usage`; separate image bucket            |
+| `src/core/ledger.ts`                          | Monthly and daily rollups in `TS_LEDGER`; cost is OpenRouter's `usage.cost` (#162); image bucket        |
 | `src/core/budget.ts`                          | `DAILY_TOKEN_BUDGET` gate, checked before the LLM call in `!post`, `!postimg`, `!ai`, `!camp`, `!brief` |
 | `src/core/reply.ts`                           | `buildReply()` — ≤320-char, two-SMS formatter; keeps every link whole                                   |
 | `src/core/tracking.ts`                        | Mode B: Start Track / Stop Track session state in `TS_TRACKS`; `handleStopTrack`                        |

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { journalLocationPrecision, type Env } from "../env.js";
 import { chatCompletion } from "../adapters/ai/openrouter.js";
 import { log } from "../adapters/logging/worker-logs.js";
+import type { LedgerUsage } from "./ledger.js";
 import type { SamplingAssessment, TrackMetrics } from "./track-metrics.js";
 import { kmhToMph, kmToMi, mToFt } from "./units.js";
 
@@ -57,10 +58,7 @@ export interface NarrativeOutput {
   title: string;
   haiku: string;
   body: string;
-  usage: {
-    prompt_tokens: number;
-    completion_tokens: number;
-  };
+  usage: LedgerUsage;
 }
 
 /** JSON-schema enforced by the LLM provider's structured-output mode. */
@@ -236,6 +234,7 @@ async function runNarrativeCall<T>(
     usage: {
       prompt_tokens: response.usage.prompt_tokens,
       completion_tokens: response.usage.completion_tokens,
+      cost_usd: response.usage.cost,
     },
   };
 }

@@ -56,6 +56,76 @@ describe("recordTransaction — cost computation", () => {
   });
 });
 
+describe("recordTransaction — OpenRouter actual cost (#162)", () => {
+  // The env rates (0.30 / 1.20) would give 0.18 for these tokens. Every cost
+  // below differs from that, so a test can only pass by reading cost_usd.
+  const usage = { prompt_tokens: 200, completion_tokens: 100 };
+
+  function costLogs(): Array<Record<string, unknown>> {
+    return loggedEvents().filter((l) => l.event === "ledger_cost");
+  }
+
+  test("cost_usd, when present, is the recorded cost and the env rates are not used", async () => {
+    const result = await recordTransaction({
+      command: "post",
+      usage: { ...usage, cost_usd: 0.0421 },
+      env,
+    });
+
+    expect(result.usd_cost).toBe(0.0421);
+    const monthly = await monthlyTotals(env);
+    expect(monthly.usd_cost).toBe(0.0421);
+    expect(monthly.by_command.post?.usd_cost).toBe(0.0421);
+  });
+
+  test("an absent cost_usd falls back to the env-rate estimate", async () => {
+    const result = await recordTransaction({ command: "post", usage, env });
+
+    expect(result.usd_cost).toBeCloseTo(0.18, 4);
+  });
+
+  test.each([
+    ["negative", -0.01],
+    ["NaN", Number.NaN],
+    ["infinite", Number.POSITIVE_INFINITY],
+  ])("a %s cost_usd falls back to the estimate", async (_label, cost_usd) => {
+    const result = await recordTransaction({
+      command: "post",
+      usage: { ...usage, cost_usd },
+      env,
+    });
+
+    expect(result.usd_cost).toBeCloseTo(0.18, 4);
+  });
+
+  test("one ledger_cost line names the source and carries both figures", async () => {
+    await recordTransaction({ command: "post", usage: { ...usage, cost_usd: 0.0421 }, env });
+    await recordTransaction({ command: "ai", usage, env });
+
+    const [actual, estimate] = costLogs();
+    expect(actual).toMatchObject({
+      command: "post",
+      cost_source: "actual",
+      usd_cost: 0.0421,
+      prompt_tokens: 200,
+      completion_tokens: 100,
+    });
+    expect(actual?.estimate_usd).toBeCloseTo(0.18, 4);
+    expect(estimate).toMatchObject({ command: "ai", cost_source: "estimate" });
+    expect(estimate?.usd_cost).toBeCloseTo(0.18, 4);
+  });
+
+  test("a command with no LLM call logs no ledger_cost line", async () => {
+    await recordTransaction({
+      command: "ping",
+      usage: { prompt_tokens: 0, completion_tokens: 0 },
+      env,
+    });
+
+    expect(costLogs()).toEqual([]);
+  });
+});
+
 describe("recordTransaction — KV layout + rollup math", () => {
   test("appending one transaction to a fresh month writes both monthly and daily snapshots", async () => {
     await recordTransaction({

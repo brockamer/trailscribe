@@ -53,7 +53,11 @@ export async function handleCamp(
     return { body: BUDGET_REJECTION_MESSAGE };
   }
 
-  let result: { content: string; usage: { prompt_tokens: number; completion_tokens: number } };
+  let result: {
+    content: string;
+    filtered?: boolean;
+    usage: { prompt_tokens: number; completion_tokens: number };
+  };
   try {
     result = await withCheckpoint(env, idemKey, "camp", async () => {
       const completion = await chatCompletion({
@@ -66,20 +70,13 @@ export async function handleCamp(
           max_tokens: CAMP_MAX_TOKENS,
         },
         env,
+        label: "camp",
       });
       const choice = completion.choices[0];
-      if (choice?.finish_reason === "length") {
-        log({
-          event: "camp_truncated",
-          level: "warn",
-          imei,
-          max_tokens: CAMP_MAX_TOKENS,
-          completion_tokens: completion.usage.completion_tokens,
-        });
-      }
       const content = choice?.message.content ?? "";
       return {
         content,
+        filtered: choice?.finish_reason === "content_filter",
         usage: {
           prompt_tokens: completion.usage.prompt_tokens,
           completion_tokens: completion.usage.completion_tokens,
@@ -107,6 +104,9 @@ export async function handleCamp(
 
   const content = stripMarkdownEmphasis(result.content.trim());
   if (content.length === 0) {
+    // The adapter already retried once (#270); the answer was blocked twice.
+    if (result.filtered)
+      return { body: "Camp lookup blocked by the provider's filter. Try again." };
     return { body: "Camp lookup returned empty. Try rephrasing." };
   }
 

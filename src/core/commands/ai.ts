@@ -55,7 +55,11 @@ export async function handleAi(cmd: AiCommand, ctx: OrchestratorContext): Promis
     return { body: BUDGET_REJECTION_MESSAGE };
   }
 
-  let result: { content: string; usage: { prompt_tokens: number; completion_tokens: number } };
+  let result: {
+    content: string;
+    filtered?: boolean;
+    usage: { prompt_tokens: number; completion_tokens: number };
+  };
   try {
     result = await withCheckpoint(env, idemKey, "ai", async () => {
       const completion = await chatCompletion({
@@ -68,20 +72,13 @@ export async function handleAi(cmd: AiCommand, ctx: OrchestratorContext): Promis
           max_tokens: AI_MAX_TOKENS,
         },
         env,
+        label: "ai",
       });
       const choice = completion.choices[0];
-      if (choice?.finish_reason === "length") {
-        log({
-          event: "ai_truncated",
-          level: "warn",
-          imei,
-          max_tokens: AI_MAX_TOKENS,
-          completion_tokens: completion.usage.completion_tokens,
-        });
-      }
       const content = choice?.message.content ?? "";
       return {
         content,
+        filtered: choice?.finish_reason === "content_filter",
         usage: {
           prompt_tokens: completion.usage.prompt_tokens,
           completion_tokens: completion.usage.completion_tokens,
@@ -111,6 +108,8 @@ export async function handleAi(cmd: AiCommand, ctx: OrchestratorContext): Promis
 
   const content = stripMarkdownEmphasis(result.content.trim());
   if (content.length === 0) {
+    // The adapter already retried once (#270); the answer was blocked twice.
+    if (result.filtered) return { body: "AI answer blocked by the provider's filter. Try again." };
     return { body: "AI returned empty reply. Try rephrasing." };
   }
   if (content.length <= REPLY_MAX) {

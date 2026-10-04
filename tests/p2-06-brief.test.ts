@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { makeApp } from "../src/app.js";
 import { makeTestEnv } from "./helpers/env.js";
 import type { Env } from "../src/env.js";
-import { recordTransaction } from "../src/core/ledger.js";
+import { monthlyTotals, recordTransaction } from "../src/core/ledger.js";
 import { appendEntry } from "../src/core/fieldlog.js";
 
 import { sendReply } from "../src/adapters/outbound/garmin-ipc-inbound.js";
@@ -349,7 +349,7 @@ describe("P2-06 !brief — output cap (#265)", () => {
     expect(llmRequestBody().max_tokens).toBe(2000);
   });
 
-  test("a brief cut off at the cap logs brief_truncated and is still delivered", async () => {
+  test("a brief cut off at the cap logs llm_finish_reason labelled brief and is still delivered", async () => {
     await seedEntries(3);
     fetchSpy = llmRouter("length");
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
@@ -357,12 +357,16 @@ describe("P2-06 !brief — output cap (#265)", () => {
     await postIpc(envelope("!brief"));
 
     const warnLines = errSpy.mock.calls.map((c: unknown[]) => String(c[0]));
-    expect(warnLines.some((l: string) => l.includes('"event":"brief_truncated"'))).toBe(true);
+    expect(
+      warnLines.some(
+        (l: string) => l.includes('"event":"llm_finish_reason"') && l.includes('"label":"brief"'),
+      ),
+    ).toBe(true);
     const [, messages] = sendReplyMock.mock.calls[0];
     expect(messages).toEqual(["Logged 3 observations."]);
   });
 
-  test("a complete brief logs no brief_truncated", async () => {
+  test("a complete brief logs no llm_finish_reason", async () => {
     await seedEntries(3);
     fetchSpy = llmRouter("stop");
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
@@ -370,7 +374,58 @@ describe("P2-06 !brief — output cap (#265)", () => {
     await postIpc(envelope("!brief"));
 
     const warnLines = errSpy.mock.calls.map((c: unknown[]) => String(c[0]));
-    expect(warnLines.some((l: string) => l.includes('"event":"brief_truncated"'))).toBe(false);
+    expect(warnLines.some((l: string) => l.includes('"event":"llm_finish_reason"'))).toBe(false);
+  });
+
+  // #270: the provider's safety filter stops about 1 in 20 identical requests
+  // with no content. The adapter retries once; a second block gets its own reply.
+  function filterRouter(outcomes: Array<"filter" | "ok">) {
+    let n = 0;
+    return makeFetchRouter([
+      {
+        match: (u) => u.includes("openrouter.ai") || u.includes("/chat/completions"),
+        respond: () =>
+          outcomes[n++] === "filter"
+            ? jsonResponse(chatCompletionResponse("", 100, 314, "content_filter"))
+            : jsonResponse(chatCompletionResponse("Logged 3 observations.", 100, 150, "stop")),
+      },
+    ]);
+  }
+
+  test("a brief filtered once is retried and delivered (#270)", async () => {
+    await seedEntries(3);
+    fetchSpy = filterRouter(["filter", "ok"]);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!brief"));
+
+    const [, messages] = sendReplyMock.mock.calls[0];
+    expect(messages).toEqual(["Logged 3 observations."]);
+  });
+
+  test("the ledger records the tokens of the filtered attempt and the retry (#270)", async () => {
+    await seedEntries(3);
+    fetchSpy = filterRouter(["filter", "ok"]);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!brief"));
+
+    const snap = await monthlyTotals(env);
+    expect(snap.requests).toBe(1);
+    expect(snap.prompt_tokens).toBe(100 + 100);
+    expect(snap.completion_tokens).toBe(314 + 150);
+  });
+
+  test("a brief filtered twice tells the device the provider's filter blocked it (#270)", async () => {
+    await seedEntries(3);
+    fetchSpy = filterRouter(["filter", "filter"]);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!brief"));
+
+    const [, messages] = sendReplyMock.mock.calls[0];
+    expect(messages).toEqual(["Brief blocked by the provider's filter. Try again."]);
+    expect(messages).not.toEqual(["Brief returned empty. Try again."]);
   });
 });
 

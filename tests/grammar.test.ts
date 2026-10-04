@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { parseCommand } from "../src/core/grammar.js";
+import { parseCommand, usageHint } from "../src/core/grammar.js";
 
 describe("parseCommand — α-MVP commands", () => {
   test("parses !ping", () => {
@@ -236,5 +236,46 @@ describe("parseCommand — rejects unknown / malformed input", () => {
     expect(parseCommand("!share lab@university.edu note")).toBeUndefined(); // missing to:
     expect(parseCommand("!share to:home")).toBeUndefined(); // missing note
     expect(parseCommand("!share to:")).toBeUndefined(); // empty alias
+  });
+});
+
+describe("usageHint — known verb with a missing or malformed argument (#294)", () => {
+  test.each([
+    ["!todo", "!todo needs a task."],
+    ["!drop", "!drop needs a note."],
+    ["!ai", "!ai needs a question."],
+    ["!camp", "!camp needs a question."],
+    ["!CAMP  ", "!camp needs a question."],
+    ["!blast", "!blast needs a note."],
+    ["!mail just some text", "!mail needs to:<address>."],
+    ["!share to:home", "!share needs to:<address or alias> and a note."],
+    ["!brief 3x", "!brief takes nothing or a day count."],
+  ])("%s gets its own hint", (message, start) => {
+    const hint = usageHint(message);
+    expect(hint?.text.startsWith(start)).toBe(true);
+    expect(hint?.text).toContain("Example: !");
+    expect(hint?.verb).toBe(start.slice(1).split(" ")[0]);
+  });
+
+  test("every hint fits in one SMS (160 chars)", () => {
+    for (const m of ["!todo", "!drop", "!ai", "!camp", "!blast", "!mail", "!share", "!brief x"]) {
+      expect(usageHint(m)?.text.length).toBeLessThanOrEqual(160);
+    }
+  });
+
+  test("an unknown verb gets no hint", () => {
+    expect(usageHint("!foo bar")).toBeUndefined();
+    expect(usageHint("!banana")).toBeUndefined();
+  });
+
+  test("a command that parses gets no hint", () => {
+    expect(usageHint("!camp water near Onion Valley")).toBeUndefined();
+    expect(usageHint("!brief")).toBeUndefined();
+    expect(usageHint("!post")).toBeUndefined();
+    expect(usageHint("!ping")).toBeUndefined();
+  });
+
+  test("non-command text gets no hint", () => {
+    expect(usageHint("camp")).toBeUndefined();
   });
 });

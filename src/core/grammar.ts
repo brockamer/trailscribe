@@ -103,3 +103,32 @@ export function parseCommand(message: string): ParsedCommand | undefined {
       return undefined;
   }
 }
+
+/**
+ * One-SMS usage hints for verbs that take a required or structured argument
+ * (#294). Keys are the verbs whose `parseCommand` branch can return undefined;
+ * forms follow `docs/field-commands.md`.
+ */
+const USAGE_HINTS: Readonly<Record<string, string>> = {
+  todo: "!todo needs a task. Example: !todo resupply fuel at Onion Valley",
+  drop: "!drop needs a note. Example: !drop pika calling near the outlet",
+  ai: "!ai needs a question. Example: !ai how cold is a Sierra lake in October",
+  camp: "!camp needs a question. Example: !camp water near Onion Valley",
+  blast: "!blast needs a note. Example: !blast camped at Lake Sabrina, all good",
+  mail: "!mail needs to:<address>. Example: !mail to:a@b.com subj:Hi body:At the lake",
+  share: "!share needs to:<address or alias> and a note. Example: !share to:home at the lake",
+  brief: "!brief takes nothing or a day count. Example: !brief 3d",
+};
+
+/**
+ * The usage hint for a known verb whose argument is missing or malformed, or
+ * undefined when the message parses, is not a `!command`, or names an unknown
+ * verb (#294). Lets the webhook tell "known verb, bad argument" apart from an
+ * unknown verb, which keeps the generic "Unknown command. Try !help".
+ */
+export function usageHint(message: string): { verb: string; text: string } | undefined {
+  const trimmed = message.trim();
+  if (!trimmed.startsWith("!") || parseCommand(trimmed)) return undefined;
+  const verb = trimmed.split(/\s+/, 1)[0].substring(1).toLowerCase();
+  return Object.hasOwn(USAGE_HINTS, verb) ? { verb, text: USAGE_HINTS[verb] } : undefined;
+}

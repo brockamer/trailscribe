@@ -77,6 +77,7 @@ Each message that TrailScribe sends is recorded in the Worker log as a `reply_se
 ## Notes
 
 - **Case-insensitive.** `!Todo` and `!todo` behave the same; the leading exclamation mark is required.
+- **A command without its text gets a usage line, not "Unknown command"** (#294). A bare `!camp`, `!ai`, `!todo`, `!drop` or `!blast`, a `!mail` or `!share` without `to:`, a `!share` without a note, or a `!brief` with a bad window (`!brief 3x`) replies with that command's form and an example, for example `!camp needs a question. Example: !camp water near Onion Valley`. No LLM call is made and nothing is charged. Only a verb that does not exist (`!foo`) replies `Unknown command. Try !help`.
 - **Argument order is fixed.** For `!mail`, only `to:` (or `t:`) is required; if present, `subj:`/`s:` must precede `body:`/`b:`. For `!share`, `to:` is required.
 - **Reply budget is sacred (≤320 chars total, two SMS).** Commands that produce longer content (`!post`, `!postimg`, `!brief`, `!ai`, `!camp`) page within the budget where the content fits and otherwise route to email or the journal post; a short device pointer ("see email" / "see journal") goes back to the Mini.
 - **Idempotency.** Garmin retries the same Outbound webhook on transient errors (2/4/8/16/32/64/128s, then 12h pauses for up to five days). The agent derives a per-event composite key (`sha256(imei + timeStamp + messageCode + content_hash)` per PRD §5) and short-circuits replays at both the app layer (`withCheckpoint`) and the per-command storage layers (FieldLog `id`, idempotency cache).

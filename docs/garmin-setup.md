@@ -128,9 +128,10 @@ webhook side — the device-side share is redundant.
   Inbound v3.1.1 set 160 as the API maximum (422 `InvalidMessageError` on
   overage); v3.1.2 raised it to 1600. How the device renders a longer message
   is not yet known — #284 probes it — so the code keeps 160.
-- **Timestamp:** `"/Date(<ms-since-epoch>)/"` format (V2 also accepts ISO
-  8601 UTC since v3.1.4; TrailScribe sends the `/Date()/` form); cannot be in
-  the future; cannot be before 2011-01-01.
+- **Timestamp:** `"/Date(<ms-since-epoch>)/"` format; cannot be in the
+  future; cannot be before 2011-01-01. V2 also accepts ISO 8601 UTC — first
+  documented in v3.1.4, since v3.1.1 did not describe the V2 date formats.
+  TrailScribe sends the `/Date()/` form.
 - **Response:** 200 OK with `{ "count": N }`. Errors: 401 (key missing), 403
   (key wrong), 422 (well-formed but semantically invalid — check `Code` and
   `Description`), 429 (rate-limited; respect `Retry-After`), 500.

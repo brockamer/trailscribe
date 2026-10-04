@@ -10,13 +10,23 @@ import { log } from "../adapters/logging/worker-logs.js";
  * Garmin's IPC Outbound schema has no `msgId`; we derive a composite key from
  * fields the device never duplicates within the retry window:
  *
- *   key = sha256( imei || ":" || timeStamp || ":" || messageCode || ":" || sha256(freeText||payload||"") )
+ *   key = sha256( imei || ":" || timeStamp || ":" || messageCode || ":" || sha256(content) )
+ *   content = "media:" + mediaId   when the V4 event carries a mediaId
+ *           = freeText || payload || ""   otherwise
+ *
+ * `mediaId` stands in for the text on media events (#282) so a multi-megabyte
+ * `mediaBytes` is never hashed; the `media:` prefix keeps it from colliding
+ * with a free-text message that happens to equal the GUID. Events without a
+ * `mediaId` keep the original key, so records written before #282 still replay.
+ * `imei` is the single sender `handleEvent` resolved, not a comma-separated list.
  *
  * TTL on the KV entry is 48h — covers Garmin's fast-retry window (128s plateau)
  * and typical user manual retries with room to spare.
  */
 export async function idempotencyKey(event: GarminEvent): Promise<string> {
-  const content = event.freeText ?? event.payload ?? "";
+  const content = event.mediaId
+    ? `media:${event.mediaId}`
+    : (event.freeText ?? event.payload ?? "");
   const contentHash = await sha256Hex(content);
   return sha256Hex(`${event.imei}:${event.timeStamp}:${event.messageCode}:${contentHash}`);
 }

@@ -10,8 +10,8 @@ send messages to TrailScribe (IPC Outbound) and receive replies (IPC Inbound).
 
 Authoritative references:
 
-- [`../materials/Garmin IPC Outbound.txt`](../materials/Garmin%20IPC%20Outbound.txt) — v2.0.8
-- [`../materials/Garmin IPC Inbound.txt`](../materials/Garmin%20IPC%20Inbound.txt) — v3.1.1
+- [`../materials/Garmin IPC Outbound.pdf`](../materials/Garmin%20IPC%20Outbound.pdf) — v2.0.10 (2026-09-01)
+- [`../materials/Garmin IPC Inbound.pdf`](../materials/Garmin%20IPC%20Inbound.pdf) — v3.1.4 (2026-09-01)
 
 > **Project-owned Garmin Pro tenant.** TrailScribe's Garmin Professional
 > tenant is provisioned under the project-owner email
@@ -101,11 +101,17 @@ webhook side — the device-side share is redundant.
 
 ## 4. IPC Inbound (TrailScribe → device)
 
-1. **Portal Connect → Admin Controls → Portal Connect → Inbound Settings →
-   Generate API Key.** Copy the key; this is your `GARMIN_IPC_INBOUND_API_KEY`
-   secret. You can have up to 3 active keys simultaneously — useful for
-   rotation.
-2. **Note the Inbound URL** shown on the Inbound Settings page. Looks like
+1. **explore.garmin.com → Settings → Portal Connect → Inbound Settings →
+   V2 Setup → New API Key** (menu path per Inbound v3.1.4; older guides say
+   Admin Controls). Choose an expiry date, name the key, and copy it; this is
+   your `GARMIN_IPC_INBOUND_API_KEY` secret. You can have up to 3 active keys
+   simultaneously — useful for rotation. **A new key expires after 6 months by
+   default** (v3.1.4; it was 1 year in v3.1.1). An expired key makes every
+   reply fail with 401 or 403 while the webhook keeps answering 200, so note
+   the expiry date when you create one.
+2. **Note the Inbound URL** shown at the top of the V2 Setup section. The
+   v3.1.4 guide shows it with a trailing `/api`
+   (`https://ipcinbound.inreachapp.com/api`); strip that. Looks like
    `https://<tenant>.inreachapp.com` or `https://enterprise.inreach.garmin.com`.
    Store the **host only, with no path** as `GARMIN_IPC_INBOUND_BASE_URL`. E.g.:
    `https://ipcinbound.inreachapp.com`
@@ -113,15 +119,18 @@ webhook side — the device-side share is redundant.
    trailing `/api` produces `/api/api/Messaging/Message` → 404 and replies fail
    silently (the Outbound webhook still returns 200, so nothing retries).
 3. TrailScribe POSTs replies to `{base}/api/Messaging/Message` with
-   `X-API-Key: <key>` and a JSON body per the Inbound v3.1.1 contract.
+   `X-API-Key: <key>` and a JSON body per the Inbound v3.1.4 contract.
 
 ### Critical constraints (from Inbound spec)
 
-- **Message body: 160 characters MAX** per message (Iridium limit; 422
-  `InvalidMessageError` on overage). TrailScribe pages longer replies into
-  two messages with `(1/2)` / `(2/2)` prefixes.
-- **Timestamp:** `"/Date(<ms-since-epoch>)/"` format; cannot be in the
-  future; cannot be before 2011-01-01.
+- **Message body: TrailScribe sends at most 160 characters** per message and
+  pages longer replies into two messages with `(1/2)` / `(2/2)` prefixes.
+  Inbound v3.1.1 set 160 as the API maximum (422 `InvalidMessageError` on
+  overage); v3.1.2 raised it to 1600. How the device renders a longer message
+  is not yet known — #284 probes it — so the code keeps 160.
+- **Timestamp:** `"/Date(<ms-since-epoch>)/"` format (V2 also accepts ISO
+  8601 UTC since v3.1.4; TrailScribe sends the `/Date()/` form); cannot be in
+  the future; cannot be before 2011-01-01.
 - **Response:** 200 OK with `{ "count": N }`. Errors: 401 (key missing), 403
   (key wrong), 422 (well-formed but semantically invalid — check `Code` and
   `Description`), 429 (rate-limited; respect `Retry-After`), 500.

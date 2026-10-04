@@ -2,8 +2,10 @@ import type { Env } from "../env.js";
 import { appendCostSuffix } from "../env.js";
 
 /**
- * Iridium SBD hard limit per message — Garmin IPC Inbound returns 422
- * `InvalidMessageError` on overage (PRD §3, Garmin IPC Inbound v3.1.1).
+ * Characters per outgoing message page. IPC Inbound v3.1.1 capped a message
+ * at 160 (422 `InvalidMessageError` on overage); v3.1.2 raised the API limit
+ * to 1600. What the device shows for a longer message is unverified, so this
+ * stays 160 until the device probe (#284) reports (#282).
  */
 export const SMS_MAX = 160;
 

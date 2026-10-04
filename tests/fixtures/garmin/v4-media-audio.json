@@ -1,0 +1,30 @@
+{
+  "Version": "4.0",
+  "Events": [
+    {
+      "imei": "123456789012345",
+      "mediaBytes": "T2dnUwACAAAAAAAAAACYPXZVAAAAAOvw5FoBE09wdXNIZWFkAQE4AcBdAAAAAABPZ2dTAAAAAAAAAAAAAJg9dlUBAAAA",
+      "mediaId": "01082758-4cfb-451d-a273-2e4bf462c37d",
+      "mediaType": "audio/ogg",
+      "transcription": "This is an audio message",
+      "messageCode": 3,
+      "freeText": "On my way.",
+      "timeStamp": 1323784607376,
+      "addresses": [{ "address": "2075752244" }, { "address": "product.support@garmin.com" }],
+      "point": {
+        "latitude": 43.8078653812408,
+        "longitude": -70.1636695861816,
+        "altitude": 45,
+        "gpsFix": 2,
+        "course": 45,
+        "speed": 50
+      },
+      "status": {
+        "autonomous": 0,
+        "lowBattery": 1,
+        "intervalChange": 0,
+        "resetDetected": 0
+      }
+    }
+  ]
+}

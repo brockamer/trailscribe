@@ -3,13 +3,18 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   IDEMPOTENCY_TTL_SECONDS,
   IdempotencyRecordSchema,
+  idempotencyKey,
   markCompleted,
   markFailed,
   readRecord,
+  sha256Hex,
   withCheckpoint,
   writeRecord,
 } from "../src/core/idempotency.js";
+import type { GarminEvent } from "../src/core/types.js";
 import type { Env } from "../src/env.js";
+import mediaFixture from "./fixtures/garmin/v4-media-audio.json";
+import pingFixture from "./fixtures/garmin/free-text-ping.json";
 import { kvSize, makeTestEnv } from "./helpers/env.js";
 
 const KEY = "abc123";
@@ -255,5 +260,33 @@ describe("IdempotencyRecordSchema — type safety smoke", () => {
   test("rejects unknown status", () => {
     const bad = IdempotencyRecordSchema.safeParse({ status: "weird", receivedAt: 1 });
     expect(bad.success).toBe(false);
+  });
+});
+
+describe("idempotencyKey — V4 media events (#282)", () => {
+  const media = mediaFixture.Events[0] as GarminEvent;
+
+  test("two events with the same mediaId and different mediaBytes hash the same", async () => {
+    const other: GarminEvent = { ...media, mediaBytes: "AAAA" + (media.mediaBytes ?? "") };
+    expect(await idempotencyKey(other)).toBe(await idempotencyKey(media));
+  });
+
+  test("different mediaId values hash differently", async () => {
+    const other: GarminEvent = { ...media, mediaId: "11111111-2222-3333-4444-555555555555" };
+    expect(await idempotencyKey(other)).not.toBe(await idempotencyKey(media));
+  });
+
+  test("an event with mediaBytes but no mediaId never hashes the bytes", async () => {
+    const withBytes: GarminEvent = { ...media, mediaId: undefined };
+    const withoutBytes: GarminEvent = { ...withBytes, mediaBytes: undefined };
+    expect(await idempotencyKey(withBytes)).toBe(await idempotencyKey(withoutBytes));
+  });
+
+  test("an event without media keeps the PRD §5 key, so V2 records still replay", async () => {
+    const ping = pingFixture.Events[0] as GarminEvent;
+    const expected = await sha256Hex(
+      `${ping.imei}:${ping.timeStamp}:${ping.messageCode}:${await sha256Hex(ping.freeText ?? "")}`,
+    );
+    expect(await idempotencyKey(ping)).toBe(expected);
   });
 });

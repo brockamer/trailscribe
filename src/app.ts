@@ -6,6 +6,7 @@ import {
   imeiAllowSet,
   ipcInboundDryRun,
   logTrackPayloads,
+  resolveSenderImei,
 } from "./env.js";
 import type { CommandResult, GarminEnvelope, GarminEvent } from "./core/types.js";
 import {
@@ -125,7 +126,7 @@ export function makeApp() {
    *      safety system"). Position Reports (`messageCode === 0`) and other
    *      non-FT events are logged and dropped.
    *   5. Guard 2 — strip lat/lon when there's no GPS fix (Garmin fills zeros
-   *      per Outbound v2.0.8 §Event Schema V2).
+   *      per Outbound v2.0.10 §Event Schema V2).
    *   6. Parse → orchestrate → reply via IPC Inbound. Errors at any step are
    *      logged and the Worker still returns 200, avoiding Garmin's retry
    *      cascade for app-level failures.
@@ -205,13 +206,30 @@ export function makeApp() {
   return app;
 }
 
-async function handleEvent(event: GarminEvent, env: Env, allow: Set<string>): Promise<void> {
-  if (!event.imei || !allow.has(event.imei)) {
-    log({ event: "imei_not_allowed", level: "warn", imei: event.imei });
+async function handleEvent(incoming: GarminEvent, env: Env, allow: Set<string>): Promise<void> {
+  const sender = incoming.imei ? resolveSenderImei(incoming.imei, allow) : null;
+  if (!sender) {
+    log({ event: "imei_not_allowed", level: "warn", imei: incoming.imei });
     return;
+  }
+  // From here on `event.imei` is one IMEI: the idempotency key, context,
+  // ledger and reply recipient never see the comma-separated form (#282).
+  const event: GarminEvent = sender === incoming.imei ? incoming : { ...incoming, imei: sender };
+  if (event !== incoming) {
+    log({
+      event: "imei_multi",
+      level: "info",
+      imei: sender,
+      imeiCount: incoming.imei.split(",").length,
+      transportMode: incoming.transportMode ?? null,
+    });
   }
 
   const key = await idempotencyKey(event);
+
+  if (event.mediaBytes || event.mediaId || event.mediaType || event.transcription) {
+    logMediaEvent(event, key);
+  }
 
   const existing = await readRecord(env, key);
   if (existing?.status === "completed") {
@@ -489,6 +507,33 @@ async function trySendReplyWithCheckpoint(
  * are deliberately excluded — they carry no tracking telemetry.
  */
 const TRACKING_MESSAGE_CODES = new Set([0, 10, 11, 12]);
+
+/**
+ * Log the metadata of a V4 media event (#282) — never the bytes or the
+ * transcription text, which may be private. Feeds the device probes in #284:
+ * what the paired phone actually sends, over which transport, and how big.
+ */
+function logMediaEvent(event: GarminEvent, key: string): void {
+  log({
+    event: "media_event",
+    level: "info",
+    imei: event.imei,
+    messageCode: event.messageCode,
+    transportMode: event.transportMode ?? null,
+    mediaType: event.mediaType ?? null,
+    mediaId: event.mediaId ?? null,
+    mediaBytesLength: event.mediaBytes ? base64DecodedLength(event.mediaBytes) : 0,
+    transcriptionLength: event.transcription?.length ?? 0,
+    key,
+  });
+}
+
+/** Byte length a Base64 string decodes to, computed without decoding it. */
+function base64DecodedLength(b64: string): number {
+  const clean = b64.replace(/\s/g, "");
+  const padding = clean.endsWith("==") ? 2 : clean.endsWith("=") ? 1 : 0;
+  return Math.floor((clean.length * 3) / 4) - padding;
+}
 
 function isGarminEnvelope(body: unknown): body is GarminEnvelope {
   return (

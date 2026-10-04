@@ -3,6 +3,8 @@ import { makeApp } from "../src/app.js";
 import { makeTestEnv, kvSize, kvKeys } from "./helpers/env.js";
 import type { Env } from "../src/env.js";
 import fixture from "./fixtures/garmin/free-text-ping.json";
+import multiImeiFixture from "./fixtures/garmin/free-text-internet-multi-imei.json";
+import mediaFixture from "./fixtures/garmin/v4-media-audio.json";
 import { sendReply } from "../src/adapters/outbound/garmin-ipc-inbound.js";
 import { handleStopTrack } from "../src/core/tracking.js";
 
@@ -525,5 +527,115 @@ describe("Worker /garmin/ipc — Stop Track routing", () => {
     expect(errLog).toBeDefined();
     expect(errLog!.error).toBe("mapshare 503");
     expect(errLog!.imei).toBe("123456789012345");
+  });
+});
+
+/** Every JSON log line written to `spy`, parsed. */
+function loggedLines(spy: ReturnType<typeof vi.spyOn>): Array<Record<string, unknown>> {
+  return spy.mock.calls
+    .map((args) => {
+      try {
+        return JSON.parse(String(args[0])) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    })
+    .filter((entry): entry is Record<string, unknown> => entry !== null);
+}
+
+describe("Worker /garmin/ipc — comma-separated imei (Outbound v2.0.9, #282)", () => {
+  let consoleLog: ReturnType<typeof vi.spyOn>;
+  let consoleError: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  test("accepts the event and replies to the first allowlisted IMEI", async () => {
+    const res = await postIpc(multiImeiFixture, { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(res.status).toBe(200);
+    expect(sendReplyMock).toHaveBeenCalledTimes(1);
+    expect(sendReplyMock.mock.calls[0][0]).toBe("123456789012345");
+    const multi = loggedLines(consoleLog).find((l) => l.event === "imei_multi");
+    expect(multi).toMatchObject({ imei: "123456789012345", imeiCount: 2 });
+  });
+
+  test("with several allowlisted IMEIs, the first listed one is the sender", async () => {
+    env = makeTestEnv({ IMEI_ALLOWLIST: "123456789012345,999999999999999" });
+    await postIpc(multiImeiFixture, { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(sendReplyMock.mock.calls[0][0]).toBe("999999999999999");
+  });
+
+  test("keys idempotency on the resolved sender, so a redelivery short-circuits", async () => {
+    const bearer = env.GARMIN_INBOUND_TOKEN;
+    await postIpc(multiImeiFixture, { bearer });
+    await postIpc(multiImeiFixture, { bearer });
+    expect(kvSize(env.TS_IDEMPOTENCY)).toBe(1);
+    expect(sendReplyMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("drops the event when no listed IMEI is allowlisted", async () => {
+    const event = { ...multiImeiFixture.Events[0], imei: "999999999999999,888888888888888" };
+    const res = await postIpc(
+      { ...multiImeiFixture, Events: [event] },
+      { bearer: env.GARMIN_INBOUND_TOKEN },
+    );
+    expect(res.status).toBe(200);
+    expect(sendReplyMock).not.toHaveBeenCalled();
+    expect(kvSize(env.TS_IDEMPOTENCY)).toBe(0);
+    const rejected = loggedLines(consoleError).find((l) => l.event === "imei_not_allowed");
+    expect(rejected?.imei).toBe("999999999999999,888888888888888");
+  });
+});
+
+describe("Worker /garmin/ipc — media_event diagnostic (Outbound V4, #282)", () => {
+  let consoleLog: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
+  });
+
+  test("logs the media metadata and never the bytes or the transcription", async () => {
+    const res = await postIpc(mediaFixture, { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(res.status).toBe(200);
+    const lines = loggedLines(consoleLog);
+    const media = lines.find((l) => l.event === "media_event");
+    expect(media).toMatchObject({
+      imei: "123456789012345",
+      messageCode: 3,
+      mediaType: "audio/ogg",
+      mediaId: "01082758-4cfb-451d-a273-2e4bf462c37d",
+      mediaBytesLength: 69,
+      transcriptionLength: "This is an audio message".length,
+      transportMode: null,
+    });
+    const event = mediaFixture.Events[0];
+    for (const line of lines.filter((l) => l.event !== "ipc_received")) {
+      const text = JSON.stringify(line);
+      expect(text).not.toContain(event.mediaBytes);
+      expect(text).not.toContain(event.transcription);
+    }
+  });
+
+  test.each([
+    ["QUJD", 3],
+    ["QUI=", 2],
+    ["QQ==", 1],
+  ])("mediaBytesLength counts Base64 padding: %s → %i bytes", async (mediaBytes, bytes) => {
+    const event = { ...mediaFixture.Events[0], mediaBytes };
+    await postIpc({ ...mediaFixture, Events: [event] }, { bearer: env.GARMIN_INBOUND_TOKEN });
+    const media = loggedLines(consoleLog).find((l) => l.event === "media_event");
+    expect(media?.mediaBytesLength).toBe(bytes);
+  });
+
+  test("a media event whose text has no ! prefix is still silent-dropped", async () => {
+    await postIpc(mediaFixture, { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(sendReplyMock).not.toHaveBeenCalled();
+  });
+
+  test("an event without media fields logs no media_event", async () => {
+    await postIpc(fixture, { bearer: env.GARMIN_INBOUND_TOKEN });
+    expect(loggedLines(consoleLog).some((l) => l.event === "media_event")).toBe(false);
   });
 });

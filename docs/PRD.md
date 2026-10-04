@@ -2,7 +2,7 @@
 
 **Status:** Signed off 2026-04-22. Phase 0 (scaffolding) shipped 2026-04-24. Phase 1 (α-MVP, six commands end-to-end on production) shipped 2026-04-26 with the prod-traffic close gate (#111) verified 2026-04-27. Phase 2 (eight extended commands + `!postimg`, epic #98) shipped 2026-04-29. Mode B tracking sessions (#168) shipped 2026-05-04, hardening epic #187 work complete 2026-05-18 (closed 2026-09-11). **Currently:** milestone #10, _Field reliability_, closed 17/17 on 2026-10-03. **Next (2026-10-03):** milestone _Groundwork_ (current Garmin specs #282, spec watch #283, device probes #284, async completion on `!postimg` #268), then milestone _Media_ (design #285, `!postvid` #246 behind a go/no-go survey), then Phase 3 (epic #99: #155, #153, #154). `!call` (#152) was tabled indefinitely on 2026-10-03. No active plan; shipped plans are archived under `plans/archived/` and `docs/superpowers/plans/archived/`.
 **Owner:** Brock Amer
-**Updated:** 2026-10-02 (documentation catch-up, #226 and #224 — this header; archived plan paths; §8 Override cost-per-1K corrected; `wrangler.toml` named as the source of ledger pricing). Previous: 2026-10-02 (§8 D11, env gate on the webhook path, #212); 2026-10-01 (§LLM configuration — narrative model switched to Opus 5.5, #263; every LLM call sends `max_tokens`, #265); 2026-09-24 (§8 D11 added — published location precision, `JOURNAL_LOCATION_PRECISION`, #223); 2026-09-14 (§6 Cost Model amended — image-path cost ceiling raised to $0.20/image; text-path target and ceiling unchanged. Operator sign-off per CLAUDE.md "PRD is canonical".)
+**Updated:** 2026-10-04 (Garmin specs refreshed to Inbound 3.1.4 and Outbound 2.0.10, #282 — §4 comma-separated `imei` rule, V4 media logging, 1600-char API limit with the code kept at 160; §5 `mediaId` in the idempotency key). Previous: 2026-10-02 (documentation catch-up, #226 and #224 — this header; archived plan paths; §8 Override cost-per-1K corrected; `wrangler.toml` named as the source of ledger pricing); 2026-10-02 (§8 D11, env gate on the webhook path, #212); 2026-10-01 (§LLM configuration — narrative model switched to Opus 5.5, #263; every LLM call sends `max_tokens`, #265); 2026-09-24 (§8 D11 added — published location precision, `JOURNAL_LOCATION_PRECISION`, #223); 2026-09-14 (§6 Cost Model amended — image-path cost ceiling raised to $0.20/image; text-path target and ceiling unchanged. Operator sign-off per CLAUDE.md "PRD is canonical".)
 **Scope:** α-MVP (Phase 1) is the canonical scope of this document. Phase 2 (the eight deferred commands) is detailed in `plans/archived/2026-04/phase-2-extended-commands.md`; Phase 3+ referenced here for alignment, not specified in full.
 
 ---
@@ -191,11 +191,11 @@ Every `src/tools/*.ts`, `src/runtime/*.ts`, `src/http/*.ts`. CI workflow. Pipedr
 
 ### Inbound: Garmin IPC Outbound webhook → Cloudflare Worker
 
-**Authoritative source:** Garmin IPC Outbound Developer Guide v2.0.8 (09/08/2025).
+**Authoritative source:** Garmin IPC Outbound Developer Guide v2.0.10 (2026-09-01).
 
 **Endpoint:** `POST https://trailscribe.<subdomain>.workers.dev/garmin/ipc`
 
-**Schema version for MVP: V2.** Rationale: simplest payload, covers all fields we need (`imei`, `messageCode`, `freeText`, `timeStamp`, `point{latitude,longitude,altitude}`, `addresses`, `status`). V3 adds only `transportMode` (satellite|internet); not worth the cost of having to handle two schemas at once. V4 adds media — deferred with photos. **We will configure Portal Connect for V2; code will tolerate V3/V4 fields if present (ignore `transportMode`, `mediaBytes`, etc.).**
+**Schema version for MVP: V2.** Rationale: simplest payload, covers all fields we need (`imei`, `messageCode`, `freeText`, `timeStamp`, `point{latitude,longitude,altitude}`, `addresses`, `status`). V3 adds only `transportMode` (satellite|internet); not worth the cost of having to handle two schemas at once. V4 adds media — deferred with photos. **We will configure Portal Connect for V2; code will tolerate V3/V4 fields if present.** Routing ignores them; a V4 media event logs `media_event` (`mediaType`, `mediaId`, decoded byte length, transcription length, `messageCode`, `transportMode` — never the bytes or the transcription text), and `mediaId` replaces the text in the idempotency key (§5) (#282).
 
 **Request contract (Garmin → us):**
 
@@ -219,15 +219,15 @@ Garmin's IPC Outbound supports two auth modes per their docs:
 **⚠️ Conflict with task prompt:** You asked for HMAC on inbound. Garmin does not support HMAC signatures on IPC Outbound — the options are OAuth or static token. **Recommend static token for MVP** (swap to OAuth later if we need rotation automation). If you require HMAC behavior, we'd have to proxy Garmin's webhook through a second gateway we control — added complexity without materially different security properties.
 
 **IMEI allowlist (defense-in-depth):**
-Even with a valid token, we verify incoming `imei` is in `IMEI_ALLOWLIST` env var. Single-operator MVP has exactly one IMEI. Reject silently (200 OK) on miss.
+Even with a valid token, we verify incoming `imei` is in `IMEI_ALLOWLIST` env var. Single-operator MVP has exactly one IMEI. Reject silently (200 OK) on miss. Since Outbound v2.0.9, a message sent via Internet from an account with several devices carries every account IMEI in `imei`, comma-separated. The event is accepted when at least one listed IMEI is allowlisted; the first allowlisted one becomes the sender and reply recipient (decision on #282 — the allowlist is defense in depth behind the token).
 
 ### Outbound: Cloudflare Worker → Garmin IPC Inbound
 
-**Authoritative source:** Garmin IPC Inbound Developer Guide v3.1.1 (10/10/2024).
+**Authoritative source:** Garmin IPC Inbound Developer Guide v3.1.4 (2026-09-01).
 
 **Endpoint:** `POST https://{tenant}.inreachapp.com/api/Messaging/Message` (IPCv2) or `https://{tenant-base}/IPCInbound/V1/Messaging.svc` (v1). We target **IPCv2** (`Messaging/Message`).
 
-**Auth:** `X-API-Key: <key>` header. Key generated via explore.garmin.com Admin Controls → Portal Connect → Generate API Key. Stored in `GARMIN_IPC_INBOUND_API_KEY`.
+**Auth:** `X-API-Key: <key>` header. Key generated via explore.garmin.com Settings → Portal Connect → Inbound Settings → V2 Setup → New API Key; default expiry 6 months. Stored in `GARMIN_IPC_INBOUND_API_KEY`.
 
 **Request body:**
 
@@ -246,7 +246,7 @@ Even with a valid token, we verify incoming `imei` is in `IMEI_ALLOWLIST` env va
 
 **Critical limits:**
 
-- **Message body: 160 characters MAX.** (Iridium hard limit enforced server-side; returns 422 `InvalidMessageError` on overage.)
+- **Message body: we send at most 160 characters.** Inbound v3.1.1 made 160 the API maximum (422 `InvalidMessageError` on overage); v3.1.2 raised it to 1600. Device-side rendering of a longer message is unverified, so the code keeps 160 until #284 reports.
 - **Reply budget: 320 chars total** → we send **two messages** per reply when content exceeds 160. Reply builder pages content; each page gets a `(1/2)` / `(2/2)` suffix to preserve integrity across out-of-order delivery.
 - **Timestamp:** `/Date(ms)/` format, must be now-ish (not future, not before 2011).
 - **Response:** `{ "count": N }` on 200 OK. Error responses carry `{ Code, Message, Description, URL, IMEI }`.
@@ -274,12 +274,14 @@ Garmin's retry schedule is 2/4/8/16/32/64/128 seconds on non-200 response, then 
 
 ```
 idempotency_key = sha256( imei || ":" || timeStamp || ":" || messageCode || ":" || content_hash )
-  where content_hash = sha256( freeText || payload || "" )
+  where content_hash = sha256( "media:" + mediaId )         on a V4 media event
+                     = sha256( freeText || payload || "" )   otherwise
 ```
 
 - `timeStamp` is Garmin's milliseconds-since-epoch — deterministic per device transmission.
 - `messageCode` distinguishes Position Report (0) from Free Text (3); prevents accidental collisions across event types.
-- `content_hash` covers `freeText` (most events) and `payload` (binary, media) — a device never re-sends identical content at identical timestamp unless it's a retry.
+- `content_hash` covers `freeText` (most events) and `payload` (binary) — a device never re-sends identical content at identical timestamp unless it's a retry. A V4 media event hashes its `mediaId` GUID instead, so the multi-megabyte `mediaBytes` is never hashed (#282).
+- `imei` is the single sender resolved from the allowlist (§4), never the comma-separated list.
 - No `msgId` field exists in Garmin's schema — the composite above replaces what the deep research called "message_id".
 
 ### Storage

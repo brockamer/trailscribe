@@ -2,12 +2,17 @@ import type { Env } from "../../env.js";
 import { ipcInboundDryRun } from "../../env.js";
 import { log } from "../logging/worker-logs.js";
 
+/**
+ * Guard on each message sent. The API limit has been 1600 since IPC Inbound
+ * v3.1.2 (160 in v3.1.1); 160 stays until the device probe (#284) shows how
+ * a longer message renders on the device (#282). Keep in step with `SMS_MAX`.
+ */
 const MAX_MESSAGE_CHARS = 160;
 const RETRY_DELAYS_MS = [1000, 4000, 16000] as const;
 
 /**
  * Typed error surfaced from `sendReply`. `code`/`description` come from
- * Garmin's JSON error body when present (per IPC Inbound v3.1.1 §JSON Error
+ * Garmin's JSON error body when present (per IPC Inbound v3.1.4 §JSON Error
  * Object). `code`/`description` may be undefined for transport-layer failures
  * (network errors, malformed responses).
  *
@@ -54,7 +59,7 @@ interface IpcErrorBody {
 /**
  * Send a reply to an inReach device via Garmin IPC Inbound.
  *
- * Wire format (per `materials/Garmin IPC Inbound.txt` §POST /Message):
+ * Wire format (per `materials/Garmin IPC Inbound.pdf` v3.1.4 §POST /Message):
  *   POST {GARMIN_IPC_INBOUND_BASE_URL}/api/Messaging/Message
  *   Headers: X-API-Key, Content-Type: application/json
  *   Body: { Messages: [{ Recipients, Sender, Timestamp: "/Date(ms)/", Message }] }

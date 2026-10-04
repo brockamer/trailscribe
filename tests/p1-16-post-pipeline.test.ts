@@ -524,6 +524,32 @@ describe("P1-16 !post — narrative failure", () => {
     const [, messages] = sendReplyMock.mock.calls[0];
     expect(messages[0]).toMatch(/^Error: /);
   });
+
+  test("narrative blocked twice by the provider's filter → the device reply names the filter (#270)", async () => {
+    fetchSpy = makeFetchRouter([
+      {
+        match: (u) => u.includes("openrouter.ai"),
+        respond: () =>
+          jsonResponse({
+            id: "chatcmpl-test",
+            choices: [
+              {
+                message: { role: "assistant", content: "" },
+                finish_reason: "content_filter",
+                native_finish_reason: "refusal",
+              },
+            ],
+            usage: { prompt_tokens: 240, completion_tokens: 314, total_tokens: 554 },
+          }),
+      },
+    ]);
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!post anything"));
+
+    const [, messages] = sendReplyMock.mock.calls[0];
+    expect(messages[0]).toBe("Error: LLM answer blocked by the provider's filter.");
+  });
 });
 
 describe("P1-16 !post — journal link reaches the device whole (#249)", () => {

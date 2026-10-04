@@ -1243,6 +1243,35 @@ describe("handleStopTrack — failures around the publish (#219)", () => {
     expect(sentReplies()).toEqual(["Track publish failed: OpenRouter 502"]);
   });
 
+  test("narrative blocked twice by the provider's filter: the error SMS names the filter (#270)", async () => {
+    const env = makeTestEnv();
+    const { narrativeSpy, publishSpy } = await stubHappyPath(env);
+    // Run the real narrative. The adapter is mocked in this file, so return what
+    // chatCompletion gives after its one retry is also filtered (retry tested in
+    // openrouter.test.ts).
+    narrativeSpy.mockRestore();
+    vi.mocked(chatCompletion).mockResolvedValue({
+      id: "chatcmpl-test",
+      choices: [
+        {
+          message: { role: "assistant", content: "" },
+          finish_reason: "content_filter",
+          native_finish_reason: "refusal",
+        },
+      ],
+      usage: { prompt_tokens: 480, completion_tokens: 628, total_tokens: 1108 },
+    });
+
+    await expect(handleStopTrack(STOP_EVENT, env, "idem-270-filter")).rejects.toThrow(
+      /blocked by the provider's filter/,
+    );
+
+    expect(publishSpy).not.toHaveBeenCalled();
+    expect(sentReplies()).toEqual([
+      "Track publish failed: LLM answer blocked by the provider's filter.",
+    ]);
+  });
+
   test("ledger failure: device gets an error SMS and the error propagates", async () => {
     const env = makeTestEnv();
     const { publishSpy } = await stubHappyPath(env);

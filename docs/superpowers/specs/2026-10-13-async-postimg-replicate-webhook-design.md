@@ -53,19 +53,20 @@ Verified 2026-10-13 against the Standard Webhooks reference library (`standard-w
 2. The existing refusals reply immediately: no GPS fix and no caption, or the daily token budget exhausted.
 3. Place and weather (as today), narrative (checkpoint `narrative`), text ledger (checkpoint `ledger_text`). The text ledger moves before the image step; the #213 reasoning (record real spend before anything that can fail) still applies.
 4. If the narrative gave no subject and there is no caption, publish text-only and reply now, as today.
-5. Write the job record `job:<idemKey>` (§6) without a `predictionId`.
-6. Create the prediction with `webhook: <origin>/replicate/callback?key=<idemKey>` and `webhook_events_filter: ["completed"]`. Do **not** send `Prefer: wait=60`: with it, Replicate holds our request open for up to 60 s.
-7. Write the job record again with `predictionId`.
-8. Return `{ deferred: true }`. `handleEvent` logs `orchestrate_deferred` and returns without a reply and without `markCompleted`. Garmin gets HTTP 200.
+5. Create the prediction with `webhook: <origin>/replicate/callback?key=<idemKey>` and `webhook_events_filter: ["completed"]`. Do **not** send `Prefer: wait=60`: with it, Replicate holds our request open for up to 60 s.
+6. Write the job record `job:<idemKey>` (§6), including `predictionId`. This is the only write in request 1.
+7. Return `{ deferred: true }`. `handleEvent` logs `orchestrate_deferred` and returns without a reply and without `markCompleted`. Garmin gets HTTP 200.
 
-If step 6 fails, delete the job record, publish text-only, and return the fallback reply now (§9). `origin` is the Worker's public origin, taken from the incoming Garmin request URL (`new URL(c.req.url).origin`), so no variable holds it.
+If step 5 fails, publish text-only and return the fallback reply now (§10). If step 6 fails, the prediction is already paid for but its callback could not find the job, so do the same: publish text-only, reply now, and complete the record; the callback then stops at the "already completed" row of §8. The operator never gets silence from request 1. `origin` is the Worker's public origin, taken from the incoming Garmin request URL (`new URL(c.req.url).origin`), so no variable holds it.
+
+**Why one write, after the create.** Cloudflare KV allows one write per second to the same key ([KV limits](https://developers.cloudflare.com/kv/platform/limits/): "Writes to same key | 1 per second"). A create call without `Prefer: wait` returns in under a second, so a write before it and a write after it would routinely collide. A record without a `predictionId` would also be useless: the callback cannot match it and the lease (§9) cannot act on it.
 
 ### 5.2 Request 2 — Replicate → Worker (`POST /replicate/callback?key=<idemKey>`)
 
 1. Run the env gate (#212). Invalid → log `env_invalid`, answer 503.
 2. Read the raw body once as text, then verify the signature (§7). Fail → 401.
 3. Apply the checks in §8 to decide between 200-no-action, 503 and proceed.
-4. Write `finishStartedAt` into the job record.
+4. Write `finishStartedAt` into the job record. Best-effort: if the write fails (for example a same-key rate limit on a prediction that failed within a second), log it and continue; the checkpoints still stop a sequential duplicate.
 5. Answer 200 and run `finishPostImg(job, prediction)` inside `ctx.waitUntil`.
 
 `finishPostImg`:
@@ -86,7 +87,7 @@ interface PostImgJob {
   kind: "postimg";
   imei: string;
   createdAt: number; // ms epoch
-  predictionId?: string; // set after the prediction is created
+  predictionId: string; // the record is written only after the create succeeds
   finishStartedAt?: number; // ms epoch, set by the callback before waitUntil
   caption?: string;
   narrative: { title: string; haiku?: string; body: string };
@@ -99,6 +100,8 @@ type Job = PostImgJob; // a union; #246 adds a kind
 ```
 
 The record holds everything `finishPostImg` needs, so the callback never re-runs enrichment or the narrative, and the published post always matches the narrative. It is also the media seam "the pending marker carries the IMEI and enough context for a later media send".
+
+The key is written at most three times — at create, at `finishStartedAt`, and the delete after the finish — and each pair is separated by the render or by the finish, so the one-write-per-second limit holds in normal operation. The one exception is a prediction that fails within a second of creation; §5.2 step 4 makes that write best-effort for this reason.
 
 ## 7. Signature verification
 
@@ -114,23 +117,23 @@ The record holds everything `finishPostImg` needs, so the callback never re-runs
 
 Evaluated in order after the signature passes. A 503 makes Replicate retry (for about a minute); a 200 stops it.
 
-| Condition                                                                           | Answer | Action and log                                                                |
-| ----------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------- |
-| `key` query parameter missing                                                       | 200    | `replicate_callback_ignored` (`no_key`)                                       |
-| Body `status` not terminal                                                          | 200    | `replicate_callback_ignored` (`not_terminal`); the filter should prevent this |
-| No job record, or a record without `predictionId`; idempotency record completed     | 200    | `replicate_callback_duplicate`                                                |
-| No job record, or a record without `predictionId`; idempotency record not completed | 503    | `replicate_callback_job_missing` (KV may not show the record here yet)        |
-| Record `predictionId` differs from body `id`                                        | 200    | `replicate_callback_ignored` (`prediction_mismatch`)                          |
-| `finishStartedAt` set and less than 2 minutes old                                   | 200    | `replicate_callback_duplicate` (concurrent delivery)                          |
-| Otherwise                                                                           | 200    | Write `finishStartedAt`, run `finishPostImg` in `waitUntil`                   |
+| Condition                                         | Answer | Action and log                                                                |
+| ------------------------------------------------- | ------ | ----------------------------------------------------------------------------- |
+| `key` query parameter missing                     | 200    | `replicate_callback_ignored` (`no_key`)                                       |
+| Body `status` not terminal                        | 200    | `replicate_callback_ignored` (`not_terminal`); the filter should prevent this |
+| Idempotency record completed                      | 200    | `replicate_callback_duplicate`                                                |
+| No job record                                     | 503    | `replicate_callback_job_missing` (KV may not show the record here yet)        |
+| Record `predictionId` differs from body `id`      | 200    | `replicate_callback_ignored` (`prediction_mismatch`)                          |
+| `finishStartedAt` set and less than 2 minutes old | 200    | `replicate_callback_duplicate` (concurrent delivery)                          |
+| Otherwise                                         | 200    | Write `finishStartedAt`, run `finishPostImg` in `waitUntil`                   |
 
 Every callback logs `replicate_callback` with `key`, `predictionId`, `status`, `predict_time` and the first 2 KB of the raw body (the `ipc_received.rawBodySample` pattern; the body holds the image prompt, which is published anyway, and a short-lived output URL).
 
 ## 9. Garmin re-delivery lease
 
-`handleEvent` skips an event (`concurrent_replay_skipped`, as today) when a job record **with a `predictionId`** exists for its key, at any age. Once a prediction is paid for, a re-delivery must never buy a second image; if the job is stuck because its callback was lost, decision 4 applies.
+`handleEvent` skips an event (`concurrent_replay_skipped`, as today) when a job record exists for its key, at any age. Every job record carries a `predictionId` (§6), so a record means "an image is paid for": a re-delivery must never buy a second one. If the job is stuck because its callback was lost, decision 4 applies.
 
-A record without `predictionId` does not block. It means request 1 failed between §5.1 steps 5 and 7, nothing has been paid for, and the re-delivery runs `startPostImg` again with the narrative from its checkpoint. If the prediction was in fact created and only the step-7 write failed, the re-delivery creates a second prediction (about $0.10); the first one's callback is then ignored as `prediction_mismatch`. That cost is accepted to keep one simple rule.
+No record means nothing is waiting, and a re-delivery runs `startPostImg` again with the narrative from its checkpoint. If request 1 died after §5.1 step 5 but before step 6, the re-delivery creates a second prediction (about $0.10); the first one's callback then finds no record for its id and is ignored as `prediction_mismatch` once the second record is visible. That cost is accepted to keep one simple rule.
 
 This replaces `IMAGE_LEASE_MS` (180 s) and the time-window check in `imageGenerationInFlight`. The reasoning moves from `src/core/image-pending.ts` to `src/core/jobs.ts`.
 
@@ -178,7 +181,7 @@ The SMS leaves the Worker about 45–60 s after the command and reaches the devi
 - **Signature:** the Standard Webhooks vector passes; a changed body, a wrong secret, a timestamp outside 300 s and a missing header fail; a header with several entries passes when one is right; a mismatch with a secret older than 10 minutes re-fetches once; a younger one does not.
 - **Recorded request:** one real staging callback, its headers and body saved under `tests/fixtures/replicate/`, re-signed with a test secret. It proves the code parses Replicate's real format; the vector proves the algorithm. The account secret is never committed.
 - **Route:** every row of §8; the `waitUntil` promise is awaited through a fake execution context.
-- **Pipeline:** create carries `webhook` and the filter and no `Prefer` header; the job record is written before the create call; each row of §10; the success SMS text is byte-identical to today's.
+- **Pipeline:** create carries `webhook` and the filter and no `Prefer` header; the job record is written once, only after a successful create, and a create failure or a job-write failure each gives the text-only fallback with a reply; each row of §10; the success SMS text is byte-identical to today's.
 - **`app.ts`:** a deferred result sends no reply and does not complete the record; a re-delivery with a `predictionId` record is skipped, without one it runs again.
 - **Seams:** `deliver()` routes pages to `sendReply` and throws for media.
 
@@ -203,8 +206,8 @@ Three real `!postimg` runs from the inReach: Garmin answered within 15 s (Worker
 
 ## 14. Limits and risks
 
-- **`waitUntil` gives the finish about 30 s after the response.** A normal finish is about 6 s. The worst case is the IPC Inbound retry ladder (1 s, 4 s, 16 s) on a slow Garmin, which approaches the limit; the publish happens before the SMS, so the post survives and only the SMS can be lost, the same outcome as an IPC failure today. `postimg_finish_ms` measures it.
-- **KV visibility has about one minute of Replicate retries to cover.** The job record is written about 40 s or more before a typical callback, and both requests are likely to reach the same Cloudflare location, so the 503 path should be rare.
+- **`waitUntil` gives the finish 30 s after the response.** [Workers context API](https://developers.cloudflare.com/workers/runtime-apis/context/): HTTP-triggered work "can extend execution for up to 30 seconds after the response is sent", and promises not settled by then "are canceled", with a warning in Workers Logs. A normal finish is about 6 s. The worst case is the IPC Inbound retry ladder (1 s, 4 s, 16 s) on a slow Garmin, which approaches the limit; the publish happens before the SMS, so the post survives and only the SMS can be lost, the same outcome as an IPC failure today. `postimg_finish_ms` and the cancellation warning measure it.
+- **KV visibility has about one minute of Replicate retries to cover.** [How KV works](https://developers.cloudflare.com/kv/concepts/how-kv-works/): a write is "usually immediately visible" in the location that made it, and "may take up to 60 seconds or more" elsewhere. The cover is the render itself: a typical callback arrives about 40 s after the job record is written. The stress case is a prediction that fails within seconds, where only Replicate's retries (the last about one minute after completion) and the likelihood that both requests reach the same Cloudflare location cover it.
 - **A lost callback leaves a job unfinished** (decision 4). It shows in Workers Logs as `replicate_callback_job_missing` or `replicate_signature_failed` lines without a later `postimg_finish_ms`.
 
 ## 15. Out of scope

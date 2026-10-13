@@ -21,6 +21,7 @@ import { parseCommand, usageHint } from "./core/grammar.js";
 import { orchestrate } from "./core/orchestrator.js";
 import { buildReply } from "./core/reply.js";
 import { deliverCommandResult, sendPagesWithCheckpoint } from "./core/delivery.js";
+import { handleReplicateCallback } from "./replicate-callback.js";
 import {
   handleStopTrack,
   recordSessionStart,
@@ -198,6 +199,20 @@ export function makeApp() {
     }
 
     return c.text("ok", 200);
+  });
+
+  /**
+   * Replicate completion callback (#268). Authenticated by Replicate's
+   * signature, not by the Garmin token. An invalid env answers 503 so
+   * Replicate retries rather than losing the job.
+   */
+  app.post("/replicate/callback", async (c) => {
+    const envCheck = checkEnv(c.env);
+    if (!envCheck.ok) {
+      logEnvInvalid("/replicate/callback", envCheck.problems);
+      return c.text("env invalid", 503);
+    }
+    return handleReplicateCallback(c.req.raw, c.env, c.executionCtx);
   });
 
   return app;

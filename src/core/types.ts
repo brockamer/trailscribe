@@ -94,3 +94,11 @@ export interface CommandResult {
   /** Other links, e.g. `!where` map links; `buildReply` keeps each whole (#261). */
   links?: string[];
 }
+
+/** Returned by a command that finishes later, from a provider callback (#268). */
+export interface DeferredResult {
+  deferred: true;
+}
+
+/** What `orchestrate` returns: a reply to send now, or a deferral. */
+export type OrchestrateResult = CommandResult | DeferredResult;

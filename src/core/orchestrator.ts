@@ -1,4 +1,4 @@
-import type { ParsedCommand, CommandResult } from "./types.js";
+import type { ParsedCommand, CommandResult, OrchestrateResult, DeferredResult } from "./types.js";
 import type { Env } from "../env.js";
 import { monthlyTotals, recordTransaction, type LedgerSnapshot } from "./ledger.js";
 import { handlePost } from "./commands/post.js";
@@ -29,6 +29,16 @@ export interface OrchestratorContext {
   altitude?: number;
   /** Garmin event timestamp in ms epoch, for local-time grounding (#235). */
   timeStamp?: number;
+  /**
+   * The Worker's public origin (scheme + host), taken from the incoming
+   * request URL. `!postimg` builds its callback URL from it (#268).
+   */
+  origin?: string;
+}
+
+/** True when a command deferred its reply to a provider callback (#268). */
+export function isDeferred(r: OrchestrateResult): r is DeferredResult {
+  return (r as DeferredResult).deferred === true;
 }
 
 /**

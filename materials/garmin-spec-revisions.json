@@ -1,0 +1,23 @@
+{
+  "$comment": "The last revision row of each Garmin IPC guide tracked in materials/. .github/workflows/garmin-spec-watch.yml opens an issue when a live guide has rows after `version`. Update this file in the same PR that replaces a PDF; scripts/garmin-spec-watch-test.sh checks that `sha256` matches the tracked PDF (#283).",
+  "documents": [
+    {
+      "name": "IPC Inbound",
+      "url": "https://developer.garmin.com/inReach/IPC_Inbound.pdf",
+      "pdf": "materials/Garmin IPC Inbound.pdf",
+      "date": "2026-09-01",
+      "version": "3.1.4",
+      "description": "Major overhaul",
+      "sha256": "9be210070a62651e1c959f6b3777be0ef46aaf6d203f7ab31870ce4d174526fb"
+    },
+    {
+      "name": "IPC Outbound",
+      "url": "https://developer.garmin.com/inReach/IPC_Outbound.pdf",
+      "pdf": "materials/Garmin IPC Outbound.pdf",
+      "date": "2026-09-01",
+      "version": "2.0.10",
+      "description": "Cleanup",
+      "sha256": "8ea20747fbb9348fc7252934b5fc7e2485f76a8aa6855e414fac2841593aa7ea"
+    }
+  ]
+}

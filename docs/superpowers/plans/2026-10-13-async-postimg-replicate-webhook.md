@@ -1,6 +1,6 @@
 # Async `!postimg` by Replicate webhook — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Tasks 1–8 suit subagents; **Task 9 runs in the main session with the operator present** (secrets, a real SMS, the operator's credentials).
 
 **Goal:** `!postimg` answers Garmin's webhook within 15 s and finishes the journal post and the SMS from Replicate's signed completion callback.
 
@@ -2644,6 +2644,8 @@ git commit -m "docs: PRD D12, callback route and job record; architecture tree (
 
 ### Task 9: Staging check and the recorded fixture
 
+**Run this task in the main session with the operator present — never in a subagent.** It reads `~/.secrets`, uses the operator's `gh` credentials to edit the journal repository, sends a real SMS to the operator's inReach, and may need a judgment call (Step 3). Under subagent-driven execution, the controller runs Task 9 itself after the Task 8 review.
+
 Operator decisions already given: staging deploys are pre-approved; the staging test publishes to the public journal and sends a real SMS; the test post is deleted afterwards. Never print a secret: read secrets into variables and test with `${VAR:+set}`.
 
 **Files:**
@@ -2665,14 +2667,14 @@ Expected: `"env_ok":true`.
 
 ```bash
 TOKEN=$(grep '^GARMIN_INBOUND_TOKEN=' .env.replay | cut -d= -f2-)
-IMEI=$(grep -o '"imei": *"[0-9]*"' tests/fixtures/garmin/free-text-ping.json | head -1 | grep -o '[0-9]\{15\}')
+IMEI=<the operator's allowlisted device IMEI — confirm it with the operator; never commit it>
 NOW=$(date +%s%3N)
 curl -s -o /dev/null -w "%{http_code} %{time_total}s\n" -X POST "$STAGING_URL/garmin/ipc" \
   -H "content-type: application/json" -H "x-outbound-auth-token: $TOKEN" \
   -d "{\"Version\":\"4.0\",\"Events\":[{\"imei\":\"$IMEI\",\"messageCode\":3,\"freeText\":\"!postimg async callback test\",\"timeStamp\":$NOW,\"point\":{\"latitude\":37.168,\"longitude\":-118.589,\"altitude\":2800,\"gpsFix\":2}}]}"
 ```
 
-The IMEI must be on staging's `IMEI_ALLOWLIST`; if `imei_not_allowed` appears in the logs, use the IMEI from `.env.replay` or ask the operator. Expected: `200` in under 15 s.
+The test fixtures carry the placeholder IMEI `123456789012345`, and `.env.replay` holds only `STAGING_URL` and `GARMIN_INBOUND_TOKEN` (`scripts/replay-test.sh` takes the real IMEI from a fixture the operator edits by hand). The IMEI must be the real device's and on staging's `IMEI_ALLOWLIST`; `imei_not_allowed` in the logs means the wrong value. Expected: `200` in under 15 s.
 
 - [ ] **Step 3: Read the evidence from Workers Logs**
 

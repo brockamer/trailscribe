@@ -72,8 +72,8 @@ If step 5 fails, publish text-only and return the fallback reply now (§10). If 
 `finishPostImg`:
 
 - `succeeded`: download the output image → image ledger (checkpoint `ledger_image`) → one commit with post and image (checkpoint `publish`) → context append → reply through `deliverCommandResult` (checkpoint `reply`) → `markCompleted` → delete the job record.
-- `failed`, `canceled`, or an image download failure: text-only commit (checkpoint `publish`) and the fallback reply, then the same tail.
-- A publish failure: `markFailed` and the error reply, as `failPipeline` does today.
+- `failed`, `canceled`, `aborted`, or an image download failure: text-only commit (checkpoint `publish`) and the fallback reply, then the same tail.
+- A publish failure: `markFailed` and the error reply, as `failPipeline` does today, then delete the job record. Every finish ends with the record terminal (`completed` or `failed`) and the job record deleted.
 - Log `postimg_finish_ms` (wall time of the finish) on every path.
 
 The image bytes are no longer stored in a checkpoint (the current `image` op stores them as Base64 in the idempotency record). Once `publish` is checkpointed, a replay does not need them.
@@ -90,7 +90,7 @@ interface PostImgJob {
   predictionId: string; // the record is written only after the create succeeds
   finishStartedAt?: number; // ms epoch, set by the callback before waitUntil
   caption?: string;
-  narrative: { title: string; haiku?: string; body: string };
+  narrative: { title: string; haiku: string; body: string };
   lat?: number;
   lon?: number;
   placeName?: string;
@@ -117,15 +117,15 @@ The key is written at most three times — at create, at `finishStartedAt`, and 
 
 Evaluated in order after the signature passes. A 503 makes Replicate retry (for about a minute); a 200 stops it.
 
-| Condition                                         | Answer | Action and log                                                                |
-| ------------------------------------------------- | ------ | ----------------------------------------------------------------------------- |
-| `key` query parameter missing                     | 200    | `replicate_callback_ignored` (`no_key`)                                       |
-| Body `status` not terminal                        | 200    | `replicate_callback_ignored` (`not_terminal`); the filter should prevent this |
-| Idempotency record completed                      | 200    | `replicate_callback_duplicate`                                                |
-| No job record                                     | 503    | `replicate_callback_job_missing` (KV may not show the record here yet)        |
-| Record `predictionId` differs from body `id`      | 200    | `replicate_callback_ignored` (`prediction_mismatch`)                          |
-| `finishStartedAt` set and less than 2 minutes old | 200    | `replicate_callback_duplicate` (concurrent delivery)                          |
-| Otherwise                                         | 200    | Write `finishStartedAt`, run `finishPostImg` in `waitUntil`                   |
+| Condition                                                         | Answer | Action and log                                                                |
+| ----------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------- |
+| `key` query parameter missing                                     | 200    | `replicate_callback_ignored` (`no_key`)                                       |
+| Body `status` not terminal                                        | 200    | `replicate_callback_ignored` (`not_terminal`); the filter should prevent this |
+| Idempotency record `completed` or `failed` (a finish already ran) | 200    | `replicate_callback_duplicate`                                                |
+| No job record                                                     | 503    | `replicate_callback_job_missing` (KV may not show the record here yet)        |
+| Record `predictionId` differs from body `id`                      | 200    | `replicate_callback_ignored` (`prediction_mismatch`)                          |
+| `finishStartedAt` set and less than 2 minutes old                 | 200    | `replicate_callback_duplicate` (concurrent delivery)                          |
+| Otherwise                                                         | 200    | Write `finishStartedAt`, run `finishPostImg` in `waitUntil`                   |
 
 Every callback logs `replicate_callback` with `key`, `predictionId`, `status`, `predict_time` and the first 2 KB of the raw body (the `ipc_received.rawBodySample` pattern; the body holds the image prompt, which is published anyway, and a short-lived output URL).
 

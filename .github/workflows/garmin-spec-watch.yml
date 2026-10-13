@@ -1,0 +1,84 @@
+name: Garmin spec watch
+
+# Weekly check of Garmin's two IPC developer guides against the revision rows tracked in
+# materials/garmin-spec-revisions.json. Opens one issue per guide that has new rows, and
+# none while an issue with the same title is open. A failed download or an untrusted
+# parse fails the run and opens nothing. Parser and its known-case test:
+# scripts/garmin-spec-watch.sh, scripts/garmin-spec-watch-test.sh (#283).
+#
+# GitHub disables a public repository's scheduled workflows after 60 days with no
+# repository activity. After a dormancy, re-enable this one on the Actions tab.
+
+on:
+  schedule:
+    - cron: "23 15 * * 1" # Mondays 15:23 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the issues instead of opening them"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: garmin-spec-watch
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash # -eo pipefail: a failed curl or parse stops the run
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install pdftotext
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends poppler-utils
+
+      - name: Download the guides
+        run: |
+          mkdir -p "$RUNNER_TEMP/specs"
+          for url in $(jq -r '.documents[].url' materials/garmin-spec-revisions.json); do
+            curl --fail --silent --show-error --location --retry 3 --max-time 120 \
+              --output "$RUNNER_TEMP/specs/$(basename "$url")" "$url"
+          done
+
+      - name: Compare the revision tables
+        # The JSON goes to the file. The log, including any ::notice::, is on stderr, which
+        # the runner also scans for workflow commands.
+        run: bash scripts/garmin-spec-watch.sh "$RUNNER_TEMP/specs" >"$RUNNER_TEMP/changes.json"
+
+      - name: Open one issue per changed guide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          changes="$RUNNER_TEMP/changes.json"
+          count=$(jq length "$changes")
+          if [ "$count" -eq 0 ]; then
+            echo "No new revision rows."
+            exit 0
+          fi
+          # Exact title match against the open issues. `gh issue list --search` is a
+          # tokenised full-text search, so it can match a different title.
+          gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 1000 --json title >"$RUNNER_TEMP/open.json"
+          for ((i = 0; i < count; i++)); do
+            title=$(jq -r ".[$i].title" "$changes")
+            jq -r ".[$i].body" "$changes" >"$RUNNER_TEMP/body.md"
+            if jq -e --arg t "$title" 'any(.[]; .title == $t)' "$RUNNER_TEMP/open.json" >/dev/null; then
+              echo "Already open: $title"
+            elif [ "$DRY_RUN" = "true" ]; then
+              echo "Dry run. Would open: $title"
+              cat "$RUNNER_TEMP/body.md"
+            else
+              gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+            fi
+          done

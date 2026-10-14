@@ -11,7 +11,7 @@
 
 ## 2. Goal
 
-The Worker answers Garmin within 15 s. The image finishes when Replicate calls back. The operator receives the same single SMS as today, and the journal gets the same single commit with post and image together. This is the first path in the Worker that finishes work after Garmin has its answer; `!postvid` and the media work use it later.
+The Worker answers Garmin within 30 s (amended 2026-10-14 from 15 s: staging measured 18.6 s, of which 16.8 s was the narrative LLM call; 30 s keeps a wide margin under Garmin's ~71 s re-delivery point without depending on LLM latency). The image finishes when Replicate calls back. The operator receives the same single SMS as today, and the journal gets the same single commit with post and image together. This is the first path in the Worker that finishes work after Garmin has its answer; `!postvid` and the media work use it later.
 
 The design must be dependable for a remote operator who cannot inspect anything from the field, and it must not add mechanisms beyond what that requires.
 
@@ -47,7 +47,7 @@ Verified 2026-10-13 against the Standard Webhooks reference library (`standard-w
 
 ## 5. Data flow
 
-### 5.1 Request 1 — Garmin → Worker (target under 15 s)
+### 5.1 Request 1 — Garmin → Worker (target under 30 s)
 
 1. `handleEvent` → `orchestrate` → `startPostImg`.
 2. The existing refusals reply immediately: no GPS fix and no caption, or the daily token budget exhausted.
@@ -203,7 +203,7 @@ The SMS leaves the Worker about 45–60 s after the command and reaches the devi
 
 ### 12.3 Production and device (after merge; closes #268)
 
-Three real `!postimg` runs from the inReach: Garmin answered within 15 s (Workers Logs), SMS wall time recorded against the 59.3 s baseline. These need the device and can share a session with the #284 probes.
+Three real `!postimg` runs from the inReach: Garmin answered within 30 s (Workers Logs), SMS wall time recorded against the 59.3 s baseline. These need the device and can share a session with the #284 probes.
 
 ## 13. Documents
 

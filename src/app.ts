@@ -7,7 +7,7 @@ import {
   logTrackPayloads,
   resolveSenderImei,
 } from "./env.js";
-import type { CommandResult, GarminEnvelope, GarminEvent } from "./core/types.js";
+import type { GarminEnvelope, GarminEvent, OrchestrateResult } from "./core/types.js";
 import {
   idempotencyKey,
   readRecord,
@@ -16,9 +16,9 @@ import {
   markFailed,
 } from "./core/idempotency.js";
 import { log } from "./adapters/logging/worker-logs.js";
-import { imageGenerationInFlight } from "./core/image-pending.js";
+import { jobBlocksRedelivery } from "./core/jobs.js";
 import { parseCommand, usageHint } from "./core/grammar.js";
-import { orchestrate } from "./core/orchestrator.js";
+import { isDeferred, orchestrate } from "./core/orchestrator.js";
 import { buildReply } from "./core/reply.js";
 import { deliverCommandResult, sendPagesWithCheckpoint } from "./core/delivery.js";
 import { handleReplicateCallback } from "./replicate-callback.js";
@@ -194,8 +194,9 @@ export function makeApp() {
     }
 
     const allow = imeiAllowSet(c.env);
+    const origin = new URL(c.req.url).origin;
     for (const event of body.Events) {
-      await handleEvent(event, c.env, allow);
+      await handleEvent(event, c.env, allow, origin);
     }
 
     return c.text("ok", 200);
@@ -218,7 +219,12 @@ export function makeApp() {
   return app;
 }
 
-async function handleEvent(incoming: GarminEvent, env: Env, allow: Set<string>): Promise<void> {
+async function handleEvent(
+  incoming: GarminEvent,
+  env: Env,
+  allow: Set<string>,
+  origin: string,
+): Promise<void> {
   const sender = incoming.imei ? resolveSenderImei(incoming.imei, allow) : null;
   if (!sender) {
     log({ event: "imei_not_allowed", level: "warn", imei: incoming.imei });
@@ -255,18 +261,9 @@ async function handleEvent(incoming: GarminEvent, env: Env, allow: Set<string>):
     return;
   }
 
-  // Concurrency lease (#235 review). `!postimg` holds this request open while
-  // polling Replicate — longer than Garmin is known to tolerate (~71s
-  // observed) before redelivering. `withCheckpoint` is read-then-write with no
-  // lock, so a redelivery landing mid-poll would run the pipeline a second
-  // time concurrently and could publish two journal posts and send two SMS for
-  // one command.
-  //
-  // Gated on the in-flight image marker, NOT on the record's `processing`
-  // status: that status cannot tell "still running" from "died partway", so
-  // leasing on it would also suppress the legitimate partial-progress replays
-  // P1-16 depends on.
-  if (await imageGenerationInFlight(env, key)) {
+  // Lease (#268): a job record means a paid prediction is outstanding for
+  // this event; a re-delivery must never buy a second one. See src/core/jobs.ts.
+  if (await jobBlocksRedelivery(env, key)) {
     log({
       event: "concurrent_replay_skipped",
       level: "info",
@@ -450,7 +447,7 @@ async function handleEvent(incoming: GarminEvent, env: Env, allow: Set<string>):
     return;
   }
 
-  let result: CommandResult;
+  let result: OrchestrateResult;
   try {
     result = await orchestrate(command, {
       env,
@@ -460,6 +457,7 @@ async function handleEvent(incoming: GarminEvent, env: Env, allow: Set<string>):
       altitude,
       timeStamp: event.timeStamp,
       idemKey: key,
+      origin,
     });
     log({
       event: "orchestrate_ok",
@@ -483,6 +481,18 @@ async function handleEvent(incoming: GarminEvent, env: Env, allow: Set<string>):
     // Still try to deliver the error reply to the user, but don't mark
     // completed — replay will retry orchestrate.
     await sendPagesWithCheckpoint(env, key, event.imei, errMessages);
+    return;
+  }
+
+  if (isDeferred(result)) {
+    // The reply comes from the provider callback (#268); no markCompleted here.
+    log({
+      event: "orchestrate_deferred",
+      level: "info",
+      imei: event.imei,
+      cmd: command.type,
+      key,
+    });
     return;
   }
 

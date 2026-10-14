@@ -1,4 +1,4 @@
-import type { ParsedCommand, CommandResult, OrchestrateResult, DeferredResult } from "./types.js";
+import type { ParsedCommand, OrchestrateResult, DeferredResult } from "./types.js";
 import type { Env } from "../env.js";
 import { monthlyTotals, recordTransaction, type LedgerSnapshot } from "./ledger.js";
 import { handlePost } from "./commands/post.js";
@@ -12,7 +12,7 @@ import { handleAi } from "./commands/ai.js";
 import { handleCamp } from "./commands/camp.js";
 import { handleShare } from "./commands/share.js";
 import { handleBlast } from "./commands/blast.js";
-import { handlePostImg } from "./commands/postimg.js";
+import { startPostImg } from "./commands/postimg.js";
 
 export interface OrchestratorContext {
   env: Env;
@@ -52,7 +52,7 @@ export function isDeferred(r: OrchestrateResult): r is DeferredResult {
 export async function orchestrate(
   command: ParsedCommand,
   ctx: OrchestratorContext,
-): Promise<CommandResult> {
+): Promise<OrchestrateResult> {
   switch (command.type) {
     case "ping":
       await recordTransaction({
@@ -90,7 +90,7 @@ export async function orchestrate(
     case "blast":
       return handleBlast(command, ctx);
     case "postimg":
-      return handlePostImg(command, ctx);
+      return startPostImg(command, ctx);
   }
 }
 

@@ -10,7 +10,7 @@ import { log } from "../adapters/logging/worker-logs.js";
  * before and another after the create call would collide, and a record with
  * no `predictionId` could not be matched by the callback or act as a lease.
  *
- * **Lease (replaces the 180 s window of the old `image-pending.ts`).** While a
+ * **Lease (replaces the 180 s window of the old in-flight image marker).** While a
  * record exists, a Garmin re-delivery of the same event is skipped at any age:
  * the record means a picture is paid for, and a second one must never be
  * bought. The old lease needed a time window because `!postimg` held Garmin's

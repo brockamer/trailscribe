@@ -26,11 +26,14 @@ design rationale and phased-evolution detail.
                    │        a. IMEI allowlist check                     │
                    │        b. idempotency key (sha256 composite)       │
                    │        c. skip if idem:<key> is "completed"        │
-                   │        d. skip if an image generation is in flight │
+                   │        d. skip if a job:<key> record exists (#268) │
                    │        e. mc=3 Free Text  → grammar → orchestrator │
                    │           mc=10/12 Track  → tracking (Mode B)      │
                    │           other codes     → log and drop           │
                    │    5. ALWAYS return 200 OK to avoid retry cascade  │
+                   │                                                    │
+                   │  POST /replicate/callback (#268)                   │
+                   │    signed by Replicate; finishes !postimg          │
                    │                                                    │
                    │  GET /health → { env_ok }                          │
                    └──┬──────────────────────────────────────────────┬──┘
@@ -58,11 +61,12 @@ design rationale and phased-evolution detail.
                                                 └────────────────────┘
 ```
 
-Every failure inside the request path is logged and still answers HTTP 200:
+Every failure inside the `/garmin/ipc` request path is logged and still answers HTTP 200:
 a failed bearer check (`auth_fail`), a malformed env (`env_invalid`), a
 rejected IMEI (`imei_not_allowed`) and an adapter error alike. Garmin's retry
 schedule cannot repair any of them, and a fault left unanswered for five days
-suspends the tenant.
+suspends the tenant. `/replicate/callback` is the exception: its status codes
+control Replicate's retries (see "Async completion" below).
 
 ## Modules
 
@@ -78,7 +82,7 @@ suspends the tenant.
 | `src/core/commands/`                          | One handler per command: `post`, `postimg`, `mail`, `todo`, `where`, `weather`, `drop`, …               |
 | `src/core/narrative.ts`                       | LLM narrative for `!post`, `!postimg` and track posts — JSON mode via OpenRouter                        |
 | `src/core/imageprompt.ts`                     | Image-generation prompt for `!postimg`                                                                  |
-| `src/core/image-pending.ts`                   | In-flight Replicate prediction marker: resume a paid prediction, lease against concurrent redelivery    |
+| `src/core/jobs.ts`                            | Provider-callback job record `job:<key>`; its existence is the lease against Garmin re-delivery (#268)  |
 | `src/core/localtime.ts`                       | Civil local time of day from the Open-Meteo offset and sunrise/sunset (#274)                            |
 | `src/core/plaintext.ts`                       | Plain-text prompt sentence and bold-marker strip for `!ai`, `!camp` and `!brief` replies (#271)         |
 | `src/core/context.ts`                         | Per-IMEI rolling window (last 5 events) in `TS_CONTEXT`                                                 |
@@ -87,12 +91,16 @@ suspends the tenant.
 | `src/core/ledger.ts`                          | Monthly and daily rollups in `TS_LEDGER`; cost is OpenRouter's `usage.cost` (#162); image bucket        |
 | `src/core/budget.ts`                          | `DAILY_TOKEN_BUDGET` gate, checked before the LLM call in `!post`, `!postimg`, `!ai`, `!camp`, `!brief` |
 | `src/core/reply.ts`                           | `buildReply()` — ≤320-char, two-SMS formatter; keeps every link whole                                   |
+| `src/core/delivery.ts`                        | Shared reply tail: `deliverCommandResult()` (`buildReply`, checkpointed send, `markCompleted`)          |
 | `src/core/tracking.ts`                        | Mode B: Start Track / Stop Track session state in `TS_TRACKS`; `handleStopTrack`                        |
 | `src/core/track-metrics.ts`                   | Distance, elevation, pace and stationary/at-rest classification from MapShare KML points                |
 | `src/core/units.ts`                           | Metric → imperial display helpers (#195)                                                                |
+| `src/replicate-callback.ts`                   | `POST /replicate/callback`: verify signature, match job, finish `!postimg` in `waitUntil` (#268)        |
 | `src/adapters/outbound/garmin-ipc-inbound.ts` | `sendReply()` — `POST /api/Messaging/Message`                                                           |
+| `src/adapters/outbound/deliver.ts`            | `deliver()` — text pages go to `sendReply()`; the media branch waits for #285                           |
 | `src/adapters/ai/openrouter.ts`               | `chatCompletion()` — OpenRouter chat API; real `usage`; one retry on `content_filter` (#270)            |
-| `src/adapters/ai/replicate.ts`                | `generateImage()` — Replicate predictions API (`!postimg`)                                              |
+| `src/adapters/ai/replicate.ts`                | `createPrediction()` (with completion webhook) and `fetchOutput()` — Replicate predictions API          |
+| `src/adapters/ai/replicate-webhook.ts`        | `verifyReplicateWebhook()` — Standard-Webhooks signature check; signing secret cached in `TS_CACHE`     |
 | `src/adapters/mail/resend.ts`                 | `sendEmail()` — Resend transactional API                                                                |
 | `src/adapters/tasks/todoist.ts`               | `addTask()` — Todoist REST                                                                              |
 | `src/adapters/publish/github-pages.ts`        | `publishPost()`, `publishPostWithImage()`, `publishTrackPost()` — GitHub Contents API commits           |
@@ -107,13 +115,13 @@ handlers; MapShare page URLs come from `MAPSHARE_BASE` + `MAPSHARE_KEY`.
 
 ## KV namespaces
 
-| Binding          | Holds                                                                                    |
-| ---------------- | ---------------------------------------------------------------------------------------- |
-| `TS_IDEMPOTENCY` | `idem:<key>` message record with per-op checkpoints (48 h); `imgpend:<key>` image marker |
-| `TS_LEDGER`      | `ledger:<YYYY-MM>` and `ledger:<YYYY-MM-DD>` usage rollups                               |
-| `TS_CONTEXT`     | `ctx:<imei>` rolling window (30 d); `fieldlog:<imei>` journal entries                    |
-| `TS_CACHE`       | `geo:<lat>:<lon>` place names (24 h); Open-Meteo weather (1 h)                           |
-| `TS_TRACKS`      | Mode B session state: `track_start:`, `track_interval:`, `track_events:`, `track:` keys  |
+| Binding          | Holds                                                                                                                        |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `TS_IDEMPOTENCY` | `idem:<key>` message record with per-op checkpoints (48 h); `job:<key>` job record for provider-callback completion (48 h)   |
+| `TS_LEDGER`      | `ledger:<YYYY-MM>` and `ledger:<YYYY-MM-DD>` usage rollups                                                                   |
+| `TS_CONTEXT`     | `ctx:<imei>` rolling window (30 d); `fieldlog:<imei>` journal entries                                                        |
+| `TS_CACHE`       | `geo:<lat>:<lon>` place names (24 h); Open-Meteo weather (1 h); `replicate:webhook-secret` Replicate signing secret (no TTL) |
+| `TS_TRACKS`      | Mode B session state: `track_start:`, `track_interval:`, `track_events:`, `track:` keys                                      |
 
 ## Tracking sessions (Mode B)
 
@@ -126,6 +134,66 @@ replies with its link. The track narrative does not pass the daily token
 budget gate. Other tracking codes (mc=0, mc=11) are not dispatched; a nonzero
 `status.intervalChange` is latched for refusal hints. Design:
 [`superpowers/specs/archived/2026-09/2026-05-01-tracking-session-artifacts-design.md`](superpowers/specs/archived/2026-09/2026-05-01-tracking-session-artifacts-design.md).
+
+## Async completion (`!postimg`, #268)
+
+An image render can outlast Garmin's re-delivery point (about 71 s), so
+`!postimg` runs as two requests joined by a job record. The Worker answers
+Garmin within seconds; Replicate's signed callback finishes the post and sends
+the one SMS. Decision: [`PRD.md`](PRD.md) §8 D12. Design, limits and risks:
+[`superpowers/specs/2026-10-13-async-postimg-replicate-webhook-design.md`](superpowers/specs/2026-10-13-async-postimg-replicate-webhook-design.md).
+
+**Request 1 — Garmin → Worker** (`POST /garmin/ipc`, `startPostImg`; target under 15 s):
+
+1. `handleEvent` skips the event when `idem:<key>` is `completed`, or when a `job:<key>` record exists (`concurrent_replay_skipped`). Otherwise it calls `orchestrate` with the Worker's origin, taken from the request URL.
+2. The refusals reply at once: no GPS fix and no caption, or the daily token budget is exhausted.
+3. Place and weather, then the narrative (checkpoint `narrative`) and the text ledger (checkpoint `ledger_text`).
+4. With no caption and no narrative subject, publish text-only and reply now.
+5. Create the Replicate prediction with `webhook=<origin>/replicate/callback?key=<idempotency key>` and `webhook_events_filter: ["completed"]`. There is no `Prefer: wait` header, so Replicate does not hold the request open. If it fails, publish text-only and reply now.
+6. Write `job:<key>` once, after the create succeeded: the narrative, caption, position, place, weather and the `predictionId`. If the write fails, publish text-only and reply now.
+7. Return `{ deferred: true }`. `handleEvent` logs `orchestrate_deferred`, sends no reply and does not complete the record. Garmin gets HTTP 200.
+
+**Request 2 — Replicate → Worker** (`POST /replicate/callback?key=<idempotency key>`):
+
+1. The env gate (#212) runs first; an invalid env answers 503.
+2. Read the raw body once as text and verify the signature. Failure answers 401.
+3. Apply the answer table below.
+4. Write `finishStartedAt` into the job record (best-effort), answer 200, and run the finish inside `ctx.waitUntil`.
+5. `finishPostImg`: on `succeeded`, download the image, record the image ledger (checkpoint `ledger_image`), commit post and image together (checkpoint `publish`) and append the context. On any other terminal status, or a failed download, commit text-only (checkpoint `publish`). A publish failure marks the record `failed` and produces the `Error:` reply, which step 6 still sends.
+6. `deliverCommandResult` builds the reply and sends it under the `reply` checkpoint, then marks the record `completed` once the send succeeded (the `Error:` reply included); a failed send marks it `failed`. The job record is deleted on every path. The finish logs `postimg_finish_ms`.
+
+**Callback answers** (evaluated in order; a 503 makes Replicate retry for about a minute, a 200 stops it):
+
+| Condition                                                   | Answer | Log                                                  |
+| ----------------------------------------------------------- | ------ | ---------------------------------------------------- |
+| Env invalid                                                 | 503    | `env_invalid`                                        |
+| Header missing, timestamp outside 300 s, or signature wrong | 401    | `replicate_signature_failed` (reason)                |
+| Signing secret cannot be fetched                            | 503    | `replicate_signature_failed` (`secret_unavailable`)  |
+| `key` query parameter missing                               | 200    | `replicate_callback_ignored` (`no_key`)              |
+| Body is not JSON, or has no `id` or `status`                | 200    | `replicate_callback_ignored` (`bad_body`)            |
+| `status` not terminal                                       | 200    | `replicate_callback_ignored` (`not_terminal`)        |
+| Idempotency record already `completed` or `failed`          | 200    | `replicate_callback_duplicate`                       |
+| No job record (it may not be visible here yet)              | 503    | `replicate_callback_job_missing`                     |
+| Job `predictionId` differs from the body `id`               | 200    | `replicate_callback_ignored` (`prediction_mismatch`) |
+| `finishStartedAt` set and less than 2 minutes old           | 200    | `replicate_callback_duplicate` (`concurrent`)        |
+| Otherwise                                                   | 200    | Finish runs in `waitUntil`                           |
+
+**What the operator sees:**
+
+| Case                                         | Journal         | SMS                                                   |
+| -------------------------------------------- | --------------- | ----------------------------------------------------- |
+| Success                                      | Post with image | `Posted: <title>` and the URL                         |
+| Render `failed`, `canceled` or `aborted`     | Text-only post  | `Posted: <title> (no image — retry !postimg)` and URL |
+| Image download fails                         | Text-only post  | Same                                                  |
+| Prediction create or job write fails         | Text-only post  | Same, sent from request 1                             |
+| Publish fails (request 2)                    | None            | `Error: <message>`                                    |
+| No fix and no caption, or budget exhausted   | None            | The refusal                                           |
+| Callback lost (every Replicate retry failed) | None            | None; logged; the operator resends                    |
+
+The SMS is sent when the render finishes, then waits for the device's next
+mailbox check (#284). A lost callback is not swept: look for
+`replicate_callback_job_missing` or `replicate_signature_failed` lines with no
+later `postimg_finish_ms`, and resend `!postimg`.
 
 ## Data contracts
 
@@ -142,7 +210,7 @@ the allowlist note under Data contracts.
 Stored under `idem:<key>` in `TS_IDEMPOTENCY` with TTL 48h. A replay of a
 completed message short-circuits before any side-effecting work. A replay of a
 partly finished message re-runs, and `withCheckpoint` skips each sub-op that
-already finished (publish, email, image, reply). Moving this to a Durable
+already finished (narrative, ledger writes, publish, email, reply). Moving this to a Durable
 Object for strong consistency is Phase 3 (#153). Full detail in
 [`PRD.md`](PRD.md) §5.
 

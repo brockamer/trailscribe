@@ -1,29 +1,27 @@
 import { Hono } from "hono";
 import type { Env, EnvProblem } from "./env.js";
 import {
-  appendCostSuffix,
   checkEnv,
   imeiAllowSet,
   ipcInboundDryRun,
   logTrackPayloads,
   resolveSenderImei,
 } from "./env.js";
-import type { CommandResult, GarminEnvelope, GarminEvent } from "./core/types.js";
+import type { GarminEnvelope, GarminEvent, OrchestrateResult } from "./core/types.js";
 import {
   idempotencyKey,
   readRecord,
   writeRecord,
-  withCheckpoint,
   markCompleted,
   markFailed,
 } from "./core/idempotency.js";
 import { log } from "./adapters/logging/worker-logs.js";
-import { imageGenerationInFlight } from "./core/image-pending.js";
+import { jobBlocksRedelivery } from "./core/jobs.js";
 import { parseCommand, usageHint } from "./core/grammar.js";
-import { orchestrate } from "./core/orchestrator.js";
-import { sendReply } from "./adapters/outbound/garmin-ipc-inbound.js";
+import { isDeferred, orchestrate } from "./core/orchestrator.js";
 import { buildReply } from "./core/reply.js";
-import { monthlyTotals } from "./core/ledger.js";
+import { deliverCommandResult, sendPagesWithCheckpoint } from "./core/delivery.js";
+import { handleReplicateCallback } from "./replicate-callback.js";
 import {
   handleStopTrack,
   recordSessionStart,
@@ -196,17 +194,37 @@ export function makeApp() {
     }
 
     const allow = imeiAllowSet(c.env);
+    const origin = new URL(c.req.url).origin;
     for (const event of body.Events) {
-      await handleEvent(event, c.env, allow);
+      await handleEvent(event, c.env, allow, origin);
     }
 
     return c.text("ok", 200);
   });
 
+  /**
+   * Replicate completion callback (#268). Authenticated by Replicate's
+   * signature, not by the Garmin token. An invalid env answers 503 so
+   * Replicate retries rather than losing the job.
+   */
+  app.post("/replicate/callback", async (c) => {
+    const envCheck = checkEnv(c.env);
+    if (!envCheck.ok) {
+      logEnvInvalid("/replicate/callback", envCheck.problems);
+      return c.text("env invalid", 503);
+    }
+    return handleReplicateCallback(c.req.raw, c.env, c.executionCtx);
+  });
+
   return app;
 }
 
-async function handleEvent(incoming: GarminEvent, env: Env, allow: Set<string>): Promise<void> {
+async function handleEvent(
+  incoming: GarminEvent,
+  env: Env,
+  allow: Set<string>,
+  origin: string,
+): Promise<void> {
   const sender = incoming.imei ? resolveSenderImei(incoming.imei, allow) : null;
   if (!sender) {
     log({ event: "imei_not_allowed", level: "warn", imei: incoming.imei });
@@ -243,18 +261,9 @@ async function handleEvent(incoming: GarminEvent, env: Env, allow: Set<string>):
     return;
   }
 
-  // Concurrency lease (#235 review). `!postimg` holds this request open while
-  // polling Replicate — longer than Garmin is known to tolerate (~71s
-  // observed) before redelivering. `withCheckpoint` is read-then-write with no
-  // lock, so a redelivery landing mid-poll would run the pipeline a second
-  // time concurrently and could publish two journal posts and send two SMS for
-  // one command.
-  //
-  // Gated on the in-flight image marker, NOT on the record's `processing`
-  // status: that status cannot tell "still running" from "died partway", so
-  // leasing on it would also suppress the legitimate partial-progress replays
-  // P1-16 depends on.
-  if (await imageGenerationInFlight(env, key)) {
+  // Lease (#268): a job record means a paid prediction is outstanding for
+  // this event; a re-delivery must never buy a second one. See src/core/jobs.ts.
+  if (await jobBlocksRedelivery(env, key)) {
     log({
       event: "concurrent_replay_skipped",
       level: "info",
@@ -420,7 +429,7 @@ async function handleEvent(incoming: GarminEvent, env: Env, allow: Set<string>):
       freeText: event.freeText ?? null,
       key,
     });
-    await trySendReplyWithCheckpoint(env, key, event.imei, buildReply({ body: hint.text, env }));
+    await sendPagesWithCheckpoint(env, key, event.imei, buildReply({ body: hint.text, env }));
     await markCompleted(env, key);
     return;
   }
@@ -433,12 +442,12 @@ async function handleEvent(incoming: GarminEvent, env: Env, allow: Set<string>):
       key,
     });
     const messages = buildReply({ body: "Unknown command. Try !help", env });
-    await trySendReplyWithCheckpoint(env, key, event.imei, messages);
+    await sendPagesWithCheckpoint(env, key, event.imei, messages);
     await markCompleted(env, key);
     return;
   }
 
-  let result: CommandResult;
+  let result: OrchestrateResult;
   try {
     result = await orchestrate(command, {
       env,
@@ -448,6 +457,7 @@ async function handleEvent(incoming: GarminEvent, env: Env, allow: Set<string>):
       altitude,
       timeStamp: event.timeStamp,
       idemKey: key,
+      origin,
     });
     log({
       event: "orchestrate_ok",
@@ -470,52 +480,23 @@ async function handleEvent(incoming: GarminEvent, env: Env, allow: Set<string>):
     const errMessages = buildReply({ body: `Error: ${msg.slice(0, 80)}`, env });
     // Still try to deliver the error reply to the user, but don't mark
     // completed — replay will retry orchestrate.
-    await trySendReplyWithCheckpoint(env, key, event.imei, errMessages);
+    await sendPagesWithCheckpoint(env, key, event.imei, errMessages);
     return;
   }
 
-  // The cost suffix is opt-in; only read the ledger when the flag is on, to
-  // save the KV round-trip on every reply. The orchestrator already updated
-  // the ledger for !ping et al, so this read sees the just-written total.
-  const costUsdMtd = appendCostSuffix(env) ? (await monthlyTotals(env)).usd_cost : undefined;
-
-  const messages = buildReply({
-    body: result.body,
-    journalUrl: result.journalUrl,
-    links: result.links,
-    costUsdMtd,
-    env,
-  });
-
-  const replyOk = await trySendReplyWithCheckpoint(env, key, event.imei, messages);
-  if (replyOk) {
-    await markCompleted(env, key);
-  }
-}
-
-/**
- * Wrap the IPC Inbound send in a withCheckpoint so a webhook replay after a
- * successful send (but before markCompleted reached KV) doesn't double-send to
- * the device. Takes a pre-built page array (1 or 2 entries) from buildReply.
- * Returns true on first-call success or cache-hit replay; false on send failure.
- */
-async function trySendReplyWithCheckpoint(
-  env: Env,
-  idemKey: string,
-  imei: string,
-  messages: string[],
-): Promise<boolean> {
-  try {
-    await withCheckpoint(env, idemKey, "reply", async () => {
-      await sendReply(imei, messages, env);
-      return { sentAt: Date.now() };
+  if (isDeferred(result)) {
+    // The reply comes from the provider callback (#268); no markCompleted here.
+    log({
+      event: "orchestrate_deferred",
+      level: "info",
+      imei: event.imei,
+      cmd: command.type,
+      key,
     });
-    return true;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    log({ event: "reply_send_failed", level: "error", imei, error: msg });
-    return false;
+    return;
   }
+
+  await deliverCommandResult(env, key, event.imei, result);
 }
 
 /**

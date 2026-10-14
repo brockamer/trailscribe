@@ -11,7 +11,7 @@
 
 ## 2. Goal
 
-The Worker answers Garmin within 15 s. The image finishes when Replicate calls back. The operator receives the same single SMS as today, and the journal gets the same single commit with post and image together. This is the first path in the Worker that finishes work after Garmin has its answer; `!postvid` and the media work use it later.
+The Worker answers Garmin within 30 s (amended 2026-10-14 from 15 s: staging measured 18.6 s, of which 16.8 s was the narrative LLM call; 30 s keeps a wide margin under Garmin's ~71 s re-delivery point without depending on LLM latency). The image finishes when Replicate calls back. The operator receives the same single SMS as today, and the journal gets the same single commit with post and image together. This is the first path in the Worker that finishes work after Garmin has its answer; `!postvid` and the media work use it later.
 
 The design must be dependable for a remote operator who cannot inspect anything from the field, and it must not add mechanisms beyond what that requires.
 
@@ -47,7 +47,7 @@ Verified 2026-10-13 against the Standard Webhooks reference library (`standard-w
 
 ## 5. Data flow
 
-### 5.1 Request 1 — Garmin → Worker (target under 15 s)
+### 5.1 Request 1 — Garmin → Worker (target under 30 s)
 
 1. `handleEvent` → `orchestrate` → `startPostImg`.
 2. The existing refusals reply immediately: no GPS fix and no caption, or the daily token budget exhausted.
@@ -115,17 +115,25 @@ The key is written at most three times — at create, at `finishStartedAt`, and 
 
 ## 8. Callback decisions
 
-Evaluated in order after the signature passes. A 503 makes Replicate retry (for about a minute); a 200 stops it.
+Evaluated in the order the code uses. A 503 makes Replicate retry (for about a minute); a 200 stops it.
 
-| Condition                                                         | Answer | Action and log                                                                |
-| ----------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------- |
-| `key` query parameter missing                                     | 200    | `replicate_callback_ignored` (`no_key`)                                       |
-| Body `status` not terminal                                        | 200    | `replicate_callback_ignored` (`not_terminal`); the filter should prevent this |
-| Idempotency record `completed` or `failed` (a finish already ran) | 200    | `replicate_callback_duplicate`                                                |
-| No job record                                                     | 503    | `replicate_callback_job_missing` (KV may not show the record here yet)        |
-| Record `predictionId` differs from body `id`                      | 200    | `replicate_callback_ignored` (`prediction_mismatch`)                          |
-| `finishStartedAt` set and less than 2 minutes old                 | 200    | `replicate_callback_duplicate` (concurrent delivery)                          |
-| Otherwise                                                         | 200    | Write `finishStartedAt`, run `finishPostImg` in `waitUntil`                   |
+| Condition                                                         | Answer | Action and log                                                                                           |
+| ----------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------- |
+| Env invalid (#212)                                                | 503    | `env_invalid`; nothing else runs                                                                         |
+| Signature header missing, timestamp outside 300 s, or mismatch    | 401    | `replicate_signature_failed` (reason)                                                                    |
+| Signing secret cannot be fetched                                  | 503    | `replicate_signature_failed` (`secret_unavailable`), after `replicate_secret_fetch_failed`               |
+| `key` query parameter missing or empty                            | 200    | `replicate_callback_ignored` (`no_key`), level warn: the callback URL lost its query string              |
+| Signed body not JSON, or lacking a string `id` or `status`        | 200    | `replicate_callback_ignored` (`bad_body`), level warn: Replicate sent something that is not a prediction |
+| Body `status` not terminal                                        | 200    | `replicate_callback_ignored` (`not_terminal`); the filter should prevent this                            |
+| Idempotency record `completed` or `failed` (a finish already ran) | 200    | `replicate_callback_duplicate`                                                                           |
+| No job record                                                     | 503    | `replicate_callback_job_missing` (KV may not show the record here yet)                                   |
+| Record `predictionId` differs from body `id`                      | 200    | `replicate_callback_ignored` (`prediction_mismatch`)                                                     |
+| `finishStartedAt` set and less than 2 minutes old                 | 200    | `replicate_callback_duplicate` (a delivery that arrived while a finish is running)                       |
+| Otherwise                                                         | 200    | Write `finishStartedAt` (unset, or 2 minutes old or more), run `finishPostImg` in `waitUntil`            |
+
+`no_key` and `bad_body` log at warn because they mean the contract with Replicate is broken, not that one delivery was redundant; `not_terminal` and `prediction_mismatch` log at info.
+
+The 2-minute lease row is not a retry mechanism. Replicate retries only after a non-2xx answer, and a first delivery answered 200 starts the finish and is not retried. A second delivery reaches this row only when Replicate sends an identical webhook more than once (§4). A finish whose `finishStartedAt` is 2 minutes old or more is treated as lost, because the 30 s `waitUntil` window (§14) is long past, so that second delivery finishes the job instead of being dropped.
 
 Every callback logs `replicate_callback` with `key`, `predictionId`, `status`, `predict_time` and the first 2 KB of the raw body (the `ipc_received.rawBodySample` pattern; the body holds the image prompt, which is published anyway, and a short-lived output URL).
 
@@ -195,7 +203,7 @@ The SMS leaves the Worker about 45–60 s after the command and reaches the devi
 
 ### 12.3 Production and device (after merge; closes #268)
 
-Three real `!postimg` runs from the inReach: Garmin answered within 15 s (Workers Logs), SMS wall time recorded against the 59.3 s baseline. These need the device and can share a session with the #284 probes.
+Three real `!postimg` runs from the inReach: Garmin answered within 30 s (Workers Logs), SMS wall time recorded against the 59.3 s baseline. These need the device and can share a session with the #284 probes.
 
 ## 13. Documents
 
@@ -206,9 +214,9 @@ Three real `!postimg` runs from the inReach: Garmin answered within 15 s (Worker
 
 ## 14. Limits and risks
 
-- **`waitUntil` gives the finish 30 s after the response.** [Workers context API](https://developers.cloudflare.com/workers/runtime-apis/context/): HTTP-triggered work "can extend execution for up to 30 seconds after the response is sent", and promises not settled by then "are canceled", with a warning in Workers Logs. A normal finish is about 6 s. The worst case is the IPC Inbound retry ladder (1 s, 4 s, 16 s) on a slow Garmin, which approaches the limit; the publish happens before the SMS, so the post survives and only the SMS can be lost, the same outcome as an IPC failure today. `postimg_finish_ms` and the cancellation warning measure it.
+- **`waitUntil` gives the finish 30 s after the response.** [Workers context API](https://developers.cloudflare.com/workers/runtime-apis/context/): HTTP-triggered work "can extend execution for up to 30 seconds after the response is sent", and promises not settled by then "are canceled", with a "waitUntil() tasks did not complete within the allowed time" warning in Workers Logs. A normal finish is about 6 s. The 30 s must also count the retry ladders inside the finish. The IPC Inbound send retries 5xx, 429 and network errors at 1 s, 4 s and 16 s. On the text-only path (a failed render or download), the publish (`publishPost` → `putContents`) retries 5xx and network errors at the same 1 s, 4 s and 16 s, and the reply comes after it. A degraded GitHub followed by a slow Garmin together can exceed 30 s. A cancelled finish runs no `finally`: no `deleteJob`, no `postimg_finish_ms`, the idempotency record stays `processing` and the job record stays until its 48 h TTL. On the degraded-GitHub text-only path the post itself can be lost, not only the SMS, because the publish is inside the window. The image path commits through GraphQL `createCommitOnBranch` with no retry loop, so there the post is committed before the SMS and only the SMS is at risk, the same outcome as an IPC failure today. `postimg_finish_ms` and the cancellation warning measure it.
 - **KV visibility has about one minute of Replicate retries to cover.** [How KV works](https://developers.cloudflare.com/kv/concepts/how-kv-works/): a write is "usually immediately visible" in the location that made it, and "may take up to 60 seconds or more" elsewhere. The cover is the render itself: a typical callback arrives about 40 s after the job record is written. The stress case is a prediction that fails within seconds, where only Replicate's retries (the last about one minute after completion) and the likelihood that both requests reach the same Cloudflare location cover it.
-- **A lost callback leaves a job unfinished** (decision 4). It shows in Workers Logs as `replicate_callback_job_missing` or `replicate_signature_failed` lines without a later `postimg_finish_ms`.
+- **A lost callback leaves a job unfinished** (decision 4). The reliable marker in Workers Logs is a `postimg_deferred` line with no later `postimg_finish_ms` for the same `key` (both lines log `key`). Lines that explain it: `replicate_signature_failed` and `replicate_secret_fetch_failed` (no `key`; match by time), `replicate_callback_ignored` with `no_key`, `replicate_callback_job_missing`, and the `waitUntil` cancellation warning. A post published with no SMS shows as `reply_send_failed`. Recovery is to check the journal first, then resend.
 
 ## 15. Out of scope
 

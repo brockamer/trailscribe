@@ -638,4 +638,16 @@ describe("Worker /garmin/ipc — media_event diagnostic (Outbound V4, #282)", ()
     await postIpc(fixture, { bearer: env.GARMIN_INBOUND_TOKEN });
     expect(loggedLines(consoleLog).some((l) => l.event === "media_event")).toBe(false);
   });
+
+  test("seam (#268): a 1 MB-class V4 media body is read whole and accepted", async () => {
+    const bigB64 = "QUJD".repeat(350_000); // 1,400,000 Base64 chars = 1,050,000 bytes
+    const event = { ...mediaFixture.Events[0], mediaBytes: bigB64 };
+    const res = await postIpc(
+      { ...mediaFixture, Events: [event] },
+      { bearer: env.GARMIN_INBOUND_TOKEN },
+    );
+    expect(res.status).toBe(200);
+    const media = loggedLines(consoleLog).find((l) => l.event === "media_event");
+    expect(media?.mediaBytesLength).toBe(1_050_000);
+  });
 });

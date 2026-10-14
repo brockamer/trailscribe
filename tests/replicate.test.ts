@@ -1,5 +1,10 @@
 import { describe, test, expect, beforeEach, vi, type Mock } from "vitest";
-import { generateImage, ImageGenError } from "../src/adapters/ai/replicate.js";
+import {
+  createPrediction,
+  fetchOutput,
+  ImageGenError,
+  isTerminalStatus,
+} from "../src/adapters/ai/replicate.js";
 import { makeTestEnv } from "./helpers/env.js";
 import type { Env } from "../src/env.js";
 
@@ -27,142 +32,6 @@ function imageResponse(bytes: ArrayBuffer, mimeType = "image/png"): Response {
   });
 }
 
-describe("generateImage — happy path", () => {
-  test("POSTs to the model predictions endpoint with Prefer: wait, then fetches the output URL", async () => {
-    fetchImpl
-      .mockResolvedValueOnce(
-        predictionResponse({
-          id: "pred-1",
-          status: "succeeded",
-          output: ["https://replicate.delivery/foo.png"],
-        }),
-      )
-      .mockResolvedValueOnce(imageResponse(PNG_BYTES, "image/png"));
-
-    const result = await generateImage({
-      prompt: "alpine cirque",
-      aspectRatio: "16:9",
-      env,
-      fetchImpl,
-    });
-
-    expect(result.bytes.byteLength).toBe(PNG_BYTES.byteLength);
-    expect(result.mimeType).toBe("image/png");
-    expect(result.model).toBe(env.IMAGE_MODEL);
-    expect(result.costUsd).toBeCloseTo(0.003, 4);
-
-    const [predUrl, predInit] = fetchImpl.mock.calls[0];
-    expect(predUrl).toBe(`https://api.replicate.com/v1/models/${env.IMAGE_MODEL}/predictions`);
-    const headers = (predInit as RequestInit).headers as Record<string, string>;
-    expect(headers.Authorization).toBe(`Bearer ${env.IMAGE_API_KEY}`);
-    // explicit since #235: bare "wait" already meant 60s, but naming it guards
-    // against a future change to Replicate's default.
-    expect(headers.Prefer).toBe("wait=60");
-    const body = JSON.parse(String((predInit as RequestInit).body));
-    expect(body.input.prompt).toBe("alpine cirque");
-    expect(body.input.aspect_ratio).toBe("16:9");
-
-    const [imageUrl] = fetchImpl.mock.calls[1];
-    expect(imageUrl).toBe("https://replicate.delivery/foo.png");
-  });
-
-  test("output as a single URL string (not an array) is supported", async () => {
-    fetchImpl
-      .mockResolvedValueOnce(
-        predictionResponse({
-          id: "pred-1",
-          status: "succeeded",
-          output: "https://replicate.delivery/single.webp",
-        }),
-      )
-      .mockResolvedValueOnce(imageResponse(PNG_BYTES, "image/webp"));
-
-    const result = await generateImage({ prompt: "x", env, fetchImpl });
-    expect(result.mimeType).toBe("image/webp");
-  });
-
-  test("aspectRatio is omitted from input when not provided", async () => {
-    fetchImpl
-      .mockResolvedValueOnce(
-        predictionResponse({
-          id: "pred-1",
-          status: "succeeded",
-          output: ["https://replicate.delivery/x.png"],
-        }),
-      )
-      .mockResolvedValueOnce(imageResponse(PNG_BYTES));
-
-    await generateImage({ prompt: "x", env, fetchImpl });
-    const body = JSON.parse(String((fetchImpl.mock.calls[0][1] as RequestInit).body));
-    expect(body.input.aspect_ratio).toBeUndefined();
-  });
-});
-
-describe("generateImage — failure paths", () => {
-  test("Replicate 4xx surfaces as ImageGenError with provider response", async () => {
-    fetchImpl.mockResolvedValueOnce(new Response("invalid model version", { status: 422 }));
-    await expect(generateImage({ prompt: "x", env, fetchImpl })).rejects.toMatchObject({
-      name: "ImageGenError",
-      status: 422,
-    });
-  });
-
-  test("prediction returns status=failed → ImageGenError", async () => {
-    fetchImpl.mockResolvedValueOnce(
-      predictionResponse({
-        id: "pred-1",
-        status: "failed",
-        error: "model crashed",
-      }),
-    );
-    await expect(generateImage({ prompt: "x", env, fetchImpl })).rejects.toThrow(/did not succeed/);
-  });
-
-  test("prediction succeeded but empty output → ImageGenError", async () => {
-    fetchImpl.mockResolvedValueOnce(
-      predictionResponse({
-        id: "pred-1",
-        status: "succeeded",
-        output: [],
-      }),
-    );
-    await expect(generateImage({ prompt: "x", env, fetchImpl })).rejects.toThrow(
-      /empty or not a URL/,
-    );
-  });
-
-  test("image fetch failure (HTTP error) → ImageGenError", async () => {
-    fetchImpl
-      .mockResolvedValueOnce(
-        predictionResponse({
-          id: "pred-1",
-          status: "succeeded",
-          output: ["https://replicate.delivery/foo.png"],
-        }),
-      )
-      .mockResolvedValueOnce(new Response("not found", { status: 404 }));
-    await expect(generateImage({ prompt: "x", env, fetchImpl })).rejects.toMatchObject({
-      name: "ImageGenError",
-      status: 404,
-    });
-  });
-
-  test("network error contacting Replicate → ImageGenError(status=0)", async () => {
-    fetchImpl.mockRejectedValueOnce(new TypeError("connection refused"));
-    await expect(generateImage({ prompt: "x", env, fetchImpl })).rejects.toMatchObject({
-      name: "ImageGenError",
-      status: 0,
-    });
-  });
-
-  test("rejects non-replicate IMAGE_PROVIDER", async () => {
-    const badEnv = makeTestEnv({ IMAGE_PROVIDER: "openai" });
-    await expect(generateImage({ prompt: "x", env: badEnv, fetchImpl })).rejects.toThrow(
-      /unsupported IMAGE_PROVIDER/,
-    );
-  });
-});
-
 describe("ImageGenError — shape", () => {
   test("name, status, and providerResponse are exposed", () => {
     const err = new ImageGenError({ status: 503, message: "x", providerResponse: "service down" });
@@ -173,160 +42,117 @@ describe("ImageGenError — shape", () => {
 });
 
 // ---------------------------------------------------------------------------
-// #235 — poll-mode. A non-terminal status is Replicate saying "still running,
-// poll me", not a failure. Production 2026-09-13 threw on exactly this after
-// 61s and the device got "(image gen failed; text-only)".
+// #268 — webhook mode. Create returns at once; Replicate calls back on the
+// terminal state and the output is downloaded in a separate step.
 // ---------------------------------------------------------------------------
 
-const noSleep = () => Promise.resolve();
+const WEBHOOK = "https://w.test/replicate/callback?key=k1";
 
-function pending(status: "starting" | "processing", id = "pred-1"): Response {
-  return predictionResponse({
-    id,
-    status,
-    output: null,
-    error: null,
-    urls: { get: `https://api.replicate.com/v1/predictions/${id}` },
-  });
-}
-
-describe("generateImage — poll-mode (#235)", () => {
-  test("processing then succeeded → polls urls.get and returns the bytes", async () => {
-    fetchImpl
-      .mockResolvedValueOnce(pending("processing"))
-      .mockResolvedValueOnce(
-        predictionResponse({
-          id: "pred-1",
-          status: "succeeded",
-          output: ["https://replicate.delivery/ok.png"],
-        }),
-      )
-      .mockResolvedValueOnce(imageResponse(PNG_BYTES, "image/png"));
-
-    const result = await generateImage({ prompt: "x", env, fetchImpl, sleepImpl: noSleep });
-
-    expect(result.bytes.byteLength).toBe(PNG_BYTES.byteLength);
-    expect(fetchImpl.mock.calls[1][0]).toBe("https://api.replicate.com/v1/predictions/pred-1");
-  });
-
-  test("starting → processing → succeeded polls until terminal", async () => {
-    fetchImpl
-      .mockResolvedValueOnce(pending("starting"))
-      .mockResolvedValueOnce(pending("processing"))
-      .mockResolvedValueOnce(pending("processing"))
-      .mockResolvedValueOnce(
-        predictionResponse({
-          id: "pred-1",
-          status: "succeeded",
-          output: "https://replicate.delivery/ok.png",
-        }),
-      )
-      .mockResolvedValueOnce(imageResponse(PNG_BYTES));
-
-    const result = await generateImage({ prompt: "x", env, fetchImpl, sleepImpl: noSleep });
-    expect(result.bytes.byteLength).toBe(PNG_BYTES.byteLength);
-    expect(fetchImpl).toHaveBeenCalledTimes(5);
-  });
-
-  test("polling carries the bearer token but no Prefer header", async () => {
-    fetchImpl
-      .mockResolvedValueOnce(pending("processing"))
-      .mockResolvedValueOnce(
-        predictionResponse({ id: "pred-1", status: "succeeded", output: ["https://x/ok.png"] }),
-      )
-      .mockResolvedValueOnce(imageResponse(PNG_BYTES));
-
-    await generateImage({ prompt: "x", env, fetchImpl, sleepImpl: noSleep });
-
-    const pollInit = fetchImpl.mock.calls[1][1] as RequestInit;
-    const headers = pollInit.headers as Record<string, string>;
+describe("createPrediction — webhook mode (#268)", () => {
+  test("POSTs input, webhook and the completed filter, with no Prefer header", async () => {
+    fetchImpl.mockResolvedValueOnce(predictionResponse({ id: "pred-1", status: "starting" }));
+    const r = await createPrediction({
+      prompt: "a lake at dusk",
+      resolution: "2 MP",
+      webhookUrl: WEBHOOK,
+      env,
+      fetchImpl,
+    });
+    expect(r).toEqual({ id: "pred-1", status: "starting" });
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(`https://api.replicate.com/v1/models/${env.IMAGE_MODEL}/predictions`);
+    const headers = init.headers as Record<string, string>;
     expect(headers.Authorization).toBe(`Bearer ${env.IMAGE_API_KEY}`);
     expect(headers.Prefer).toBeUndefined();
+    expect(JSON.parse(init.body as string)).toEqual({
+      input: { prompt: "a lake at dusk", resolution: "2 MP" },
+      webhook: WEBHOOK,
+      webhook_events_filter: ["completed"],
+    });
   });
 
-  test("terminal 'failed' during polling throws, and is not retried", async () => {
-    fetchImpl
-      .mockResolvedValueOnce(pending("processing"))
-      .mockResolvedValueOnce(
-        predictionResponse({ id: "pred-1", status: "failed", error: "NSFW detected" }),
-      );
-
+  test("a 4xx surfaces as ImageGenError with the provider body", async () => {
+    fetchImpl.mockResolvedValueOnce(new Response("bad input", { status: 422 }));
     await expect(
-      generateImage({ prompt: "x", env, fetchImpl, sleepImpl: noSleep }),
-    ).rejects.toMatchObject({ timedOut: false, predictionId: "pred-1" });
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+      createPrediction({ prompt: "x", webhookUrl: WEBHOOK, env, fetchImpl }),
+    ).rejects.toMatchObject({
+      name: "ImageGenError",
+      status: 422,
+      providerResponse: "bad input",
+    });
   });
 
-  test("'aborted' is treated as terminal (was missing from the status union)", async () => {
-    fetchImpl
-      .mockResolvedValueOnce(pending("processing"))
-      .mockResolvedValueOnce(predictionResponse({ id: "pred-1", status: "aborted" }));
-
+  test("a network error surfaces as ImageGenError status 0", async () => {
+    fetchImpl.mockRejectedValueOnce(new Error("ECONNRESET"));
     await expect(
-      generateImage({ prompt: "x", env, fetchImpl, sleepImpl: noSleep }),
-    ).rejects.toThrow(/aborted/);
+      createPrediction({ prompt: "x", webhookUrl: WEBHOOK, env, fetchImpl }),
+    ).rejects.toMatchObject({
+      status: 0,
+    });
   });
 
-  test("exhausting the poll budget throws a distinct timedOut error carrying the prediction id", async () => {
-    // a fresh Response per call — a Response body can only be consumed once
-    fetchImpl.mockImplementation(() => Promise.resolve(pending("processing")));
-    let clock = 0;
-
+  test("a response without an id is an error, not a silent deferral", async () => {
+    fetchImpl.mockResolvedValueOnce(predictionResponse({ status: "starting" }));
     await expect(
-      generateImage({
-        prompt: "x",
-        env,
-        fetchImpl,
-        sleepImpl: noSleep,
-        nowImpl: () => (clock += 20_000),
-        pollBudgetMs: 60_000,
-      }),
-    ).rejects.toMatchObject({ timedOut: true, predictionId: "pred-1" });
+      createPrediction({ prompt: "x", webhookUrl: WEBHOOK, env, fetchImpl }),
+    ).rejects.toBeInstanceOf(ImageGenError);
   });
 
-  test("onPredictionCreated fires with the id and poll URL before any waiting", async () => {
-    fetchImpl
-      .mockResolvedValueOnce(pending("processing", "pred-abc"))
-      .mockResolvedValueOnce(
-        predictionResponse({ id: "pred-abc", status: "succeeded", output: ["https://x/ok.png"] }),
-      )
-      .mockResolvedValueOnce(imageResponse(PNG_BYTES));
+  test("rejects a non-replicate IMAGE_PROVIDER", async () => {
+    const other = { ...env, IMAGE_PROVIDER: "other" };
+    await expect(
+      createPrediction({ prompt: "x", webhookUrl: WEBHOOK, env: other, fetchImpl }),
+    ).rejects.toBeInstanceOf(ImageGenError);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
 
-    const seen: Array<{ predictionId: string; getUrl: string }> = [];
-    await generateImage({
-      prompt: "x",
+describe("fetchOutput (#268)", () => {
+  test("downloads a string output without an Authorization header", async () => {
+    fetchImpl.mockResolvedValueOnce(imageResponse(PNG_BYTES, "image/webp"));
+    const r = await fetchOutput(
+      { id: "p", output: "https://replicate.delivery/a.webp" },
       env,
       fetchImpl,
-      sleepImpl: noSleep,
-      onPredictionCreated: (predictionId, getUrl) => {
-        seen.push({ predictionId, getUrl });
-      },
-    });
-
-    expect(seen).toEqual([
-      { predictionId: "pred-abc", getUrl: "https://api.replicate.com/v1/predictions/pred-abc" },
-    ]);
+    );
+    expect(r.mimeType).toBe("image/webp");
+    expect(r.bytes.byteLength).toBe(4);
+    expect(r.model).toBe(env.IMAGE_MODEL);
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit | undefined];
+    expect(init).toBeUndefined();
   });
 
-  test("resume skips creation and polls the existing prediction (no double billing)", async () => {
-    fetchImpl
-      .mockResolvedValueOnce(
-        predictionResponse({ id: "pred-9", status: "succeeded", output: ["https://x/ok.png"] }),
-      )
-      .mockResolvedValueOnce(imageResponse(PNG_BYTES));
-
-    const result = await generateImage({
-      prompt: "x",
+  test("Review Focus 3: an array output uses the first URL", async () => {
+    fetchImpl.mockResolvedValueOnce(imageResponse(PNG_BYTES));
+    await fetchOutput(
+      { id: "p", output: ["https://replicate.delivery/1.png", "https://replicate.delivery/2.png"] },
       env,
       fetchImpl,
-      sleepImpl: noSleep,
-      resume: { predictionId: "pred-9", getUrl: "https://api.replicate.com/v1/predictions/pred-9" },
-    });
+    );
+    expect(fetchImpl.mock.calls[0][0]).toBe("https://replicate.delivery/1.png");
+  });
 
-    expect(result.bytes.byteLength).toBe(PNG_BYTES.byteLength);
-    // First call must be the GET, never a POST create.
-    expect(fetchImpl.mock.calls[0][0]).toBe("https://api.replicate.com/v1/predictions/pred-9");
-    const init = fetchImpl.mock.calls[0][1] as RequestInit | undefined;
-    expect(init?.method ?? "GET").toBe("GET");
+  test("an empty output is an ImageGenError carrying the prediction id", async () => {
+    await expect(fetchOutput({ id: "p9", output: null }, env, fetchImpl)).rejects.toMatchObject({
+      predictionId: "p9",
+    });
+  });
+
+  test("an HTTP error on download is an ImageGenError", async () => {
+    fetchImpl.mockResolvedValueOnce(new Response("gone", { status: 404 }));
+    await expect(
+      fetchOutput({ id: "p", output: "https://replicate.delivery/a.webp" }, env, fetchImpl),
+    ).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+});
+
+describe("isTerminalStatus (#268)", () => {
+  test("succeeded, failed, canceled and aborted are terminal; starting and processing are not", () => {
+    for (const s of ["succeeded", "failed", "canceled", "aborted"])
+      expect(isTerminalStatus(s)).toBe(true);
+    for (const s of ["starting", "processing", "something-new"])
+      expect(isTerminalStatus(s)).toBe(false);
   });
 });

@@ -64,17 +64,20 @@ src/
     units.ts                    # imperial rendering helpers (#195)
     budget.ts                   # daily token budget gate
     reply.ts                    # 320-char reply formatter + cost suffix
+    delivery.ts                 # shared reply tail: buildReply + checkpointed send + markCompleted
     fieldlog.ts                 # bounded per-IMEI journal entries (!drop / !brief)
     addressbook.ts              # ADDRESS_BOOK_JSON alias resolution (!share / !blast)
     imageprompt.ts              # image-gen prompt builder (!postimg)
-    image-pending.ts            # in-flight Replicate prediction marker: resume + concurrency lease
+    jobs.ts                     # provider-callback job record (job:<key>); existence is the re-delivery lease (#268)
     localtime.ts                # civil local time of day from the Open-Meteo offset (#274)
     plaintext.ts                # plain-text prompt sentence + bold-marker strip for !ai/!camp/!brief replies (#271)
     commands/                   # per-command handlers (one module per !command)
-  app.ts                        # Hono app: routes GET / , GET /health, POST /garmin/ipc;
+  app.ts                        # Hono app: routes GET / , GET /health, POST /garmin/ipc, POST /replicate/callback;
                                 #   bearer auth; env gate (#212); IMEI allowlist gate; idempotency; dispatch
+  replicate-callback.ts         # POST /replicate/callback: verify, match, finish !postimg (#268)
   adapters/
     outbound/garmin-ipc-inbound.ts # POST /api/Messaging/Message; X-API-Key
+    outbound/deliver.ts         # deliver(): text pages now, media later (#285)
     mail/resend.ts              # Resend transactional email API (was mail/gmail.ts in spec)
     tasks/todoist.ts            # real Todoist REST API
     publish/github-pages.ts     # commit markdown to journal repo via GitHub Contents API (was publish/posthaven.ts)
@@ -82,7 +85,8 @@ src/
     location/weather.ts         # Open-Meteo, cached
     location/mapshare.ts        # MapShare KML feed fetch + parse (Mode B)
     ai/openrouter.ts            # OpenRouter wrapper; real usage
-    ai/replicate.ts             # Replicate image generation (!postimg)
+    ai/replicate.ts             # Replicate image generation (!postimg): createPrediction (webhook) + fetchOutput
+    ai/replicate-webhook.ts     # Replicate signature check + cached signing secret
     storage/kv.ts               # typed KV helpers
     logging/worker-logs.ts      # structured JSON logfmt
 tests/                          # Vitest + Miniflare; fixtures/ for Garmin events
@@ -146,7 +150,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 - `GITHUB_JOURNAL_TOKEN` — fine-grained PAT with `contents:write` on journal repo
 - `GITHUB_JOURNAL_REPO` — e.g. `brockamer/trailscribe-journal`
 - `GITHUB_JOURNAL_BRANCH` — `main`
-- `IMAGE_API_KEY` — image-gen provider API key (Replicate token in α; `!postimg` only)
+- `IMAGE_API_KEY` — image-gen provider API key (Replicate token in α; `!postimg` only). The same key fetches Replicate's webhook signing secret (`GET /v1/webhooks/default/secret`), cached in `TS_CACHE` as `replicate:webhook-secret`, so there is no separate signing-secret variable (#268)
 - `ADDRESS_BOOK_JSON` — alias map for `!share`/`!blast` (Phase 2; e.g. `{"aliases":{"home":"...","all":"a@x,b@y"}}`)
 - `MAPSHARE_KEY` — per-tenant MapShare slug (path component appended to `MAPSHARE_BASE`); `trailscribe` for prod
 - `MAPSHARE_PASSWORD` — MapShare access code (Basic Auth password; empty user). Set in Garmin Explore → MapShare → Access Code. Empty string = unprotected feed (no auth header).
@@ -200,6 +204,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 - **A comma-separated `imei` is reduced to one sender** (#282). Since Outbound 2.0.9, a message sent via Internet from an account with several devices carries every account IMEI, comma-separated. `resolveSenderImei()` in `src/env.ts` accepts the event when at least one listed IMEI is allowlisted and takes the first allowlisted one as the sender and reply recipient; `handleEvent()` logs `imei_multi` and rewrites `event.imei` before the idempotency key, so nothing downstream sees the list. No listed IMEI allowlisted → `imei_not_allowed`, as below.
 - **A rejected IMEI is silent by design:** `handleEvent()` in `src/app.ts` logs `imei_not_allowed` and returns; the route still answers HTTP 200, so Garmin never retries and the device gets nothing. Identical symptom to a dead network — check this first when replies stop.
 - **A malformed env stops `/garmin/ipc` with one error line** (#212). `checkEnv()` in `src/env.ts` runs the zod schema on every authenticated webhook; any failure, or `IPC_INBOUND_DRY_RUN=true` in production, logs `env_invalid` (level error, with variable and rule names, never values) and answers HTTP 200 without reading the events. 200 is deliberate: Garmin's retries cannot repair config, and a fault left for 5 days suspends the tenant. Messages sent during the fault are lost and must be resent. The device symptom is the same as a rejected IMEI, so when replies stop, look for `env_invalid` and `imei_not_allowed` in Workers Logs. `GET /health` runs the same check and returns `env_ok` (boolean only; a failure also logs `env_invalid` with the names). Curl it after every deploy or `wrangler secret put` — secrets are write-only, and this is the only read-back.
+- **`!postimg` finishes in a second request** (#268, PRD §8 D12). `startPostImg` answers Garmin in seconds and writes `job:<idemKey>`; Replicate's signed callback to `POST /replicate/callback` runs `finishPostImg` inside `waitUntil` and sends the one SMS. The callback answers 401 for a bad signature, 503 for a retryable fault (signing secret unavailable, job record not visible yet, invalid env) and 200 for everything else. A `!postimg` that never gets its reply: the reliable marker is a `postimg_deferred` line with no later `postimg_finish_ms` for the same `key` (both log `key`). What explains it: `replicate_signature_failed` (key or secret problem), `replicate_callback_ignored` with `no_key` (query string lost), `replicate_callback_job_missing` (record not visible), `replicate_secret_fetch_failed`, Cloudflare's "waitUntil() tasks did not complete within the allowed time" warning (finish cut off), and, when `postimg_finish_ms` is there but no SMS arrived, `reply_send_failed` (the post was published) or `postimg_finish_error`. `replicate_signature_failed` and `replicate_secret_fetch_failed` carry no `key`; match them by time. There is no sweep. Recovery: check the journal first, then resend (a late callback plus a resend gives two posts). The stored Workers Logs can occasionally miss a line (seen 2026-10-14: one staging callback's stored copy lacked its last line, which `wrangler tail` showed was printed), so a missing `postimg_finish_ms` is a reason to check the journal, not proof of failure. Never log the signing secret or the `webhook-signature` header.
 - **Never commit secrets.** Wrangler Secrets only. `.dev.vars` gitignored; `.dev.vars.example` tracked.
 - **Salvage aggressively per Verdict B:** keep grammar, `ParsedCommand`, env schema shape, docs, link builders. Rebuild tool adapters, idempotency/ledger stores, Garmin adapters, webhook auth.
 - **Test seams with fixtures** (`tests/fixtures/` with recorded Garmin event payloads), not mocks of Garmin's API shape.

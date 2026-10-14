@@ -1,14 +1,20 @@
 /**
  * P2-18 — End-to-end integration tests for !postimg pipeline.
  *
+ * The pipeline is split in two (#268): the Garmin request creates a Replicate
+ * prediction and answers without a reply; the signed Replicate callback
+ * finishes the post and sends it. `completePrediction()` plays that callback.
+ *
  * Asserts:
- *   - Happy path: enrich → narrative → image-gen → atomic GraphQL commit →
- *     reply with journal URL. Single GraphQL mutation includes both the
- *     markdown post and the image binary.
- *   - Image-gen failure: falls back to text-only Contents API commit; reply
- *     notes the fallback; no image ledger entry.
- *   - Replay: image-gen called once across two webhook retries; commit happens
- *     once; ledger image entry recorded once.
+ *   - Happy path: enrich → narrative → create prediction → (callback) image
+ *     download → atomic GraphQL commit → reply with journal URL. Single
+ *     GraphQL mutation includes both the markdown post and the image binary.
+ *   - Image-gen failure: a failed create falls back to a text-only Contents
+ *     API commit in the Garmin request; reply notes the fallback; no image
+ *     ledger entry.
+ *   - Re-delivery and duplicates: a Garmin re-delivery creates no second
+ *     prediction; a duplicate callback commits once, sends one SMS and records
+ *     one image ledger entry.
  *   - !cost breakout: with image_usd_cost > 0, the !cost reply formats both
  *     axes.
  */
@@ -16,9 +22,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { makeApp } from "../src/app.js";
-import { makeTestEnv } from "./helpers/env.js";
+import { kvKeys, makeTestEnv } from "./helpers/env.js";
+import { makeExecCtx } from "./helpers/exec-ctx.js";
+import { seedWebhookSecret, signReplicateBody } from "./helpers/replicate-signing.js";
 import type { Env } from "../src/env.js";
 import { monthlyTotals, recordTransaction, recordImageTransaction } from "../src/core/ledger.js";
+import { BUDGET_REJECTION_MESSAGE } from "../src/core/budget.js";
 
 import { sendReply } from "../src/adapters/outbound/garmin-ipc-inbound.js";
 
@@ -34,6 +43,8 @@ let fetchSpy: ReturnType<typeof vi.fn>;
 const originalFetch = globalThis.fetch;
 let logSpy: ReturnType<typeof vi.spyOn>;
 let errSpy: ReturnType<typeof vi.spyOn>;
+/** Body of the most recent Replicate create call; carries the webhook URL (#268). */
+let lastCreateBody: string | undefined;
 
 const LAT = 37.1682;
 const LON = -118.5891;
@@ -110,12 +121,47 @@ async function postIpc(body: unknown): Promise<Response> {
   );
 }
 
-beforeEach(() => {
+/** Every structured log line written so far (console.log and console.error), parsed. */
+function loggedLines(): Array<Record<string, unknown>> {
+  return [...logSpy.mock.calls, ...errSpy.mock.calls].map(
+    (c) => JSON.parse(String(c[0])) as Record<string, unknown>,
+  );
+}
+
+/** The idempotency key the webhook URL of the last create call carries. */
+function webhookKey(): string | null {
+  const webhook = (JSON.parse(lastCreateBody ?? "{}") as { webhook: string }).webhook;
+  return new URL(webhook).searchParams.get("key");
+}
+
+/** Play Replicate's completion callback for the last created prediction. */
+async function completePrediction(
+  id: string,
+  status = "succeeded",
+  output = "https://replicate.delivery/output/img-123.webp",
+): Promise<Response> {
+  const webhook = (JSON.parse(lastCreateBody ?? "{}") as { webhook: string }).webhook;
+  const url = new URL(webhook);
+  const raw = JSON.stringify({ id, status, output });
+  const exec = makeExecCtx();
+  const res = await app.request(
+    `${url.pathname}${url.search}`,
+    { method: "POST", headers: signReplicateBody(raw), body: raw },
+    env,
+    exec.ctx,
+  );
+  await exec.drain();
+  return res;
+}
+
+beforeEach(async () => {
+  lastCreateBody = undefined;
   app = makeApp();
   env = makeTestEnv({
     LLM_INPUT_COST_PER_1K: "0.003",
     LLM_OUTPUT_COST_PER_1K: "0.015",
   });
+  await seedWebhookSecret(env);
   sendReplyMock.mockReset();
   sendReplyMock.mockResolvedValue({ count: 1 });
   logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -146,11 +192,8 @@ describe("P2-18 !postimg — happy path", () => {
         return jsonResponse(narrativeResponse());
       }
       if (u.includes("api.replicate.com") && u.endsWith("predictions")) {
-        return jsonResponse({
-          id: "pred_123",
-          status: "succeeded",
-          output: "https://replicate.delivery/output/img-123.webp",
-        });
+        lastCreateBody = init?.body as string;
+        return jsonResponse({ id: "pred_123", status: "starting" }, 201);
       }
       if (u.includes("replicate.delivery/output")) {
         return imageResponse();
@@ -183,6 +226,9 @@ describe("P2-18 !postimg — happy path", () => {
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
 
     await postIpc(envelope("!postimg sunset at sabrina", { gps: { lat: LAT, lon: LON } }));
+    // Garmin is answered first; the reply comes from the Replicate callback.
+    expect(sendReplyMock).not.toHaveBeenCalled();
+    await completePrediction("pred_123");
 
     const [, messages] = sendReplyMock.mock.calls[0];
     expect(messages[0]).toMatch(/^Posted: Sabrina Sunset\nhttps:\/\/\S+\.html \(live in ~1 min\)$/);
@@ -216,6 +262,82 @@ describe("P2-18 !postimg — happy path", () => {
     expect(snap.by_command["postimg"].requests).toBe(1);
     expect(snap.image_requests).toBe(1);
     expect(snap.image_usd_cost).toBeCloseTo(0.003, 5);
+  });
+
+  test("lost-callback markers: postimg_deferred and postimg_finish_ms carry the same idempotency key", async () => {
+    globalThis.fetch = vi.fn(async (url: URL | RequestInfo, init?: RequestInit) => {
+      const u = typeof url === "string" ? url : url.toString();
+      if (u.includes("nominatim")) {
+        return jsonResponse({ address: { locality: "Lake Sabrina", state: "California" } });
+      }
+      if (u.includes("api.open-meteo.com")) {
+        return jsonResponse({ current: { temperature_2m: 42, weather_code: 0 } });
+      }
+      if (u.includes("/chat/completions")) return jsonResponse(narrativeResponse());
+      if (u.includes("api.replicate.com") && u.endsWith("predictions")) {
+        lastCreateBody = init?.body as string;
+        return jsonResponse({ id: "pred_123", status: "starting" }, 201);
+      }
+      if (u.includes("replicate.delivery/output")) return imageResponse();
+      if (u.includes("api.github.com/repos/") && u.includes("?ref=")) {
+        return new Response("not found", { status: 404 });
+      }
+      if (u.includes("api.github.com/graphql")) {
+        const q = (JSON.parse((init?.body as string) ?? "{}") as { query: string }).query;
+        return q.includes("createCommitOnBranch")
+          ? jsonResponse({
+              data: { createCommitOnBranch: { commit: { oid: "o", url: "https://github.com/x" } } },
+            })
+          : jsonResponse({ data: { repository: { ref: { target: { oid: "head" } } } } });
+      }
+      throw new Error(`unmatched fetch: ${u}`);
+    }) as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!postimg markers", { gps: { lat: LAT, lon: LON } }));
+    await completePrediction("pred_123");
+
+    // The key in the webhook URL is the idempotency key: its `idem:` record exists.
+    const key = webhookKey();
+    expect(key).toBeTruthy();
+    expect(kvKeys(env.TS_IDEMPOTENCY)).toContain(`idem:${key}`);
+
+    const lines = loggedLines();
+    expect(lines.find((l) => l.event === "postimg_deferred")).toMatchObject({
+      key,
+      predictionId: "pred_123",
+    });
+    expect(lines.find((l) => l.event === "postimg_finish_ms")).toMatchObject({ key });
+  });
+});
+
+describe("P2-18 !postimg — budget gate (spec §12.1)", () => {
+  test("daily token budget exhausted: the refusal, no Replicate create, no job record", async () => {
+    env.DAILY_TOKEN_BUDGET = "100";
+    const today = new Date().toISOString().slice(0, 10);
+    await env.TS_LEDGER.put(
+      `ledger:${today}`,
+      JSON.stringify({
+        period: today,
+        requests: 1,
+        prompt_tokens: 9999,
+        completion_tokens: 0,
+        usd_cost: 0,
+        by_command: {},
+        last_update_ms: 0,
+      }),
+    );
+    fetchSpy = vi.fn(async (url: URL | RequestInfo) => {
+      throw new Error(`no network call expected, got: ${String(url)}`);
+    });
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    await postIpc(envelope("!postimg anything", { gps: { lat: LAT, lon: LON } }));
+
+    expect(sendReplyMock).toHaveBeenCalledTimes(1);
+    expect(sendReplyMock.mock.calls[0][1][0]).toBe(BUDGET_REJECTION_MESSAGE);
+    expect(fetchSpy).not.toHaveBeenCalled(); // so no Replicate create either
+    expect(kvKeys(env.TS_IDEMPOTENCY).filter((k) => k.startsWith("job:"))).toEqual([]);
+    expect((await monthlyTotals(env)).image_requests ?? 0).toBe(0);
   });
 });
 
@@ -266,10 +388,13 @@ describe("P2-18 !postimg — image-gen failure fallback", () => {
   });
 });
 
-describe("P2-18 !postimg — idempotency replay", () => {
-  test("image-gen and commit each run exactly once across two retries", async () => {
-    let imagePredictions = 0;
-    let commitMutations = 0;
+describe("P2-18 !postimg — idempotency across re-delivery and duplicate callbacks", () => {
+  let imagePredictions: number;
+  let commitMutations: number;
+
+  beforeEach(() => {
+    imagePredictions = 0;
+    commitMutations = 0;
     fetchSpy = vi.fn(async (url: URL | RequestInfo, init?: RequestInit) => {
       const u = typeof url === "string" ? url : url.toString();
       if (u.includes("nominatim")) {
@@ -283,11 +408,8 @@ describe("P2-18 !postimg — idempotency replay", () => {
       }
       if (u.includes("api.replicate.com") && u.endsWith("predictions")) {
         imagePredictions += 1;
-        return jsonResponse({
-          id: `pred_${imagePredictions}`,
-          status: "succeeded",
-          output: "https://replicate.delivery/output/img.webp",
-        });
+        lastCreateBody = init?.body as string;
+        return jsonResponse({ id: `pred_${imagePredictions}`, status: "starting" }, 201);
       }
       if (u.includes("replicate.delivery/output")) return imageResponse();
       // findFreePath probes Contents API for slug collision; 404 = free.
@@ -311,16 +433,48 @@ describe("P2-18 !postimg — idempotency replay", () => {
       throw new Error(`unmatched fetch: ${u}`);
     });
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+  });
 
+  test("a Garmin re-delivery creates no second prediction; a duplicate callback no second post or SMS", async () => {
     const ev = envelope("!postimg replay test", { ts: 4242, gps: { lat: LAT, lon: LON } });
     await postIpc(ev);
     await postIpc(ev);
-
     expect(imagePredictions).toBe(1);
-    expect(commitMutations).toBe(1);
+    const logs = logSpy.mock.calls.map((c) => String(c[0]));
+    expect(logs.some((l) => l.includes('"concurrent_replay_skipped"'))).toBe(true);
 
-    const snap = await monthlyTotals(env);
-    expect(snap.image_requests).toBe(1);
+    expect((await completePrediction("pred_1")).status).toBe(200);
+    expect((await completePrediction("pred_1")).status).toBe(200);
+    expect(commitMutations).toBe(1);
+    expect(sendReplyMock).toHaveBeenCalledTimes(1);
+    expect((await monthlyTotals(env)).image_requests).toBe(1);
+  });
+
+  test("the lease holds at any age (spec §9): a back-dated job still skips a re-delivery with no second create", async () => {
+    const ev = envelope("!postimg old job", { ts: 4343, gps: { lat: LAT, lon: LON } });
+    await postIpc(ev);
+    expect(imagePredictions).toBe(1);
+
+    // Back-date the job a day: far older than the retired 180 s window.
+    const jobKey = kvKeys(env.TS_IDEMPOTENCY).find((k) => k.startsWith("job:"))!;
+    const job = JSON.parse((await env.TS_IDEMPOTENCY.get(jobKey))!) as { createdAt: number };
+    job.createdAt = Date.now() - 24 * 3600 * 1000;
+    await env.TS_IDEMPOTENCY.put(jobKey, JSON.stringify(job));
+
+    logSpy.mockClear();
+    await postIpc(ev);
+    expect(imagePredictions).toBe(1);
+    const skipped = loggedLines().filter((l) => l.event === "concurrent_replay_skipped");
+    expect(skipped).toHaveLength(1);
+    expect(jobKey).toBe(`job:${skipped[0].key}`);
+  });
+
+  test("Garmin is answered without a reply while the image renders", async () => {
+    const res = await postIpc(envelope("!postimg quick answer", { gps: { lat: LAT, lon: LON } }));
+    expect(res.status).toBe(200);
+    expect(sendReplyMock).not.toHaveBeenCalled();
+    const logs = logSpy.mock.calls.map((c) => String(c[0]));
+    expect(logs.some((l) => l.includes('"orchestrate_deferred"'))).toBe(true);
   });
 });
 
@@ -398,11 +552,8 @@ describe("P2-18 !postimg — bare, no caption (#150)", () => {
         return jsonResponse(narrativeResponse());
       }
       if (u.includes("api.replicate.com") && u.endsWith("predictions")) {
-        return jsonResponse({
-          id: "pred_x",
-          status: "succeeded",
-          output: "https://replicate.delivery/output/img-x.webp",
-        });
+        lastCreateBody = init?.body as string;
+        return jsonResponse({ id: "pred_x", status: "starting" }, 201);
       }
       if (u.includes("replicate.delivery/output")) return imageResponse();
       if (u.includes("api.github.com/graphql")) {
@@ -432,6 +583,7 @@ describe("P2-18 !postimg — bare, no caption (#150)", () => {
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
 
     await postIpc(envelope("!postimg fog over the ridge"));
+    await completePrediction("pred_x", "succeeded", "https://replicate.delivery/output/img-x.webp");
 
     const [, messages] = sendReplyMock.mock.calls[0];
     expect(messages[0]).not.toContain("Need GPS fix");
@@ -464,11 +616,8 @@ describe("P2-18 !postimg — narrative and image share one time of day (#240)", 
       }
       if (u.includes("api.replicate.com") && u.endsWith("predictions")) {
         seen.image = init?.body as string;
-        return jsonResponse({
-          id: "pred_t",
-          status: "succeeded",
-          output: "https://replicate.delivery/output/img-t.webp",
-        });
+        lastCreateBody = seen.image;
+        return jsonResponse({ id: "pred_t", status: "starting" }, 201);
       }
       if (u.includes("replicate.delivery/output")) return imageResponse();
       if (u.includes("api.github.com/repos/") && u.includes("?ref=")) {

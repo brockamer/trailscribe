@@ -16,7 +16,11 @@ import freeTextPing from "./fixtures/garmin/free-text-ping.json";
 import { orchestrate } from "../src/core/orchestrator.js";
 import { sendReply } from "../src/adapters/outbound/garmin-ipc-inbound.js";
 
-vi.mock("../src/core/orchestrator.js", () => ({
+// Keep the real exports (`isDeferred`, which app.ts imports) and replace only
+// `orchestrate`. A factory that returns `orchestrate` alone makes any other
+// import from this module throw, which surfaces as HTTP 500.
+vi.mock("../src/core/orchestrator.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/core/orchestrator.js")>()),
   orchestrate: vi.fn(),
 }));
 vi.mock("../src/adapters/outbound/garmin-ipc-inbound.js", () => ({

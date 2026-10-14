@@ -62,7 +62,6 @@ export type OpName =
   | "camp_overflow_email"
   | "share"
   | "blast"
-  | "image"
   | "publish_track"
   | "track_narrative"
   // Inner checkpoints of `publish_track` (#219). The outer op completes only

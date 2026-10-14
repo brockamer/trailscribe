@@ -143,7 +143,7 @@ Garmin within seconds; Replicate's signed callback finishes the post and sends
 the one SMS. Decision: [`PRD.md`](PRD.md) §8 D12. Design, limits and risks:
 [`superpowers/specs/2026-10-13-async-postimg-replicate-webhook-design.md`](superpowers/specs/2026-10-13-async-postimg-replicate-webhook-design.md).
 
-**Request 1 — Garmin → Worker** (`POST /garmin/ipc`, `startPostImg`; target under 15 s):
+**Request 1 — Garmin → Worker** (`POST /garmin/ipc`, `startPostImg`; target under 15 s. Staging, 2026-10-14: 18.6 s, of which place, weather and the narrative LLM call took 16.8 s and the prediction create plus the job write 1.8 s):
 
 1. `handleEvent` skips the event when `idem:<key>` is `completed`, or when a `job:<key>` record exists (`concurrent_replay_skipped`). Otherwise it calls `orchestrate` with the Worker's origin, taken from the request URL.
 2. The refusals reply at once: no GPS fix and no caption, or the daily token budget is exhausted.

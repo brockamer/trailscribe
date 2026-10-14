@@ -1,3 +1,24 @@
+/**
+ * `!postimg <caption>` pipeline (plan P2-18, split in two by #268). Mirrors
+ * `!post` with an image-gen step before the journal commit, run as two halves
+ * so Garmin gets its answer in seconds instead of waiting on Replicate:
+ *
+ *   `startPostImg`, in the Garmin request:
+ *     1. refusals (no signal) and the text budget gate
+ *     2. enrich (geocode + weather, GPS-conditional)
+ *     3. narrative LLM (checkpointed as 'narrative') and text ledger
+ *     4. create the Replicate prediction with a completion webhook, then write
+ *        the job record once; any failure here publishes text-only now
+ *
+ *   `finishPostImg`, in the Replicate callback:
+ *     5. download the image; a failed prediction or download drops to text-only
+ *     6. image ledger (checkpointed as 'ledger_image')
+ *     7. one atomic commit of markdown + image (checkpointed as 'publish'), via
+ *        GitHub's GraphQL `createCommitOnBranch`, so an interrupted run cannot
+ *        leave a post pointing at a missing image
+ *     8. context append; the caller sends the reply
+ */
+
 import type { CommandResult, OrchestrateResult, ParsedCommand } from "../types.js";
 import type { Env } from "../../env.js";
 import type { OrchestratorContext } from "../orchestrator.js";
@@ -22,27 +43,7 @@ import { log } from "../../adapters/logging/worker-logs.js";
 
 type PostImgCommand = Extract<ParsedCommand, { type: "postimg" }>;
 
-/**
- * `!postimg <caption>` pipeline (plan P2-18, split in two by #268). Mirrors
- * `!post` with an image-gen step before the journal commit, run as two halves
- * so Garmin gets its answer in seconds instead of waiting on Replicate:
- *
- *   `startPostImg`, in the Garmin request:
- *     1. refusals (no signal) and the text budget gate
- *     2. enrich (geocode + weather, GPS-conditional)
- *     3. narrative LLM (checkpointed as 'narrative') and text ledger
- *     4. create the Replicate prediction with a completion webhook, then write
- *        the job record once; any failure here publishes text-only now
- *
- *   `finishPostImg`, in the Replicate callback:
- *     5. download the image; a failed prediction or download drops to text-only
- *     6. image ledger (checkpointed as 'ledger_image')
- *     7. one atomic commit of markdown + image (checkpointed as 'publish'), via
- *        GitHub's GraphQL `createCommitOnBranch`, so an interrupted run cannot
- *        leave a post pointing at a missing image
- *     8. context append; the caller sends the reply
- */
-
+/** Appended to `Posted: <title>` when the post went out without an image. */
 const FALLBACK_SUFFIX = " (no image — retry !postimg)";
 
 /**

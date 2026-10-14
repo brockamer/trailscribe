@@ -350,7 +350,7 @@ Applies to `!postimg` and the planned `!snapimg` (#150). These run the same narr
 
 The $0.20 image cap is a ceiling on the _provider price of the configured model_, not a runtime gate — see the enforcement note below.
 
-**Enforcement status.** No code path compares a dollar amount against any of these figures. The only runtime spend gate is `DAILY_TOKEN_BUDGET` (`src/core/budget.ts`), which counts **LLM tokens**, and image generation consumes none — so image spend is currently governed by model selection and the idempotency checkpoint alone, not by a ledger gate. `IMAGE_COST_PER_CALL_USD` is a bookkeeping rate used to record cost for `!cost`; it caps nothing. Every figure in this section is a design target enforced by review, not by the running Worker.
+**Enforcement status.** No code path compares a dollar amount against any of these figures. The only runtime spend gate is `DAILY_TOKEN_BUDGET` (`src/core/budget.ts`), which counts **LLM tokens**, and image generation consumes none — so image spend is governed by model selection and by the job-record lease (§8 D12: while a `job:<key>` record exists, a Garmin re-delivery cannot buy a second image), not by a ledger gate. `IMAGE_COST_PER_CALL_USD` is a bookkeeping rate used to record cost for `!cost`; it caps nothing. Every figure in this section is a design target enforced by review, not by the running Worker.
 
 ### Per-command cost breakdown (estimated)
 

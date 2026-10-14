@@ -169,8 +169,8 @@ the one SMS. Decision: [`PRD.md`](PRD.md) §8 D12. Design, limits and risks:
 | Env invalid                                                 | 503    | `env_invalid`                                        |
 | Header missing, timestamp outside 300 s, or signature wrong | 401    | `replicate_signature_failed` (reason)                |
 | Signing secret cannot be fetched                            | 503    | `replicate_signature_failed` (`secret_unavailable`)  |
-| `key` query parameter missing                               | 200    | `replicate_callback_ignored` (`no_key`)              |
-| Body is not JSON, or has no `id` or `status`                | 200    | `replicate_callback_ignored` (`bad_body`)            |
+| `key` query parameter missing                               | 200    | `replicate_callback_ignored` (`no_key`, warn)        |
+| Body is not JSON, or has no `id` or `status`                | 200    | `replicate_callback_ignored` (`bad_body`, warn)      |
 | `status` not terminal                                       | 200    | `replicate_callback_ignored` (`not_terminal`)        |
 | Idempotency record already `completed` or `failed`          | 200    | `replicate_callback_duplicate`                       |
 | No job record (it may not be visible here yet)              | 503    | `replicate_callback_job_missing`                     |
@@ -191,9 +191,36 @@ the one SMS. Decision: [`PRD.md`](PRD.md) §8 D12. Design, limits and risks:
 | Callback lost (every Replicate retry failed) | None            | None; logged; the operator resends                    |
 
 The SMS is sent when the render finishes, then waits for the device's next
-mailbox check (#284). A lost callback is not swept: look for
-`replicate_callback_job_missing` or `replicate_signature_failed` lines with no
-later `postimg_finish_ms`, and resend `!postimg`.
+mailbox check (#284).
+
+**The finish has 30 s.** `waitUntil` gives the finish 30 s after the response.
+A normal finish takes about 6 s, but the 30 s must also count the retry
+ladders inside it. The IPC Inbound send retries 5xx, 429 and network errors at
+1 s, 4 s and 16 s. On the text-only path (a failed render or download) the
+publish (`publishPost` → `putContents`) retries 5xx and network errors at the
+same 1 s, 4 s and 16 s, and the reply comes after it. A degraded GitHub
+followed by a slow Garmin together can exceed 30 s. Cloudflare then cancels the
+finish and logs a "waitUntil() tasks did not complete within the allowed time"
+warning. A cancelled finish runs no `finally`: no `deleteJob`, no
+`postimg_finish_ms`, and the job record stays until its 48 h TTL. On that
+degraded-GitHub path the post itself can be lost, not only the SMS. The image
+path commits through GraphQL `createCommitOnBranch` with no retry loop, so
+there the post is committed before the SMS and only the SMS is at risk.
+
+**A lost callback is not swept.** The reliable marker in Workers Logs is a
+`postimg_deferred` line with no later `postimg_finish_ms` for the same `key`
+(both lines log `key`). These lines explain it:
+
+- `replicate_signature_failed`: a key or secret problem (carries `reason`, no `key`; match by time).
+- `replicate_callback_ignored` with `no_key`: the callback URL lost its query string.
+- `replicate_callback_job_missing`: the job record was not visible.
+- `replicate_secret_fetch_failed`: the signing secret could not be fetched (no `key`; match by time).
+- The Cloudflare "waitUntil() tasks did not complete within the allowed time" warning: the finish was cut off.
+
+When `postimg_finish_ms` is there but no SMS arrived, look for
+`reply_send_failed` (the post was published) or `postimg_finish_error`. To
+recover, check the journal first, then resend `!postimg`. A late callback plus
+a resend gives two posts.
 
 ## Data contracts
 

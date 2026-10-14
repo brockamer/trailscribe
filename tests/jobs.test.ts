@@ -68,6 +68,19 @@ describe("job record (#268)", () => {
     expect(loggedEvents()).toEqual(["job_record_unreadable", "job_record_unreadable"]);
   });
 
+  test("a KV read error reads as absent and logs job_record_read_failed with key and message", async () => {
+    vi.spyOn(env.TS_IDEMPOTENCY, "get").mockRejectedValueOnce(new Error("KV GET 503"));
+    expect(await readJob(env, KEY)).toBeUndefined();
+    const lines = errSpy.mock.calls.map((c) => JSON.parse(String(c[0])) as Record<string, unknown>);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      event: "job_record_read_failed",
+      level: "warn",
+      key: KEY,
+      error: "KV GET 503",
+    });
+  });
+
   test("writeJob propagates a KV failure so the caller can fall back", async () => {
     vi.spyOn(env.TS_IDEMPOTENCY, "put").mockRejectedValueOnce(new Error("KV 429"));
     await expect(writeJob(env, KEY, JOB)).rejects.toThrow("KV 429");
@@ -87,6 +100,13 @@ describe("job record (#268)", () => {
     expect(await jobBlocksRedelivery(env, KEY)).toBe(true);
     await deleteJob(env, KEY);
     expect(await jobBlocksRedelivery(env, KEY)).toBe(false);
+  });
+
+  test("the lease holds at any age (spec §9): a job far older than the old 180 s window still blocks", async () => {
+    await writeJob(env, KEY, { ...JOB, createdAt: Date.now() - 24 * 3600 * 1000 });
+    expect(await jobBlocksRedelivery(env, KEY)).toBe(true);
+    await writeJob(env, KEY, { ...JOB, createdAt: 1 });
+    expect(await jobBlocksRedelivery(env, KEY)).toBe(true);
   });
 
   test("finishInProgress: unset → false; under 2 min → true; at 2 min → false", () => {

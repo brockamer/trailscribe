@@ -51,12 +51,22 @@ export async function writeJob(env: Env, idemKey: string, job: Job): Promise<voi
   });
 }
 
-/** Read the job record. A corrupt or incomplete record reads as absent. */
+/**
+ * Read the job record. A corrupt or incomplete record reads as absent, and so
+ * does a KV read error (logged as `job_record_read_failed`): the callback then
+ * answers 503 so Replicate retries, and a Garmin re-delivery is not skipped.
+ */
 export async function readJob(env: Env, idemKey: string): Promise<Job | undefined> {
   let raw: string | null;
   try {
     raw = await env.TS_IDEMPOTENCY.get(jobKey(idemKey));
-  } catch {
+  } catch (e) {
+    log({
+      event: "job_record_read_failed",
+      level: "warn",
+      key: idemKey,
+      error: e instanceof Error ? e.message : String(e),
+    });
     return undefined;
   }
   if (raw === null) return undefined;

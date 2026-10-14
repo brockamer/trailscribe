@@ -218,6 +218,26 @@ describe("POST /replicate/callback — decisions (spec §8)", () => {
     expect(exec.count()).toBe(0);
   });
 
+  /** The `replicate_callback_ignored` line for one reason. */
+  const ignoredLine = (reason: string) =>
+    loggedLines().find((l) => l.event === "replicate_callback_ignored" && l.reason === reason);
+
+  test("ignored log level: no_key and bad_body (a broken contract) are warn", async () => {
+    await seedJob();
+    await callback(SUCCEEDED, { key: null });
+    await callback("not json at all");
+    expect(ignoredLine("no_key")).toMatchObject({ level: "warn" });
+    expect(ignoredLine("bad_body")).toMatchObject({ level: "warn", key: KEY });
+  });
+
+  test("ignored log level: not_terminal and prediction_mismatch stay info", async () => {
+    await seedJob();
+    await callback({ id: "pred-1", status: "processing" });
+    await callback({ ...SUCCEEDED, id: "pred-OTHER" });
+    expect(ignoredLine("not_terminal")).toMatchObject({ level: "info" });
+    expect(ignoredLine("prediction_mismatch")).toMatchObject({ level: "info" });
+  });
+
   test("a completed or failed record → 200 duplicate, no work", async () => {
     for (const status of ["completed", "failed"] as const) {
       await writeRecord(env, KEY, { status, receivedAt: 1 });
@@ -264,7 +284,12 @@ describe("POST /replicate/callback — decisions (spec §8)", () => {
 });
 
 describe("POST /replicate/callback — finish", () => {
-  test("a finish started over 2 minutes ago is treated as lost: the retry finishes it", async () => {
+  // Replicate retries only after a non-2xx answer, and our answer to the
+  // first delivery was 200, so this path is reached only by a rare duplicate
+  // delivery of the same webhook. A finish that started over 2 minutes ago is
+  // treated as cancelled (the 30 s waitUntil window is long past), so that
+  // delivery finishes the job instead of being dropped as a concurrent one.
+  test("a finish started over 2 minutes ago is treated as lost: a duplicate delivery finishes it", async () => {
     await writeRecord(env, KEY, { status: "processing", receivedAt: 1 });
     await writeJob(env, KEY, { ...JOB, finishStartedAt: Date.now() - 180_000 });
     const { res, exec } = await callback(SUCCEEDED);

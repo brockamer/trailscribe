@@ -43,8 +43,9 @@ export async function deliverCommandResult(
   result: CommandResult,
 ): Promise<boolean> {
   // The cost suffix is opt-in; only read the ledger when the flag is on, to
-  // save the KV round-trip on every reply. The orchestrator already updated
-  // the ledger for !ping et al, so this read sees the just-written total.
+  // save the KV round-trip on every reply. Both callers (the Garmin request and
+  // the provider callback) record the command's spend before they get here, so
+  // the read sees the total including that spend.
   const costUsdMtd = appendCostSuffix(env) ? (await monthlyTotals(env)).usd_cost : undefined;
   const pages = buildReply({
     body: result.body,

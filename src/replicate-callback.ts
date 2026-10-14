@@ -127,8 +127,10 @@ async function runFinish(
 
 /**
  * `markFailed` that never throws. It runs in the catch path, where a second KV
- * failure must not reject the `waitUntil` promise or skip the job delete; the
- * record then stays `processing`, which a later callback or a resend handles.
+ * failure must not reject the `waitUntil` promise or skip the job delete. The
+ * record then stays `processing` with its job deleted, so a later Replicate
+ * retry gets 503 `replicate_callback_job_missing` until Replicate stops
+ * retrying; only the operator's resend recovers it.
  */
 async function markFailedBestEffort(env: Env, key: string, error: string): Promise<void> {
   try {
@@ -154,11 +156,20 @@ function parsePrediction(raw: string): ReplicatePrediction | undefined {
   return undefined;
 }
 
+/** Reasons that mean a signed callback broke the contract with Replicate: logged at warn. */
+const CONTRACT_BREAK_REASONS = new Set(["no_key", "bad_body"]);
+
 function ignored(
   reason: string,
   key: string | null,
   extra: Record<string, unknown> = {},
 ): Response {
-  log({ event: "replicate_callback_ignored", level: "info", reason, key, ...extra });
+  log({
+    event: "replicate_callback_ignored",
+    level: CONTRACT_BREAK_REASONS.has(reason) ? "warn" : "info",
+    reason,
+    key,
+    ...extra,
+  });
   return new Response("ok", { status: 200 });
 }

@@ -222,6 +222,12 @@ When `postimg_finish_ms` is there but no SMS arrived, look for
 recover, check the journal first, then resend `!postimg`. A late callback plus
 a resend gives two posts.
 
+The stored Workers Logs can occasionally miss lines. On 2026-10-14 the stored
+copy of one staging callback lacked its last log line and its request record,
+although `wrangler tail` showed the Worker printed them. A missing
+`postimg_finish_ms` is therefore a reason to check the journal, not proof
+that the post failed; for a live check, use `wrangler tail`.
+
 ## Data contracts
 
 - **Inbound (Garmin → us):** `{ Version, Events: [GarminEvent, …] }` — schema V2 with tolerance for V3/V4 extras. Since Outbound v2.0.9, `imei` can be a comma-separated list (a message sent via Internet from a multi-device account); `handleEvent` takes the first allowlisted IMEI as the sender and reply recipient, and logs `imei_multi`. A V4 media event logs `media_event` with its metadata, never the bytes or the transcription. See [`materials/Garmin IPC Outbound.pdf`](../materials/Garmin%20IPC%20Outbound.pdf) (v2.0.10).

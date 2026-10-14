@@ -1,0 +1,27 @@
+{
+  "_comment": "Replicate completion webhook body for !postimg (#268). Recorded on staging 2026-10-14 (prediction yp8t5efngdrmw0d1781tw6gx4c). The log sample was cut at 2 KB inside `logs`, so: fields through `input` are real (prompt shortened to its first two sentences); `logs` is a real excerpt; the fields after `logs` follow Replicate's documented prediction object in the alphabetical order the real body uses, with the real predict_time. Tests re-sign it with the test secret.",
+  "completed_at": "2026-10-14T10:45:27.264094247Z",
+  "created_at": "2026-10-14T10:45:00.419Z",
+  "data_removed": false,
+  "error": null,
+  "id": "yp8t5efngdrmw0d1781tw6gx4c",
+  "input": {
+    "prompt": "An ordinary, unposed phone photo taken handheld at eye level. Nobody poses and nobody is the subject.",
+    "resolution": "2 MP"
+  },
+  "logs": "Running prediction...\nUsing 2 MP resolution: 1424x1424\nUsing seed: 16951\nGenerating image...",
+  "metrics": {
+    "predict_time": 26.752380799
+  },
+  "model": "black-forest-labs/flux-2-max",
+  "output": "https://replicate.delivery/xezq/recorded-fixture/output.webp",
+  "started_at": "2026-10-14T10:45:00.512Z",
+  "status": "succeeded",
+  "urls": {
+    "get": "https://api.replicate.com/v1/predictions/yp8t5efngdrmw0d1781tw6gx4c",
+    "cancel": "https://api.replicate.com/v1/predictions/yp8t5efngdrmw0d1781tw6gx4c/cancel"
+  },
+  "version": "hidden",
+  "webhook": "https://trailscribe-staging.trailscribe.workers.dev/replicate/callback?key=<idem-key>",
+  "webhook_events_filter": ["completed"]
+}

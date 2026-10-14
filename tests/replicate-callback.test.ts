@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi, type MockInstance } from "vitest";
 import { makeApp } from "../src/app.js";
 import { readJob, writeJob, type PostImgJob } from "../src/core/jobs.js";
@@ -417,5 +419,25 @@ describe("POST /replicate/callback — logging", () => {
     expect(everything).not.toContain(headers["webhook-signature"]);
     expect(everything).not.toContain(TEST_WEBHOOK_SECRET);
     expect(everything).not.toContain(TEST_WEBHOOK_SECRET.replace(/^whsec_/, ""));
+  });
+});
+
+describe("POST /replicate/callback — recorded staging callback (#268)", () => {
+  test("the real Replicate body shape, re-signed with the test secret, verifies and finishes once", async () => {
+    // Recorded on staging 2026-10-14; see the fixture's _comment for what is real.
+    const recorded = JSON.parse(
+      readFileSync(join(__dirname, "fixtures/replicate/callback-succeeded.json"), "utf8"),
+    ) as { id: string; status: string; output: string };
+    await writeRecord(env, KEY, { status: "processing", receivedAt: 1 });
+    await writeJob(env, KEY, { ...JOB, predictionId: recorded.id });
+
+    const { res, exec } = await callback(recorded);
+
+    expect(res.status).toBe(200);
+    expect(exec.count()).toBe(1);
+    expect(commitCount).toBe(1);
+    expect(sendReplyMock).toHaveBeenCalledTimes(1);
+    expect((await readRecord(env, KEY))?.status).toBe("completed");
+    expect(await readJob(env, KEY)).toBeUndefined();
   });
 });

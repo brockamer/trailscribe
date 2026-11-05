@@ -1,9 +1,17 @@
+---
+**Shipped in #268 on 2026-10-14. Final decisions captured in issue body.**
+---
+
 # Async `!postimg` by Replicate webhook — Design Spec
 
 **Status:** Approved in conversation 2026-10-13, pending review of this file.
 **Author:** Claude (Opus 5.5) with Brock Amer
 **Date:** 2026-10-13
-**Issue:** #268 (milestone _Groundwork_). Later consumers: #246 (`!postvid`), #285 (media design).
+**Later consumers (at design time):** #246 (`!postvid`), #285 (media design).
+
+## Issue
+
+#268 (milestone _Groundwork_).
 
 ## 1. Problem
 

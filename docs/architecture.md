@@ -3,8 +3,9 @@
 TrailScribe is a single Cloudflare Worker that receives Garmin IPC Outbound
 webhooks, dispatches `!command` actions to per-integration adapters, and
 replies via Garmin IPC Inbound. All state lives in Cloudflare KV;
-Durable Objects and D1 come in Phase 3. See [`PRD.md`](PRD.md) §3 for
-design rationale and phased-evolution detail.
+Durable Objects and D1 remain proposed Phase 3 migrations, pulled against
+concrete requirements. See [`PRD.md`](PRD.md) §3 and §9 for design rationale
+and the current roadmap.
 
 ## System flow
 
@@ -141,7 +142,7 @@ An image render can outlast Garmin's re-delivery point (about 71 s), so
 `!postimg` runs as two requests joined by a job record. The Worker answers
 Garmin within seconds; Replicate's signed callback finishes the post and sends
 the one SMS. Decision: [`PRD.md`](PRD.md) §8 D12. Design, limits and risks:
-[`superpowers/specs/2026-10-13-async-postimg-replicate-webhook-design.md`](superpowers/specs/2026-10-13-async-postimg-replicate-webhook-design.md).
+[`superpowers/specs/archived/2026-10/2026-10-13-async-postimg-replicate-webhook-design.md`](superpowers/specs/archived/2026-10/2026-10-13-async-postimg-replicate-webhook-design.md).
 
 **Request 1 — Garmin → Worker** (`POST /garmin/ipc`, `startPostImg`; target under 30 s, amended from 15 s on 2026-10-14. Staging, 2026-10-14: 18.6 s, of which place, weather and the narrative LLM call took 16.8 s and the prediction create plus the job write 1.8 s):
 
@@ -231,7 +232,7 @@ that the post failed; for a live check, use `wrangler tail`.
 ## Data contracts
 
 - **Inbound (Garmin → us):** `{ Version, Events: [GarminEvent, …] }` — schema V2 with tolerance for V3/V4 extras. Since Outbound v2.0.9, `imei` can be a comma-separated list (a message sent via Internet from a multi-device account); `handleEvent` takes the first allowlisted IMEI as the sender and reply recipient, and logs `imei_multi`. A V4 media event logs `media_event` with its metadata, never the bytes or the transcription. See [`materials/Garmin IPC Outbound.pdf`](../materials/Garmin%20IPC%20Outbound.pdf) (v2.0.10).
-- **Outbound (us → Garmin):** `POST /api/Messaging/Message` with `{ Messages: [{ Recipients: [imei], Sender, Timestamp: "/Date(ms)/", Message }] }`. We send at most 160 chars per message and paginate for two-SMS replies; the API maximum has been 1600 since Inbound v3.1.2, and #284 probes what the device shows. See [`materials/Garmin IPC Inbound.pdf`](../materials/Garmin%20IPC%20Inbound.pdf) (v3.1.4).
+- **Outbound (us → Garmin):** `POST /api/Messaging/Message` with `{ Messages: [{ Recipients: [imei], Sender, Timestamp: "/Date(ms)/", Message }] }`. We send at most 160 chars per message and paginate for two-SMS replies; the API maximum has been 1600 since Inbound v3.1.2, and #284 verified intact 300/1600-char ASCII messages over satellite. The 160-char paging and ≤320-char reply contract remain pending a separate approved design. See [`materials/Garmin IPC Inbound.pdf`](../materials/Garmin%20IPC%20Inbound.pdf) (v3.1.4).
 - **Auth:** incoming = the raw `GARMIN_INBOUND_TOKEN` in the `X-Outbound-Auth-Token` header (Garmin does not use `Authorization: Bearer`; PRD §8 D1); outgoing = `X-API-Key: <GARMIN_IPC_INBOUND_API_KEY>`.
 
 ## Idempotency

@@ -144,11 +144,13 @@ The `## Depends on` body section, if present, is **prose context only**. The rel
 
 Three values. This is the canonical priority signal — labels do not encode priority.
 
-| Value      | Meaning                                                                                                                                                                                                                                   |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **High**   | Directly advances the current strategic goal (currently: milestone #10, Field reliability — correct replies, posts and tracks from the field; then #152 `!call`; then Phase 3 DO + D1, epic #99). Should be addressed before Medium work. |
-| **Medium** | Quality, efficiency, or reliability improvement. Important but not blocking the strategic goal.                                                                                                                                           |
-| **Low**    | Nice-to-have, future-facing, or optional. Safe to defer indefinitely.                                                                                                                                                                     |
+| Value      | Meaning                                                                                                                                                                                                                      |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **High**   | Directly advances the current strategic goal. As of 2026-11-04: #152 one-way `!call` design and #284 remaining device probes. High does not override dependencies or availability: #284 waits in Backlog for a paired phone. |
+| **Medium** | Quality, efficiency, or reliability improvement. Important but not blocking the strategic goal.                                                                                                                              |
+| **Low**    | Nice-to-have, future-facing, or optional. Safe to defer indefinitely.                                                                                                                                                        |
+
+**Current pull order (approved 2026-11-04):** #152 (High), then #301 diagnostics, #272 provider-credit alerts, #300 track notes, #285 outbound-media design (Medium). Incoming phone-photo/voice design #303 is Medium Backlog, native-blocked by #284. Full storage epic #99 is not a call-design gate; #153/#259 are Medium Backlog for concrete duplicate-prevention needs, while #155/#154/#99 remain Low. See [PRD §9](PRD.md#9-roadmap-forward-arc-beyond-shipped-phases) for scope and other Backlog decisions.
 
 **Rules:**
 

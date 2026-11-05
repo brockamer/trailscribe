@@ -1,3 +1,7 @@
+---
+**Shipped in #268 on 2026-10-14. Final decisions captured in issue body.**
+---
+
 # Async `!postimg` by Replicate webhook — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Tasks 1–8 suit subagents; **Task 9 runs in the main session with the operator present** (secrets, a real SMS, the operator's credentials).
@@ -8,7 +12,11 @@
 
 **Tech Stack:** Cloudflare Workers (TypeScript strict, ESM), Hono 4.12, Cloudflare KV, WebCrypto HMAC, Vitest 2 (node environment, in-memory KV mock in `tests/helpers/env.ts`).
 
-**Spec:** `docs/superpowers/specs/2026-10-13-async-postimg-replicate-webhook-design.md` (read it first; section numbers below refer to it). Issue #268.
+**Spec:** `docs/superpowers/specs/archived/2026-10/2026-10-13-async-postimg-replicate-webhook-design.md` (read it first; section numbers below refer to it). Issue #268.
+
+## Issue
+
+#268
 
 ## Global Constraints
 
@@ -2619,7 +2627,7 @@ No tests; the gate is `pnpm format:check` and a read-through against the spec.
 2. Wherever the PRD lists the Worker routes (search `/garmin/ipc`), add `POST /replicate/callback` — "Replicate completion callback; authenticated by Replicate's Standard-Webhooks signature, not by the Garmin token".
 3. Add decision **D12** at the end of §8:
 
-> **D12. Job completion by provider webhook (#268, 2026-10-13).** A command whose provider work outlasts Garmin's ~71 s re-delivery window answers Garmin first and finishes from the provider's signed completion callback. First user: `!postimg` (Replicate). The Garmin request writes one KV job record (`job:<key>` in `TS_IDEMPOTENCY`, 48 h) after the provider job exists; the callback route `POST /replicate/callback` verifies the signature, matches the prediction id, answers 200 and finishes inside `waitUntil`. No new secret: the signing secret is fetched with `IMAGE_API_KEY` and cached in `TS_CACHE`. A callback that never succeeds is logged and the operator resends; no sweep. No Durable Object, Queue or cron. Spec: `docs/superpowers/specs/2026-10-13-async-postimg-replicate-webhook-design.md`.
+> **D12. Job completion by provider webhook (#268, 2026-10-13).** A command whose provider work outlasts Garmin's ~71 s re-delivery window answers Garmin first and finishes from the provider's signed completion callback. First user: `!postimg` (Replicate). The Garmin request writes one KV job record (`job:<key>` in `TS_IDEMPOTENCY`, 48 h) after the provider job exists; the callback route `POST /replicate/callback` verifies the signature, matches the prediction id, answers 200 and finishes inside `waitUntil`. No new secret: the signing secret is fetched with `IMAGE_API_KEY` and cached in `TS_CACHE`. A callback that never succeeds is logged and the operator resends; no sweep. No Durable Object, Queue or cron. Spec: `docs/superpowers/specs/archived/2026-10/2026-10-13-async-postimg-replicate-webhook-design.md`.
 
 4. Update the `**Updated:**` header line at the top: prepend "2026-10-13 (§8 D12 added — job completion by provider webhook; `POST /replicate/callback`; KV `job:<key>` replaces `imgpend:<key>`, #268)." and move the current entry to "Previous:".
 

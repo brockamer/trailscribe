@@ -404,7 +404,7 @@ Stories sized S (≤2h), M (≤half-day), L (≤day). Dependencies noted in brac
 
 **Acceptance criteria:**
 
-- [ ] Substitute a real contact email in `SECURITY.md` and `CODE_OF_CONDUCT.md` — use `brockamer@gmail.com` (confirmed public email of record) unless user provides a different address
+- [ ] Substitute a real contact email in `SECURITY.md` and `CODE_OF_CONDUCT.md` — use the maintainer's public contact (replaced by GitHub private vulnerability reporting on 2026-11-11) unless user provides a different address
 - [ ] `CONTRIBUTING.md` updated: `wrangler dev` (not `pnpm dev`); Vitest (not Jest); Hono routes (not Express); KV (not in-memory)
 - [ ] Add note to `CONTRIBUTING.md`: issues/PRs flow through the Jared project board (will be set up post-Phase-0)
 - [ ] No more placeholder text matches `[your-email@example.com]`

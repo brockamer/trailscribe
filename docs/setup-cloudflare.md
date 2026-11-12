@@ -189,7 +189,7 @@ will write at runtime renders correctly under the chosen theme. Match
 ---
 title: "Hello"
 date: 2026-04-25T12:00:00.000Z
-location: { lat: 37.1682, lon: -118.5891, place: "Lake Sabrina, California" }
+location: { lat: 37.1682, lon: -118.5891, place: "Lake Sabrina, Washington" }
 weather: "46°F, 8mph, clear"
 tags: [trailscribe]
 ---

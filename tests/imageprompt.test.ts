@@ -58,7 +58,7 @@ describe("buildImagePrompt — telemetry profile snapshots", () => {
 
 describe("buildImagePrompt — the #235 regressions", () => {
   test("never says 'illustration' as the medium — that word produced cartoons", () => {
-    const out = buildImagePrompt({ caption: "x", place: "Malibu, California", weatherCode: 2 });
+    const out = buildImagePrompt({ caption: "x", place: "Avalon, Washington", weatherCode: 2 });
     expect(out).toContain("An ordinary, unposed phone photo");
     expect(out).not.toContain("field journal illustration");
     // the only surviving mention is the negative form, telling the model to avoid it
@@ -73,7 +73,7 @@ describe("buildImagePrompt — the #235 regressions", () => {
   test("never emits raw coordinates — they cost prompt budget a model cannot use", () => {
     const out = buildImagePrompt({
       caption: "x",
-      place: "Malibu, California",
+      place: "Avalon, Washington",
       weatherCode: 2,
       altitudeM: 12,
     });
@@ -108,7 +108,7 @@ describe("buildImagePrompt — graceful omission", () => {
   test("the lighting-matches-time clause is omitted when there is no time to match", () => {
     // Before #235 this was unconditional boilerplate, and the data to ground
     // it never reached the builder at all.
-    const noTime = buildImagePrompt({ caption: "x", place: "Malibu, California" });
+    const noTime = buildImagePrompt({ caption: "x", place: "Avalon, Washington" });
     expect(noTime).not.toContain("lighting and shadows match that time of day");
 
     const withTime = buildImagePrompt({ caption: "x", localTime: "07:42 — early morning" });
@@ -174,12 +174,12 @@ describe("buildImagePrompt — bare !postimg, narrative as subject (#150)", () =
   test("with no caption, the narrative supplies the subject", () => {
     const out = buildImagePrompt({
       narrativeSubject: NARRATIVE,
-      place: "Malibu, California",
+      place: "Avalon, Washington",
       weatherCode: 2,
     });
     expect(out).toContain(NARRATIVE);
     expect(out).toContain("An ordinary, unposed phone photo");
-    expect(out).toContain("Location: Malibu, California;");
+    expect(out).toContain("Location: Avalon, Washington;");
   });
 
   test("the mood-framing qualifier is dropped for narrative subjects", () => {
@@ -204,7 +204,7 @@ describe("buildImagePrompt — bare !postimg, narrative as subject (#150)", () =
   });
 
   test("neither caption nor narrative still yields a well-formed prompt", () => {
-    const out = buildImagePrompt({ place: "Malibu, California", weatherCode: 0 });
+    const out = buildImagePrompt({ place: "Avalon, Washington", weatherCode: 0 });
     expect(out).toContain("An ordinary, unposed phone photo");
     expect(out).not.toMatch(/\s{2,}/);
     expect(out).not.toContain("undefined");
@@ -221,8 +221,8 @@ describe("buildImagePrompt — first-person view, no invented people (#267)", ()
   const CAPTION = "met a hiker at the pass";
   const NARRATIVE =
     "Wind and Old Snow at the Saddle: Made the saddle at last. I'm watching the snow as much as the sky.";
-  const captioned = buildImagePrompt({ caption: CAPTION, place: "Inyo County, California" });
-  const bare = buildImagePrompt({ narrativeSubject: NARRATIVE, place: "Mono County, California" });
+  const captioned = buildImagePrompt({ caption: CAPTION, place: "Inyo County, Washington" });
+  const bare = buildImagePrompt({ narrativeSubject: NARRATIVE, place: "Mono County, Washington" });
   const subjectAt = (out: string) => Math.max(out.indexOf(CAPTION), out.indexOf(NARRATIVE));
 
   test("both paths set the first-person view before the subject", () => {
@@ -272,14 +272,14 @@ describe("buildImagePrompt — first-person view, no invented people (#267)", ()
     // With the town exception at the front (round 4), the model applied it to
     // mountain passes too and drew hikers on the ridge. After the location it
     // judges the exception against the actual place.
-    const out = buildImagePrompt({ caption: CAPTION, place: "Inyo County, California" });
+    const out = buildImagePrompt({ caption: CAPTION, place: "Inyo County, Washington" });
     const exception = out.search(/only exceptions are/i);
     expect(exception).toBeGreaterThan(out.indexOf("Location:"));
     expect(exception).toBeGreaterThan(out.search(/the place is deserted/i));
   });
 
   test("the end guard forbids posed people, close-up faces and a figure as the subject", () => {
-    const out = buildImagePrompt({ place: "Malibu, California", weatherCode: 0 });
+    const out = buildImagePrompt({ place: "Avalon, Washington", weatherCode: 0 });
     expect(out).toMatch(/no posed people, no close-up faces, no figure as the subject/i);
   });
 

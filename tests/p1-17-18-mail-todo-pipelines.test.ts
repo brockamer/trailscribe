@@ -105,8 +105,8 @@ describe("P1-17 !mail — happy path with GPS", () => {
         match: (u) => u.includes("nominatim.openstreetmap.org"),
         respond: () =>
           jsonResponse({
-            display_name: "Lake Sabrina, Inyo County, California",
-            address: { locality: "Lake Sabrina", state: "California" },
+            display_name: "Lake Sabrina, Inyo County, Washington",
+            address: { locality: "Lake Sabrina", state: "Washington" },
           }),
       },
       {
@@ -148,7 +148,7 @@ describe("P1-17 !mail — happy path with GPS", () => {
       text: string;
     };
     expect(resendBody.text).toContain("from the field");
-    expect(resendBody.text).toContain("From inReach @ Lake Sabrina, California");
+    expect(resendBody.text).toContain("From inReach @ Lake Sabrina, Washington");
     expect(resendBody.text).toContain("(37.1682,-118.5891");
   });
 });

@@ -87,7 +87,7 @@ const POINT_OF_VIEW =
  * front, the model applied it to mountain passes as well and drew hikers on
  * the ridge in half the mountain renders; after the location it judges the
  * exception against the actual place. Reverse geocoding cannot make this
- * call instead: Malibu's city limits cover its wild bluffs and beaches, so
+ * call instead: Avalon's city limits cover its wild bluffs and beaches, so
  * the address says "city" for exactly the scenes that failed.
  */
 const PEOPLE_EXCEPTION =

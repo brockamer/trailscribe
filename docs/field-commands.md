@@ -32,7 +32,7 @@ Keep the device's per-message **Include Location** toggle **off** for routine `!
 
 The journal repository and its GitHub Pages site are public. Every post TrailScribe publishes — `!post`, `!postimg`, and the track post written when you stop tracking on the device — can carry a `location:` entry in its frontmatter:
 
-- **Place name.** Town, locality or peak, plus state, from reverse geocoding (for example `Malibu, California`). Never a street address.
+- **Place name.** Town, locality or peak, plus state, from reverse geocoding (for example `Avalon, Washington`). Never a street address.
 - **Coordinates.** Rounded to `JOURNAL_LOCATION_PRECISION` decimal places. The default, `3`, is about 100 m: it shows the area, not the building. Set it to `omit` to publish the place name alone.
 - **Track posts use the last fix of the session** — where you stopped tracking, not where you started.
 - **A stationary track never publishes coordinates**, whatever the setting. A session that covered less than 200 m (`STATIONARY_KM` in `src/core/track-metrics.ts`) is stationary; a long stop at one point is most likely a home or a camp. Its post keeps the place name only.

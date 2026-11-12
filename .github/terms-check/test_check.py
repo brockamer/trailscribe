@@ -2,6 +2,9 @@
 
     python3 -m unittest discover -s .github/terms-check
 
+test_preflight.py is a copy of the matcher's own tests (only its import line differs); MatcherOwnTests below runs each of
+its functions, because they are written for pytest's tmp_path fixture and unittest would not collect them.
+
 The only term used anywhere is the made-up canary below. Every run goes through `Base.run_check`, which also asserts that the
 canary never reaches stdout, stderr or an alert, and that stderr is empty and stdout is exactly one allowed line.
 """
@@ -15,6 +18,7 @@ from pathlib import Path
 
 import check
 import preflight
+import test_preflight
 
 CANARY = "zebrafinch-lab-7"
 OP = "operator-login"
@@ -408,7 +412,11 @@ class Sweep(Base):
         routes = {
             f"{P}/branches": [{"name": "main", "commit": {"sha": "m0"}}, {"name": name, "commit": {"sha": "b1"}}],
             f"{P}/commits/b1": {"commit": {"committer": {"date": committed}}},
-            f"{P}/compare/m0...b1": {"commits": commits, "files": files or []},
+            f"{P}/compare/m0...b1": lambda params: {
+                "commits": commits if params["page"] == 1 else [],
+                "files": (files or [])[(params["page"] - 1) * params["per_page"] : params["page"] * params["per_page"]],
+                "total_commits": len(commits),
+            },
         }
         routes.update(extra)
         return routes
@@ -431,6 +439,16 @@ class Sweep(Base):
     def test_branch_with_an_unreadable_diff_entry_stops(self):
         self.assertEqual(self.sweep(**self.branch_routes([commit()], [fileent(patch=None)])), STOP)
 
+    def test_compare_that_may_be_truncated_is_a_stop(self):
+        many = [fileent(name=f"f{i}.ts") for i in range(300)]
+        self.assertEqual(self.sweep(**self.branch_routes([commit()], many)), STOP)
+        self.assertEqual(self.sweep(**self.branch_routes([commit()], many[:299])), PASS)
+        short = self.branch_routes([commit()], [fileent()])
+        listed = short[f"{P}/compare/m0...b1"]
+        for total in (2, None):  # the response says a second commit exists that was not listed, or says nothing
+            short[f"{P}/compare/m0...b1"] = lambda params, total=total: dict(listed(params), total_commits=total)
+            self.assertEqual(self.sweep(**short), STOP, total)
+
     def test_old_branches_and_branches_with_an_open_pr_are_skipped(self):
         self.assertEqual(self.sweep(**self.branch_routes([commit(msg=CANARY)], committed=OLD)), PASS)
         open_pr = [{"number": 8, "head": {"ref": "work", "repo": {"full_name": REPO}}}]
@@ -447,6 +465,41 @@ class Sweep(Base):
 
     def test_sweep_api_error_is_a_stop(self):
         self.assertEqual(self.run_check("schedule", None, FakeApi({})), STOP)
+
+
+class WorkflowFile(unittest.TestCase):
+    """Trap 1 and the fixed names, checked on the workflow text itself."""
+
+    def setUp(self):
+        self.text = (Path(__file__).resolve().parents[1] / "workflows" / "terms-check.yml").read_text()
+
+    def test_no_event_text_anywhere(self):
+        self.assertNotIn("github.event", self.text.replace("github.event_name", ""))
+
+    def test_job_name_checkout_and_permissions(self):
+        self.assertIn("\n  private-terms:\n", self.text)
+        self.assertIn("environment: private-terms", self.text)
+        self.assertIn("persist-credentials: false", self.text)
+        for line in ("contents: read", "issues: write", "pull-requests: write"):
+            self.assertIn(line, self.text)
+        self.assertEqual(self.text.count(": write"), 2)
+        self.assertNotIn("ref:", self.text)  # default ref only: never the pull request's head
+
+
+class MatcherOwnTests(unittest.TestCase):
+    """Runs the copied matcher tests (pytest-style functions) here, so the plain-unittest lane covers them."""
+
+    def test_copied_matcher_tests(self):
+        import inspect
+
+        ran = 0
+        for name, fn in sorted(vars(test_preflight).items()):
+            if not (name.startswith("test_") and callable(fn)):
+                continue
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                fn(*([Path(tmp)] if "tmp_path" in inspect.signature(fn).parameters else []))
+            ran += 1
+        self.assertGreaterEqual(ran, 24)
 
 
 if __name__ == "__main__":

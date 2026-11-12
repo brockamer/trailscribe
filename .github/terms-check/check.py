@@ -40,6 +40,7 @@ STOP_CHANGES_LINE = "private-terms: stop (changes the checks; needs the operator
 PER_PAGE = 100
 MAX_PR_COMMITS = 250  # the pull request commits endpoint stops listing here
 MAX_PR_FILES = 3000  # and the files endpoint here
+MAX_COMPARE_FILES = 300  # the compare endpoint lists at most this many files; at the cap the list may be cut short
 MAX_LIST = 300  # bound for every other list the check pages through
 MAX_PAGES = 31
 SWEEP_WINDOW = timedelta(hours=2)
@@ -330,9 +331,13 @@ class Run:
                 commits[c["sha"]] = c
             for f in fs:
                 files[f["filename"]] = f
-            if len(commits) >= MAX_PR_COMMITS or len(files) >= MAX_PR_FILES:
+            if len(commits) >= MAX_PR_COMMITS or len(files) >= MAX_COMPARE_FILES:
                 raise Incomplete
             if len(cs) < PER_PAGE and len(fs) < PER_PAGE:
+                # The compare endpoint may cap or not page its file list, so a list that reaches the cap is a stop, and the
+                # commits read must equal the commits the response says exist.
+                if r.get("total_commits") != len(commits):
+                    raise Incomplete
                 return list(commits.values()), list(files.values())
         raise Incomplete
 

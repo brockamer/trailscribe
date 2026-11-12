@@ -1,0 +1,51 @@
+name: Terms check
+
+# Private-terms check (stand-alone design: one workflow, one script). It compares text that the logins in the repository
+# variable TERMS_CHECK_LOGINS publish here with a private list held in the `private-terms` environment, and reports one line:
+# `private-terms: pass` or `private-terms: stop`. The script is .github/terms-check/check.py; read its header before editing.
+#
+# Rules this file must keep, because the public log is public:
+# - The job is named `private-terms`. The branch rule on main requires that exact name.
+# - Never put event text (anything under the github event context) in run:, env: or with:. Actions prints a step's expanded
+#   env in the log and only secrets are masked. The script reads the event file the runner already provides.
+# - Never check out or run a pull request's head. This job runs from the default branch's copy (these events always do) and
+#   the checkout below takes the default ref only.
+# - The environment is restricted to main in the repository settings, so a workflow file on another branch gets no secrets.
+
+on:
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created, edited]
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+  schedule:
+    - cron: "17 * * * *" # hourly sweep: review comments, review summaries, branches without a pull request
+  workflow_dispatch:
+
+run-name: private-terms
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  private-terms:
+    runs-on: ubuntu-latest
+    environment: private-terms
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/terms-check
+          persist-credentials: false
+
+      - name: Check
+        run: python3 .github/terms-check/check.py
+        env:
+          PRIVATE_TERMS: ${{ secrets.PRIVATE_TERMS }}
+          PRIVATE_TERMS_ALLOW: ${{ secrets.PRIVATE_TERMS_ALLOW }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TERMS_CHECK_LOGINS: ${{ vars.TERMS_CHECK_LOGINS }}

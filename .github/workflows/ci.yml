@@ -10,7 +10,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - uses: pnpm/action-setup@v5
 
@@ -35,3 +35,12 @@ jobs:
       # before a style nit does. Identical to `pnpm format:check` locally.
       - name: Format
         run: pnpm format:check
+
+  # The private-terms check's own tests (.github/terms-check). Standard library only, no network, no secrets, no environment.
+  terms-check-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Unit tests
+        run: python3 -m unittest discover -s .github/terms-check -v

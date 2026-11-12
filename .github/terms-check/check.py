@@ -30,6 +30,10 @@ Exceptions, each deliberate:
   to look like the operator, which would turn a stranger's PR red on demand and give them a way to probe the list.
 An empty TERMS_CHECK_LOGINS, or an empty term list after the allow list, is a stop.
 
+OPERATING RULES. A judged login never edits a stranger's issue, pull request or comment: doing so judges the edited text and
+turns the result red on the stranger's words, which tells a watcher something. To remove spam, delete or hide it. A stranger's
+pull request touching .github/ or .claude/ stays red and alerts the phone on every push; that is the intended behaviour.
+
 FAIL CLOSED. Unread text is never a pass: see `_no_patch_is_harmless` for the rule on diff entries without a patch, `_paged` for
 list limits (250 commits and 3000 files on a pull request; a page that is not a list), and MAX_REQUESTS for the per-run budget.
 
@@ -37,12 +41,14 @@ WHAT IS READ. For a judged pull request: title, body, branch name, fresh from th
 committer name and email, and each commit's own diff (added lines and paths), so a term added in one commit and removed in the
 next is still caught; and the net diff. The hourly sweep (also run by hand with workflow_dispatch) looks back 26 hours, so a
 missed or failed run leaves nothing unread, and re-reads: conversation comments, titles and bodies of issues and pull requests,
-review summaries, review line comments, commit comments, every tag name, and every branch that has no open pull request and
-differs from the default branch (no date filter; more than 100 such branches is a stop).
+review summaries, review line comments, every tag name, every non-default branch name, the commits of every branch that has no
+open pull request by a judged author (no date filter; more than 100 non-default branches is a stop), and last of all commit
+comments (no `since` on that list, so it is read in full and a long list is a stop that cannot hide the rest).
 
 NOT COVERED: wiki, discussions, releases, gists, CI logs, the cloud session's transcript, annotated tag messages, and an edited
 review summary (the API exposes no edit time, so only a summary submitted inside the sweep window is read). A review summary,
-a title or body, a tag or a branch cannot be deleted through this check: a hit there is a stop and an alert, cleaned by hand.
+a title or body, a tag, a branch or a commit comment (deleting that needs contents: write, which this workflow does not hold) cannot
+be deleted through this check: a hit there is a stop and an alert, cleaned by hand. Comments and review line comments are deleted.
 A stranger's pull request with 3000 or more files cannot be fully read for the path guard, so it is a stop, not a pass.
 """
 import base64
@@ -335,7 +341,7 @@ class Run:
             found = any([self.dirty(t) for t in texts])
         if author_judged:
             commits = self._paged(f"/repos/{self.repo}/pulls/{n}/commits", cap=MAX_PR_COMMITS)
-            found |= self._scan_commits(commits, protect=True)
+            found |= self._scan_commits(commits, protect=False)  # a merge from main is diffed against its first parent
             found |= self._scan_files(files, protect=True)
         else:
             self.checks_changed |= any(_protected(f.get("filename")) or _protected(f.get("previous_filename")) for f in files)
@@ -374,40 +380,47 @@ class Run:
                 if _ts(c["updated_at"]) >= cutoff and self.judged(_login(c.get("user"))) and self.dirty(c.get("body")):
                     self.hit("review comment", c["html_url"], f"/repos/{repo}/pulls/comments/{c['id']}")
 
-        # Commit comments.
-        for c in self._paged(f"/repos/{repo}/comments"):
-            if _ts(c["updated_at"]) >= cutoff and self.judged(_login(c.get("user"))) and self.dirty(c.get("body")):
-                self.hit("commit comment", c["html_url"], f"/repos/{repo}/comments/{c['id']}")
-
         # Tags: only collaborators can push them, so every tag is judged. The alert links the commit, not the name.
         for t in self._paged(f"/repos/{repo}/tags", cap=MAX_TAGS + 1):
             if self.dirty(t.get("name")):
                 self.hit("tag", self.commit_url(t["commit"]["sha"]))
 
-        # Branches that have no open pull request (an open one is covered by its own event) and differ from the default.
+        # Branches. Every non-default branch name is read. A branch's commits are read here unless it has an open pull request
+        # whose author is judged (that pull request's own event reads them); an open pull request by anyone else does not
+        # excuse the branch, because its event reads nothing of a stranger's or a bot's.
         default = self._get(f"/repos/{repo}")["default_branch"]
         branches = self._paged(f"/repos/{repo}/branches")
         base = next(b["commit"]["sha"] for b in branches if b["name"] == default)
         open_heads = set()
         for pr in self._paged(f"/repos/{repo}/pulls", {"state": "open"}):
             head = pr.get("head") or {}
-            if ((head.get("repo") or {}).get("full_name") or "").lower() == repo.lower():
+            if ((head.get("repo") or {}).get("full_name") or "").lower() == repo.lower() and self.judged(_login(pr.get("user"))):
                 open_heads.add(head.get("ref"))
-        todo = [b for b in branches if b["name"] != default and b["name"] not in open_heads and b["commit"]["sha"] != base]
-        if len(todo) > MAX_BRANCHES:
+        others = [b for b in branches if b["name"] != default]
+        if len(others) > MAX_BRANCHES:
             raise Incomplete
-        for b in todo:
+        for b in others:
             sha = b["commit"]["sha"]
+            # The alert link is the commit, not the branch: a branch name could itself hold a term.
+            if self.dirty(b["name"]):
+                self.hit("branch", self.commit_url(sha))
+            if b["name"] in open_heads or sha == base:
+                continue
             commits, files = self._compare(base, sha)
             # Only people with write access push branches here, so a commit with no linked login is judged too.
             if not any(self.judged(_login(c.get("author")), _login(c.get("committer"))) or not _login(c.get("author")) for c in commits):
                 continue
-            found = self.dirty(b["name"])
-            found |= self._scan_commits(commits, protect=False)
+            found = self._scan_commits(commits, protect=False)
             found |= self._scan_files(files, protect=False)
             if found:
-                # The alert link is the commit, not the branch: a branch name could itself hold a term.
                 self.hit("branch", self.commit_url(sha))
+
+        # Commit comments, read last: the list has no `since` and can be filled by anyone, so reaching its cap must never keep
+        # the surfaces above from being read. They cannot be deleted with this workflow's token (that needs contents: write),
+        # so a hit is a stop and an alert, cleaned by hand.
+        for c in self._paged(f"/repos/{repo}/comments"):
+            if _ts(c["updated_at"]) >= cutoff and self.judged(_login(c.get("user"))) and self.dirty(c.get("body")):
+                self.hit("commit comment", c["html_url"])
 
     def _recent_pulls(self, cutoff):
         out = []

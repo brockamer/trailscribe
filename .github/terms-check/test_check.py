@@ -30,6 +30,7 @@ STOP = "private-terms: stop\n"
 CHANGES = "private-terms: stop (changes the checks; needs the operator)\n"
 NOW = datetime(2026, 11, 11, 12, 0, 0, tzinfo=timezone.utc)
 RECENT = "2026-11-11T11:30:00Z"
+LATE = "2026-11-10T13:00:00Z"  # 23 hours before NOW: only a window longer than 20 hours reads it
 MIDDLE = "2026-11-11T02:00:00Z"  # 10 hours before NOW: inside the 26-hour window, outside a 2-hour one
 OLD = "2026-11-10T07:00:00Z"  # 29 hours before NOW: outside the 26-hour sweep window
 P = f"/repos/{REPO}"
@@ -333,6 +334,16 @@ class PullRequests(Base):
         self.assertEqual(self.pr(stranger("edited", sender="stranger", title=CANARY)), PASS)
         self.assertEqual(self.pr(stranger("edited"), files=[fileent(name=".github/x.yml")]), CHANGES)
 
+    def test_a_merge_commit_touching_github_does_not_make_the_pr_red_when_the_net_diff_does_not(self):
+        merge = commit(sha="mg")
+        self.assertEqual(self.pr(commits=[merge], files=[fileent()], commit_files={"mg": [fileent(name=".github/workflows/x.yml")]}), PASS)
+        self.assertEqual(self.pr(commits=[merge], files=[fileent(name=".github/workflows/x.yml")]), CHANGES)
+
+    def test_a_strangers_github_path_is_found_past_the_first_page_of_files(self):
+        ev = pr_event(author="stranger", sender="stranger")
+        files = [fileent(name=f"f{i}.ts") for i in range(120)] + [fileent(name=".claude/settings.json")]
+        self.assertEqual(self.run_check("pull_request_target", ev, FakeApi(pr_routes(ev, files=files))), CHANGES)
+
     def test_a_judged_logins_commits_on_a_strangers_pr_are_not_judged(self):
         ev = pr_event(author="stranger", sender=OP, action="synchronize")
         self.assertEqual(self.pr(ev, commits=[commit(msg=CANARY, login=OP)]), PASS)
@@ -531,6 +542,11 @@ class Sweep(Base):
         pr = lambda params: [] if params.get("state") == "open" else [{"number": 7, "updated_at": MIDDLE, "head": {"ref": "b"}}]  # noqa: E731
         self.assertEqual(self.sweep(**{f"{P}/pulls": pr, f"{P}/pulls/7/comments": [review_comment(CANARY, updated=MIDDLE)]}), STOP)
 
+    def test_an_item_23_hours_old_is_still_read(self):
+        self.assertEqual(self.sweep(**{f"{P}/pulls/7/comments": [review_comment(CANARY, updated=LATE)]}), STOP)
+        c = {"id": 4, "body": CANARY, "user": {"login": OP}, "updated_at": LATE, "html_url": "https://github.com/o/r/commit/c#commitcomment-4"}
+        self.assertEqual(self.sweep(**{f"{P}/comments": [c]}), STOP)
+
     def test_unjudged_or_old_review_comments_are_ignored(self):
         self.assertEqual(self.sweep(**{f"{P}/pulls/7/comments": [review_comment(CANARY, login="stranger"), review_comment(CANARY, updated=OLD)]}), PASS)
         self.assertEqual(self.api.deleted, [])
@@ -608,11 +624,50 @@ class Sweep(Base):
         self.assertEqual(self.sweep(**routes(100)), PASS)
         self.assertEqual(self.sweep(**routes(101)), STOP)
 
-    def test_branches_with_an_open_pr_are_skipped(self):
-        open_pr = [{"number": 8, "head": {"ref": "work", "repo": {"full_name": REPO}}}]
-        routes = self.branch_routes([commit(msg=CANARY)])
+    def open_pr_routes(self, author, commits):
+        open_pr = [{"number": 8, "user": {"login": author}, "head": {"ref": "work", "repo": {"full_name": REPO}}}]
+        routes = self.branch_routes(commits)
         routes[f"{P}/pulls"] = lambda params: open_pr if params.get("state") == "open" else []
-        self.assertEqual(self.sweep(**routes), PASS)
+        return routes
+
+    def test_a_branch_with_an_open_pr_by_a_judged_author_is_left_to_the_pr_event(self):
+        self.assertEqual(self.sweep(**self.open_pr_routes(OP, [commit(msg=CANARY)])), PASS)
+
+    def test_an_open_pr_by_a_stranger_or_bot_does_not_excuse_the_branch(self):
+        for author in ("stranger", "dependabot[bot]"):
+            self.assertEqual(self.sweep(**self.open_pr_routes(author, [commit(msg=CANARY)])), STOP, author)
+        self.assertEqual(self.sweep(**self.open_pr_routes("stranger", [commit()])), PASS)
+
+    def test_a_branch_name_is_read_whatever_the_branch_holds(self):
+        name = f"wip/{CANARY}"
+        # at the default branch's tip
+        tip = sweep_routes(**{f"{P}/branches": [{"name": "main", "commit": {"sha": "m0"}}, {"name": name, "commit": {"sha": "m0"}}]})
+        self.assertEqual(self.run_check("schedule", None, FakeApi(tip)), STOP)
+        # behind it: no commits of its own
+        behind = self.branch_routes([], name=name)
+        self.assertEqual(self.sweep(**behind), STOP)
+        # holding only a stranger's commit
+        theirs = self.branch_routes([commit(login="stranger")], name=name)
+        self.assertEqual(self.sweep(**theirs), STOP)
+        # even with an open PR by a judged author
+        open_pr = self.open_pr_routes("stranger", [commit()])
+        open_pr[f"{P}/branches"] = [{"name": "main", "commit": {"sha": "m0"}}, {"name": name, "commit": {"sha": "b1"}}]
+        open_pr[f"{P}/pulls"] = lambda params: [{"number": 8, "user": {"login": OP}, "head": {"ref": name, "repo": {"full_name": REPO}}}] if params.get("state") == "open" else []
+        self.assertEqual(self.sweep(**open_pr), STOP)
+        self.assertEqual(self.posts[-1][1], f"private-terms stop: branch https://github.com/{REPO}/commit/b1")
+
+    def test_a_long_commit_comment_list_cannot_hide_tags_and_branches(self):
+        many = [{"id": i, "body": "x", "user": {"login": "stranger"}, "updated_at": RECENT, "html_url": "u"} for i in range(300)]
+        routes = self.branch_routes([commit(msg=CANARY)])
+        routes[f"{P}/comments"] = many
+        routes[f"{P}/tags"] = [{"name": f"v-{CANARY}", "commit": {"sha": "t9"}}]
+        self.assertEqual(self.sweep(**routes), STOP)
+        alerts = [b for _, b in self.posts]
+        self.assertIn(f"private-terms stop: tag https://github.com/{REPO}/commit/t9", alerts)
+        self.assertIn(f"private-terms stop: branch https://github.com/{REPO}/commit/b1", alerts)
+        clean = self.branch_routes([commit()])
+        clean[f"{P}/comments"] = many
+        self.assertEqual(self.sweep(**clean), STOP)  # the cap alone is still a stop
 
     def test_branch_by_a_stranger_login_is_not_judged_but_an_unlinked_one_is(self):
         self.assertEqual(self.sweep(**self.branch_routes([commit(msg=CANARY, login="stranger")])), PASS)
@@ -626,11 +681,11 @@ class Sweep(Base):
         self.assertEqual(self.sweep(**{f"{P}/tags": [tag(f"v{i}") for i in range(100)]}), PASS)
         self.assertEqual(self.sweep(**{f"{P}/tags": [tag(f"v{i}") for i in range(101)]}), STOP)
 
-    def test_commit_comments_are_deleted_when_judged_and_ignored_otherwise(self):
+    def test_commit_comments_stop_and_alert_but_are_never_deleted(self):
         mine = {"id": 31, "body": CANARY, "user": {"login": OP}, "updated_at": RECENT, "html_url": f"https://github.com/{REPO}/commit/c#commitcomment-31"}
         self.assertEqual(self.sweep(**{f"{P}/comments": [mine]}), STOP)
-        self.assertEqual(self.api.deleted, [f"{P}/comments/31"])
-        self.api.deleted.clear()
+        self.assertEqual(self.api.deleted, [])
+        self.assertEqual(self.posts, [("https://ntfy.sh/phone-topic", f"private-terms stop: commit comment {mine['html_url']}")])
         theirs = dict(mine, user={"login": "stranger"})
         self.assertEqual(self.sweep(**{f"{P}/comments": [theirs, dict(mine, updated_at=OLD)]}), PASS)
         self.assertEqual(self.api.deleted, [])

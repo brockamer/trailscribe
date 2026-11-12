@@ -118,8 +118,8 @@ describe("P2-03 !where — happy path with GPS", () => {
         match: (u) => u.includes("nominatim.openstreetmap.org"),
         respond: () =>
           jsonResponse({
-            display_name: "Lake Sabrina, Inyo County, California",
-            address: { locality: "Lake Sabrina", state: "California" },
+            display_name: "Lake Sabrina, Inyo County, Washington",
+            address: { locality: "Lake Sabrina", state: "Washington" },
           }),
       },
     ]);
@@ -129,7 +129,7 @@ describe("P2-03 !where — happy path with GPS", () => {
 
     const [, messages] = sendReplyMock.mock.calls[0];
     const joined = messages.join(" ");
-    expect(joined).toContain("Lake Sabrina, California");
+    expect(joined).toContain("Lake Sabrina, Washington");
     expect(joined).toContain(`https://www.google.com/maps/search/?api=1&query=${LAT},${LON}`);
     expect(joined).toContain(MAPSHARE);
     expect(joined.length).toBeLessThanOrEqual(320);
@@ -146,7 +146,7 @@ describe("P2-03 !where — happy path with GPS", () => {
         match: (u) => u.includes("nominatim.openstreetmap.org"),
         respond: () =>
           jsonResponse({
-            address: { locality: "Onion Valley", state: "California" },
+            address: { locality: "Onion Valley", state: "Washington" },
           }),
       },
     ]);
@@ -165,7 +165,7 @@ describe("P2-03 !where — happy path with GPS", () => {
     fetchSpy = makeFetchRouter([
       {
         match: (u) => u.includes("nominatim.openstreetmap.org"),
-        respond: () => jsonResponse({ address: { locality: "Lake Sabrina", state: "California" } }),
+        respond: () => jsonResponse({ address: { locality: "Lake Sabrina", state: "Washington" } }),
       },
     ]);
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
@@ -174,7 +174,7 @@ describe("P2-03 !where — happy path with GPS", () => {
 
     const [, messages] = sendReplyMock.mock.calls[0];
     const joined = messages.join(" ");
-    expect(joined).toContain("Lake Sabrina, California");
+    expect(joined).toContain("Lake Sabrina, Washington");
     expect(joined).toContain("google.com/maps");
     expect(joined).not.toContain("share.garmin.com");
   });
@@ -200,7 +200,7 @@ describe("!where — long place name never splits a link (#261)", () => {
       globalThis.fetch = makeFetchRouter([
         {
           match: (u) => u.includes("nominatim.openstreetmap.org"),
-          respond: () => jsonResponse({ address: { locality: LOCALITY, state: "California" } }),
+          respond: () => jsonResponse({ address: { locality: LOCALITY, state: "Washington" } }),
         },
       ]) as unknown as typeof globalThis.fetch;
 
@@ -212,7 +212,7 @@ describe("!where — long place name never splits a link (#261)", () => {
 
       const [, messages] = sendReplyMock.mock.calls[0];
       expect(messages).toHaveLength(2);
-      expect(messages[0]).toBe(`${`${LOCALITY}, California`.slice(0, 60)}(1/2)`);
+      expect(messages[0]).toBe(`${`${LOCALITY}, Washington`.slice(0, 60)}(1/2)`);
       for (const page of messages) expect(page.length).toBeLessThanOrEqual(160);
       for (const link of [maps, mapShare]) {
         expect(messages.filter((p) => p.includes(link))).toHaveLength(1);

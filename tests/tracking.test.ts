@@ -249,8 +249,8 @@ describe("generateTrackNarrative", () => {
 
     const result = await generateTrackNarrative({
       metrics: makeTestTrackMetrics(),
-      startPlace: "Malibu, CA",
-      endPlace: "Malibu, CA",
+      startPlace: "Avalon, CA",
+      endPlace: "Avalon, CA",
       env,
     });
 
@@ -367,8 +367,8 @@ describe("publishTrackPost", () => {
       },
       endLat: 34.0269,
       endLon: -118.7603,
-      startPlace: "Malibu, CA",
-      endPlace: "Malibu, CA",
+      startPlace: "Avalon, CA",
+      endPlace: "Avalon, CA",
       env,
     });
 
@@ -384,10 +384,10 @@ describe("publishTrackPost", () => {
     expect(decoded).toContain("distance_mi: 1.55");
     expect(decoded).toContain("elevation_gain_ft: 115");
     expect(decoded).toContain("route_shape: out-and-back");
-    expect(decoded).toContain('start_place: "Malibu, CA"');
-    expect(decoded).toContain('end_place: "Malibu, CA"');
+    expect(decoded).toContain('start_place: "Avalon, CA"');
+    expect(decoded).toContain('end_place: "Avalon, CA"');
     // Default JOURNAL_LOCATION_PRECISION=3 (#223).
-    expect(decoded).toContain('location: { lat: 34.027, lon: -118.760, place: "Malibu, CA" }');
+    expect(decoded).toContain('location: { lat: 34.027, lon: -118.760, place: "Avalon, CA" }');
     // Haiku rendered with CommonMark soft-breaks (#195).
     expect(decoded).toContain("a  \nb  \nc");
   });
@@ -448,8 +448,8 @@ describe("publishTrackPost — published location (#223)", () => {
   }
 
   test("stationary session omits coordinates even when precision is 6", async () => {
-    const md = await publishedMarkdown(STATIONARY_METRICS, "6", "Malibu, CA");
-    expect(md).toContain('location: { place: "Malibu, CA" }');
+    const md = await publishedMarkdown(STATIONARY_METRICS, "6", "Avalon, CA");
+    expect(md).toContain('location: { place: "Avalon, CA" }');
     expect(md).toContain("activity_hint: stationary");
     expect(md).toContain("route_shape: stationary");
     expect(md).not.toContain("lat:");
@@ -495,13 +495,13 @@ describe("publishTrackPost — published location (#223)", () => {
   });
 
   test("moving session honours the configured precision", async () => {
-    const md = await publishedMarkdown(MOVING_METRICS, "4", "Malibu, CA");
-    expect(md).toContain('location: { lat: 34.0269, lon: -118.7603, place: "Malibu, CA" }');
+    const md = await publishedMarkdown(MOVING_METRICS, "4", "Avalon, CA");
+    expect(md).toContain('location: { lat: 34.0269, lon: -118.7603, place: "Avalon, CA" }');
   });
 
   test("moving session with 'omit' keeps only the place name", async () => {
-    const md = await publishedMarkdown(MOVING_METRICS, "omit", "Malibu, CA");
-    expect(md).toContain('location: { place: "Malibu, CA" }');
+    const md = await publishedMarkdown(MOVING_METRICS, "omit", "Avalon, CA");
+    expect(md).toContain('location: { place: "Avalon, CA" }');
     expect(md).not.toContain("lat:");
   });
 });
@@ -524,7 +524,7 @@ describe("session start window (#175 follow-up)", () => {
     const env = makeTestEnv();
     const { recordSessionStart } = await import("../src/core/tracking.js");
     const fetchMock = vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
-    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Malibu, CA");
+    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Avalon, CA");
     vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Sunny, 18°C");
     vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
       title: "x",
@@ -581,7 +581,7 @@ describe("session start window (#175 follow-up)", () => {
     const env = makeTestEnv();
     const { recordSessionStart, readSessionStart } = await import("../src/core/tracking.js");
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
-    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Malibu, CA");
+    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Avalon, CA");
     vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Sunny, 18°C");
     vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
       title: "x",
@@ -645,7 +645,7 @@ describe("handleStopTrack — end to end", () => {
       ping("2026-09-12T12:03:00Z", 34.0002545, 3),
       ping("2026-09-12T12:16:00Z", 34.000509, 3),
     ]);
-    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Malibu, CA");
+    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Avalon, CA");
     vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Fog, 15°C");
     const narrativeSpy = vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
       title: "Fog",
@@ -694,7 +694,7 @@ describe("handleStopTrack — end to end", () => {
       ping("2026-09-12T12:03:00Z", 34.0002545, 3),
       ping("2026-09-12T12:16:00Z", 34.000509, 3),
     ]);
-    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Malibu, CA");
+    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Avalon, CA");
     vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Fog, 15°C");
     vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
       title: "Alpenglow over the Sawtooth crest after a long, cold climb!",
@@ -728,8 +728,8 @@ describe("handleStopTrack — end to end", () => {
     await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
     vi.spyOn(geocodeMod, "reverseGeocode")
-      .mockResolvedValueOnce("Malibu, CA") // start
-      .mockResolvedValueOnce("Malibu, CA"); // end
+      .mockResolvedValueOnce("Avalon, CA") // start
+      .mockResolvedValueOnce("Avalon, CA"); // end
     vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Sunny, 18°C");
     const narrativeSpy = vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
       title: "PCH and back",
@@ -760,14 +760,14 @@ describe("handleStopTrack — end to end", () => {
 
     // F2: assert enrichment values flowed through to narrative
     const narrativeArgs = narrativeSpy.mock.calls[0][0];
-    expect(narrativeArgs.startPlace).toBe("Malibu, CA");
-    expect(narrativeArgs.endPlace).toBe("Malibu, CA");
+    expect(narrativeArgs.startPlace).toBe("Avalon, CA");
+    expect(narrativeArgs.endPlace).toBe("Avalon, CA");
     expect(narrativeArgs.weatherSummary).toBe("Sunny, 18°C");
 
     // F2: assert enrichment values flowed through to publish (F1)
     const publishArgs = publishSpy.mock.calls[0][0];
-    expect(publishArgs.startPlace).toBe("Malibu, CA");
-    expect(publishArgs.endPlace).toBe("Malibu, CA");
+    expect(publishArgs.startPlace).toBe("Avalon, CA");
+    expect(publishArgs.endPlace).toBe("Avalon, CA");
 
     const sessionId = await sessionIdFor("300052030374220", stopEvent.timeStamp);
     const stored = (await env.TS_TRACKS.get(
@@ -879,7 +879,7 @@ describe("handleStopTrack — end to end", () => {
     const env = makeTestEnv();
     await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
-    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Malibu, CA");
+    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Avalon, CA");
     vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Sunny, 18°C");
     vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
       title: "PCH and back",
@@ -916,7 +916,7 @@ describe("handleStopTrack — end to end", () => {
     await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));
     await recordTrackInterval(env, "300052030374220", 14400);
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
-    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Malibu, CA");
+    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Avalon, CA");
     vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Sunny, 18°C");
     vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
       title: "PCH and back",
@@ -953,7 +953,7 @@ describe("handleStopTrack — end to end", () => {
     const env = makeTestEnv();
     await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
-    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Malibu, CA");
+    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Avalon, CA");
     vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Sunny, 18°C");
     vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
       title: "PCH and back",
@@ -983,7 +983,7 @@ describe("handleStopTrack — end to end", () => {
     const env = makeTestEnv();
     await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
-    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Malibu, CA");
+    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Avalon, CA");
     vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Sunny, 18°C");
     const narrativeSpy = vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
       title: "PCH and back",
@@ -1110,7 +1110,7 @@ describe("handleStopTrack — end to end", () => {
     const env = makeTestEnv();
     await seedSessionStart(env, "300052030374220", Date.parse("2026-05-02T15:51:30Z"));
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
-    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Malibu, CA");
+    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Avalon, CA");
     vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Sunny, 18°C");
     vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
       title: "x",
@@ -1164,7 +1164,7 @@ describe("handleStopTrack — failures around the publish (#219)", () => {
     const { recordSessionStart } = await import("../src/core/tracking.js");
     await recordSessionStart(env, IMEI, Date.parse("2026-05-02T15:51:30Z"));
     vi.spyOn(mapshareMod, "fetchMapShareKml").mockResolvedValue(FIXTURE_KML_E2E);
-    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Malibu, CA");
+    vi.spyOn(geocodeMod, "reverseGeocode").mockResolvedValue("Avalon, CA");
     vi.spyOn(weatherMod, "currentWeather").mockResolvedValue("Sunny, 18°C");
     const narrativeSpy = vi.spyOn(narrativeMod, "generateTrackNarrative").mockResolvedValue({
       title: "PCH and back",

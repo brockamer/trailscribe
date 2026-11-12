@@ -353,7 +353,7 @@ describe("generateTrackNarrative — imperial units in LLM input (#195)", () => 
         routeShape: "out-and-back",
         activityHint: "bike",
       },
-      startPlace: "Malibu, CA",
+      startPlace: "Avalon, CA",
       endPlace: "Topanga, CA",
       env,
     });
@@ -474,7 +474,7 @@ describe("generateNarrative — bare post voice and time grounding (#240)", () =
 
   test("localTime reaches the user prompt as a 'Local time:' line", async () => {
     const { user } = await promptsFor({
-      placeName: "Malibu, CA",
+      placeName: "Avalon, CA",
       lat: 34.0,
       lon: -118.7,
       weather: "Clear · 66°F",
@@ -488,7 +488,7 @@ describe("generateNarrative — bare post voice and time grounding (#240)", () =
 
   test("isNight adds an explicit darkness line so the model cannot read 'evening' into clear skies", async () => {
     const { user } = await promptsFor({
-      placeName: "Malibu, CA",
+      placeName: "Avalon, CA",
       lat: 34.0,
       lon: -118.7,
       weather: "Clear · 66°F",
@@ -502,7 +502,7 @@ describe("generateNarrative — bare post voice and time grounding (#240)", () =
 
   test("a daytime localTime does not claim darkness", async () => {
     const { user } = await promptsFor({
-      placeName: "Malibu, CA",
+      placeName: "Avalon, CA",
       lat: 34.0,
       lon: -118.7,
       localTime: "13:05 — midday",
@@ -516,7 +516,7 @@ describe("generateNarrative — bare post voice and time grounding (#240)", () =
 
   test("a civil clock time reaches the prompt as fact, not as an approximation (#274)", async () => {
     const { user } = await promptsFor({
-      placeName: "Malibu, CA",
+      placeName: "Avalon, CA",
       lat: 34.0,
       lon: -118.7,
       localTime: "03:28 — night",
@@ -531,7 +531,7 @@ describe("generateNarrative — bare post voice and time grounding (#240)", () =
 
   test("with no clock time known, the line gives the period and forbids stating a time (#274)", async () => {
     const { user } = await promptsFor({
-      placeName: "Malibu, CA",
+      placeName: "Avalon, CA",
       lat: 34.0,
       lon: -118.7,
       localTime: "night",
@@ -544,7 +544,7 @@ describe("generateNarrative — bare post voice and time grounding (#240)", () =
 
   test("a caller that omits clockKnown gets the safe line — no clock time asserted (#274)", async () => {
     const { user } = await promptsFor({
-      placeName: "Malibu, CA",
+      placeName: "Avalon, CA",
       lat: 34.0,
       lon: -118.7,
       localTime: "night",

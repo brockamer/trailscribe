@@ -45,7 +45,7 @@ function routeFetch(opts: { replicateCreate?: () => Response; download?: () => R
     const u = typeof url === "string" ? url : url.toString();
     calls.push({ url: u, init });
     if (u.includes("nominatim"))
-      return json({ address: { locality: "Lake Sabrina", state: "California" } });
+      return json({ address: { locality: "Lake Sabrina", state: "Washington" } });
     if (u.includes("api.open-meteo.com"))
       return json({ current: { temperature_2m: 42, weather_code: 0 } });
     if (u.includes("/chat/completions")) return json(NARRATIVE);
@@ -110,7 +110,7 @@ const JOB: PostImgJob = {
   narrative: { title: "Sabrina Sunset", haiku: "a\nb\nc", body: "Light fading." },
   lat: LAT,
   lon: LON,
-  placeName: "Lake Sabrina, California",
+  placeName: "Lake Sabrina, Washington",
   weather: "42°F",
 };
 

@@ -1629,8 +1629,8 @@ describe("generateTrackNarrative", () => {
         routeShape: "out-and-back",
         activityHint: "mixed",
       },
-      startPlace: "Malibu, CA",
-      endPlace: "Malibu, CA",
+      startPlace: "Avalon, CA",
+      endPlace: "Avalon, CA",
       env,
     });
 
@@ -1835,7 +1835,7 @@ describe("publishTrackPost", () => {
       },
       endLat: 34.0269,
       endLon: -118.7603,
-      endPlace: "Malibu, CA",
+      endPlace: "Avalon, CA",
       env,
     });
 

@@ -191,8 +191,8 @@ describe("currentWeatherDetail — cache shape migration (#235)", () => {
 // #274 — the same Open-Meteo call carries the civil UTC offset (DST-aware) and
 // that day's sunrise/sunset, so the narrative can state the operator's clock
 // time instead of mean solar time. Responses recorded live 2026-10-02.
-const MALIBU_PDT = JSON.parse(
-  readFileSync(join(__dirname, "fixtures/open-meteo/malibu-pdt-2026-10-02.json"), "utf8"),
+const AVALON_PDT = JSON.parse(
+  readFileSync(join(__dirname, "fixtures/open-meteo/avalon-pdt-2026-10-02.json"), "utf8"),
 ) as unknown;
 const REYKJAVIK_UTC = JSON.parse(
   readFileSync(join(__dirname, "fixtures/open-meteo/reykjavik-utc-2026-10-02.json"), "utf8"),
@@ -200,7 +200,7 @@ const REYKJAVIK_UTC = JSON.parse(
 
 describe("currentWeatherDetail — civil time (#274)", () => {
   test("asks Open-Meteo for the local timezone and the day's sunrise/sunset", async () => {
-    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MALIBU_PDT));
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, AVALON_PDT));
     await currentWeatherDetail(34.026, -118.76, env);
     const url = String(fetchSpy.mock.calls[0][0]);
     expect(url).toContain("timezone=auto");
@@ -209,7 +209,7 @@ describe("currentWeatherDetail — civil time (#274)", () => {
   });
 
   test("DST: America/Los_Angeles in October is UTC−7, with HH:MM sunrise and sunset", async () => {
-    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MALIBU_PDT));
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, AVALON_PDT));
     const got = await currentWeatherDetail(34.026, -118.76, env);
     expect(got.civil).toEqual({ utcOffsetSeconds: -25200, sunrise: "06:50", sunset: "18:37" });
   });
@@ -222,7 +222,7 @@ describe("currentWeatherDetail — civil time (#274)", () => {
   });
 
   test("civil time round-trips through the cache", async () => {
-    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MALIBU_PDT));
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, AVALON_PDT));
     const first = await currentWeatherDetail(34.026, -118.76, env);
     const second = await currentWeatherDetail(34.026, -118.76, env);
     expect(fetchSpy).toHaveBeenCalledTimes(1);

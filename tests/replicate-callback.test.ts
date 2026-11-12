@@ -39,7 +39,7 @@ const JOB: PostImgJob = {
   narrative: { title: "Sabrina Sunset", haiku: "a\nb\nc", body: "Light fading." },
   lat: 37.1682,
   lon: -118.5891,
-  placeName: "Lake Sabrina, California",
+  placeName: "Lake Sabrina, Washington",
   weather: "42°F",
 };
 const SUCCEEDED = {

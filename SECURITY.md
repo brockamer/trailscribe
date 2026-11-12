@@ -8,7 +8,7 @@ We currently maintain the latest major version of Trailscribe. Security fixes ar
 
 ## Reporting a vulnerability
 
-To report a vulnerability, please send an email to **brockamer@gmail.com** with details and steps to reproduce. Include any relevant logs, stack traces or proof of concept code. We will respond within a reasonable time frame and work with you to triage and address the issue.
+To report a vulnerability, please report it privately through GitHub's private vulnerability reporting (https://github.com/brockamer/trailscribe/security/advisories/new) with details and steps to reproduce. Include any relevant logs, stack traces or proof of concept code. We will respond within a reasonable time frame and work with you to triage and address the issue.
 
 In your report, please include:
 

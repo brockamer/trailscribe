@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { localTimeOfDay } from "../src/core/localtime.js";
 
 describe("localTimeOfDay — civil time when the UTC offset is known (#274)", () => {
-  test("the 2026-10-02 Malibu bare !postimg: 10:28Z at UTC−7 (PDT) is 03:28 — night", () => {
+  test("the 2026-10-02 Avalon bare !postimg: 10:28Z at UTC−7 (PDT) is 03:28 — night", () => {
     // Device timeStamp 1790936886000. Mean solar time said 02:33 — an hour early.
     const r = localTimeOfDay(1790936886000, -118.76, {
       utcOffsetSeconds: -25200,
@@ -62,7 +62,7 @@ describe("localTimeOfDay — civil time when the UTC offset is known (#274)", ()
 
 describe("localTimeOfDay — period only when no offset is known (#274)", () => {
   test("mean solar time picks the period; no clock time is given", () => {
-    // 05:17Z at 120°W is 21:17 mean solar — night (the #240 Malibu case).
+    // 05:17Z at 120°W is 21:17 mean solar — night (the #240 Avalon case).
     const r = localTimeOfDay(Date.UTC(2026, 8, 16, 5, 17), -120);
     expect(r).toEqual({ text: "night", isNight: true, clockKnown: false });
   });

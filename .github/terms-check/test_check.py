@@ -8,8 +8,10 @@ its functions, because they are written for pytest's tmp_path fixture and unitte
 The only term used anywhere is the made-up canary below. Every run goes through `Base.run_check`, which also asserts that the
 canary never reaches stdout, stderr or an alert, and that stderr is empty and stdout is exactly one allowed line.
 """
+import base64
 import io
 import json
+import re
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -28,8 +30,13 @@ STOP = "private-terms: stop\n"
 CHANGES = "private-terms: stop (changes the checks; needs the operator)\n"
 NOW = datetime(2026, 11, 11, 12, 0, 0, tzinfo=timezone.utc)
 RECENT = "2026-11-11T11:30:00Z"
-OLD = "2026-11-11T07:00:00Z"
+MIDDLE = "2026-11-11T02:00:00Z"  # 10 hours before NOW: inside the 26-hour window, outside a 2-hour one
+OLD = "2026-11-10T07:00:00Z"  # 29 hours before NOW: outside the 26-hour sweep window
 P = f"/repos/{REPO}"
+
+
+def b64(text):
+    return base64.b64encode(text.encode("utf-8")).decode("ascii")
 
 
 class FakeApi:
@@ -74,9 +81,9 @@ def fileent(name="src/a.ts", patch="@@ -1,2 +1,3 @@\n context\n-old\n+new line",
     return f
 
 
-def pr_event(title="Add a feature", body="Does things.", ref="feature-x", author=OP, sender=OP):
+def pr_event(title="Add a feature", body="Does things.", ref="feature-x", author=OP, sender=OP, action="opened"):
     return {
-        "action": "opened",
+        "action": action,
         "sender": {"login": sender},
         "pull_request": {
             "number": 7,
@@ -89,22 +96,33 @@ def pr_event(title="Add a feature", body="Does things.", ref="feature-x", author
     }
 
 
-def pr_routes(commits=None, files=None):
-    return {f"{P}/pulls/7/commits": commits if commits is not None else [commit()], f"{P}/pulls/7/files": files if files is not None else [fileent()]}
+def pr_routes(event=None, commits=None, files=None, fresh=None, commit_files=None):
+    """The routes a pull request run reads: the fresh PR, its commits, its net files, and each commit's own files."""
+    commits = commits if commits is not None else [commit()]
+    commit_files = commit_files or {}
+    routes = {
+        f"{P}/pulls/7": fresh if fresh is not None else (event or pr_event())["pull_request"],
+        f"{P}/pulls/7/commits": commits,
+        f"{P}/pulls/7/files": files if files is not None else [fileent()],
+    }
+    for c in commits:
+        routes[f"{P}/commits/{c['sha']}"] = {"files": commit_files.get(c["sha"], [])}
+    return routes
 
 
-def comment_event(body, author=OP, sender=OP):
+def comment_event(body, author=OP, sender=OP, action="created"):
     return {
-        "action": "created",
+        "action": action,
         "sender": {"login": sender},
         "comment": {"id": 55, "body": body, "html_url": f"https://github.com/{REPO}/issues/3#issuecomment-55", "user": {"login": author}},
         "issue": {"number": 3},
     }
 
 
-def issue_event(title="A bug", body="Steps.", labels=(), author=OP, sender=OP):
+def issue_event(title="A bug", body="Steps.", labels=(), author=OP, sender=OP, action="opened", label=None):
     return {
-        "action": "opened",
+        "action": action,
+        **({"label": {"name": label}} if label else {}),
         "sender": {"login": sender},
         "issue": {
             "number": 3,
@@ -124,7 +142,7 @@ class Base(unittest.TestCase):
         self.event_path = Path(tmp.name) / "event.json"
         self.posts = []
 
-    def run_check(self, name, event=None, api=None, **env_over):
+    def run_check(self, name, event=None, api=None, raw=False, **env_over):
         if event is not None:
             self.event_path.write_text(json.dumps(event))
         env = {
@@ -134,11 +152,14 @@ class Base(unittest.TestCase):
             "GITHUB_SERVER_URL": "https://github.com",
             "GITHUB_RUN_ID": "99",
             "GITHUB_TOKEN": "token",
-            "PRIVATE_TERMS": f"{CANARY}\nsome other term\n",
+            "PRIVATE_TERMS": b64(f"{CANARY}\nsome other term\n"),
             "PRIVATE_TERMS_ALLOW": "",
             "NTFY_TOPIC": "phone-topic",
             "TERMS_CHECK_LOGINS": f"{OP}, review-bot",
         }
+        for key in ("PRIVATE_TERMS", "PRIVATE_TERMS_ALLOW"):  # tests pass plain text; `raw` keeps a value as given
+            if key in env_over and not raw:
+                env_over[key] = b64(env_over[key])
         env.update(env_over)
         self.api = api or FakeApi()
         out, err = io.StringIO(), io.StringIO()
@@ -153,7 +174,8 @@ class Base(unittest.TestCase):
         return out.getvalue()
 
     def pr(self, event=None, **routes):
-        return self.run_check("pull_request_target", event or pr_event(), FakeApi(pr_routes(**routes)))
+        event = event or pr_event()
+        return self.run_check("pull_request_target", event, FakeApi(pr_routes(event, **routes)))
 
 
 class MatcherEdgeRule(Base):
@@ -184,9 +206,12 @@ class Comments(Base):
         self.assertEqual(self.run_check("issue_comment", comment_event("looks good")), PASS)
         self.assertEqual((self.api.deleted, self.posts), ([], []))
 
-    def test_triggered_by_a_judged_actor_on_a_strangers_comment(self):
-        self.assertEqual(self.run_check("issue_comment", comment_event(CANARY, author="stranger", sender=OP)), STOP)
+    def test_a_judged_actor_editing_a_strangers_comment_is_judged_but_creating_is_not(self):
+        self.assertEqual(self.run_check("issue_comment", comment_event(CANARY, author="stranger", sender=OP, action="edited")), STOP)
         self.assertEqual(self.api.deleted, [f"{P}/issues/comments/55"])
+        self.api.deleted.clear()
+        self.assertEqual(self.run_check("issue_comment", comment_event(CANARY, author="stranger", sender=OP)), PASS)
+        self.assertEqual(self.api.deleted, [])
 
     def test_alert_failure_still_stops_and_deletes(self):
         def broken(url, body):
@@ -198,7 +223,7 @@ class Comments(Base):
         with redirect_stdout(out), redirect_stderr(err):
             code = check.main(
                 {"GITHUB_REPOSITORY": REPO, "GITHUB_EVENT_NAME": "issue_comment", "GITHUB_EVENT_PATH": str(self.event_path),
-                 "PRIVATE_TERMS": CANARY, "NTFY_TOPIC": "t", "TERMS_CHECK_LOGINS": OP},
+                 "PRIVATE_TERMS": b64(CANARY), "NTFY_TOPIC": "t", "TERMS_CHECK_LOGINS": OP},
                 api=api, poster=broken, now=NOW,
             )
         self.assertEqual((code, out.getvalue(), err.getvalue()), (1, STOP, ""))
@@ -219,6 +244,15 @@ class Issues(Base):
             self.assertEqual(self.run_check("issues", issue_event(**kw)), STOP, kw)
         self.assertEqual(self.api.deleted, [])
         self.assertIn(f"issue https://github.com/{REPO}/issues/3", self.posts[-1][1])
+
+    def test_a_judged_login_editing_or_labeling_a_strangers_issue(self):
+        stranger = dict(author="stranger", sender=OP)
+        self.assertEqual(self.run_check("issues", issue_event(title=CANARY, action="edited", **stranger)), STOP)
+        self.assertEqual(self.run_check("issues", issue_event(body=CANARY, action="edited", **stranger)), STOP)
+        self.assertEqual(self.run_check("issues", issue_event(labels=[CANARY], action="edited", **stranger)), PASS)  # edit judges title and body
+        self.assertEqual(self.run_check("issues", issue_event(title=CANARY, action="labeled", label="bug", **stranger)), PASS)
+        self.assertEqual(self.run_check("issues", issue_event(action="labeled", label=CANARY, **stranger)), STOP)
+        self.assertEqual(self.run_check("issues", issue_event(title=CANARY, action="opened", **stranger)), PASS)
 
 
 class PullRequests(Base):
@@ -279,10 +313,65 @@ class PullRequests(Base):
         self.assertEqual(self.pr(files=[fileent(name="docs/.github-notes.md"), fileent(name="src/.claude.ts")]), PASS)
         self.assertEqual(self.posts, [])
 
-    def test_github_path_from_a_stranger_is_a_plain_pass(self):
+    def test_github_path_from_a_stranger_is_a_stop_without_touching_the_terms(self):
         ev = pr_event(author="stranger", sender="stranger")
-        out = self.run_check("pull_request_target", ev, FakeApi(pr_routes(files=[fileent(name=".github/workflows/x.yml")])))
-        self.assertEqual(out, PASS)
+        routes = pr_routes(ev, files=[fileent(name=".github/terms-check/check.py")])
+        for terms in ("", "not base64!"):  # the terms are neither loaded nor compared for a stranger
+            out = self.run_check("pull_request_target", ev, FakeApi(routes), raw=True, PRIVATE_TERMS=terms)
+            self.assertEqual(out, CHANGES)
+        self.assertEqual(self.run_check("pull_request_target", ev, FakeApi(pr_routes(ev, files=[fileent(name="src/ok.ts")])), raw=True, PRIVATE_TERMS=""), PASS)
+
+    def test_a_judged_login_editing_a_strangers_pr_judges_only_title_and_body(self):
+        def stranger(action, sender=OP, **kw):
+            return pr_event(author="stranger", sender=sender, action=action, **kw)
+
+        self.assertEqual(self.pr(stranger("edited", title=CANARY)), STOP)
+        self.assertEqual(self.pr(stranger("edited", body=CANARY)), STOP)
+        self.assertEqual(self.pr(stranger("edited", ref=CANARY)), PASS)
+        self.assertEqual(self.pr(stranger("edited"), commits=[commit(msg=CANARY)], files=[fileent(patch=f"@@ -0,0 +1 @@\n+{CANARY}")]), PASS)
+        self.assertEqual(self.pr(stranger("synchronize", title=CANARY)), PASS)  # not an edit: nothing of the stranger's is judged
+        self.assertEqual(self.pr(stranger("edited", sender="stranger", title=CANARY)), PASS)
+        self.assertEqual(self.pr(stranger("edited"), files=[fileent(name=".github/x.yml")]), CHANGES)
+
+    def test_a_judged_logins_commits_on_a_strangers_pr_are_not_judged(self):
+        ev = pr_event(author="stranger", sender=OP, action="synchronize")
+        self.assertEqual(self.pr(ev, commits=[commit(msg=CANARY, login=OP)]), PASS)
+
+    def test_title_and_body_are_read_fresh_not_from_the_event(self):
+        ev = pr_event()
+        fresh = dict(ev["pull_request"], title=f"edited later {CANARY}")
+        self.assertEqual(self.run_check("pull_request_target", ev, FakeApi(pr_routes(ev, fresh=fresh))), STOP)
+
+    def test_a_term_added_in_one_commit_and_removed_in_the_next_is_caught(self):
+        commits = [commit(sha="c1"), commit(sha="c2")]
+        added = fileent(patch=f"@@ -0,0 +1 @@\n+{CANARY}")
+        self.assertEqual(self.pr(commits=commits, files=[], commit_files={"c1": [added], "c2": [fileent(patch=f"@@ -1 +0,0 @@\n-{CANARY}")]}), STOP)
+        self.assertEqual(self.pr(commits=commits, files=[], commit_files={"c2": [fileent(name=f"{CANARY}.txt")]}), STOP)
+        self.assertEqual(self.pr(commits=commits, files=[], commit_files={"c1": [fileent()]}), PASS)
+
+    def test_a_commit_whose_own_diff_cannot_be_read_in_full_is_a_stop(self):
+        commits = [commit(sha="c1")]
+        self.assertEqual(self.pr(commits=commits, commit_files={"c1": [fileent(name=f"f{i}.ts") for i in range(300)]}), STOP)
+        self.assertEqual(self.pr(commits=commits, commit_files={"c1": [fileent(patch=None)]}), STOP)
+        ev = pr_event()
+        routes = pr_routes(ev, commits=commits)
+        routes[f"{P}/commits/c1"] = {"sha": "c1"}  # no files key at all
+        self.assertEqual(self.run_check("pull_request_target", ev, FakeApi(routes)), STOP)
+
+    def test_a_page_that_is_not_a_list_is_a_stop_not_the_end_of_the_list(self):
+        for path in ("files", "commits"):
+            ev = pr_event()
+            routes = pr_routes(ev)
+            for bad in ({}, {"message": "Server Error"}, None):  # an empty page that is not a list must not read as "no more"
+                routes[f"{P}/pulls/7/{path}"] = bad
+                self.assertEqual(self.run_check("pull_request_target", ev, FakeApi(routes)), STOP, (path, bad))
+
+    def test_request_budget_is_a_stop(self):
+        saved, check.MAX_REQUESTS = check.MAX_REQUESTS, 3
+        try:
+            self.assertEqual(self.pr(), STOP)
+        finally:
+            check.MAX_REQUESTS = saved
 
 
 class Gate(Base):
@@ -290,6 +379,25 @@ class Gate(Base):
         for terms in ("", "  \n\n\t\n"):
             self.assertEqual(self.pr(), PASS)  # sanity: default terms pass a clean PR
             self.assertEqual(self.run_check("pull_request_target", pr_event(), FakeApi(pr_routes()), PRIVATE_TERMS=terms), STOP, repr(terms))
+            self.assertEqual(self.run_check("pull_request_target", pr_event(), FakeApi(pr_routes()), raw=True, PRIVATE_TERMS=terms), STOP, repr(terms))
+
+    def test_bad_encoding_of_either_secret_is_a_stop(self):
+        bad = {
+            "plain text, not base64": "zebrafinch-lab-7",
+            "base64 of non-UTF-8 bytes": base64.b64encode(b"\xff\xfe\x00z").decode(),
+            "base64 of UTF-16": base64.b64encode("zebrafinch-lab-7".encode("utf-16-le")).decode(),
+            "padding cut off": b64(CANARY)[:-1],
+            "embedded junk": b64(CANARY) + "!!",
+        }
+        for label, value in bad.items():
+            self.assertEqual(self.run_check("issue_comment", comment_event("hello"), raw=True, PRIVATE_TERMS=value), STOP, label)
+            self.assertEqual(self.api.deleted, [], label)
+            self.assertEqual(self.run_check("issue_comment", comment_event("hello"), raw=True, PRIVATE_TERMS=b64(CANARY), PRIVATE_TERMS_ALLOW=value), STOP, label)
+
+    def test_the_encoded_secret_may_carry_line_wrapping_and_a_bom(self):
+        wrapped = base64.b64encode("\ufeff{}\nx".format(CANARY).encode("utf-8")).decode()
+        wrapped = wrapped[:10] + "\n" + wrapped[10:]
+        self.assertEqual(self.run_check("issue_comment", comment_event(CANARY), raw=True, PRIVATE_TERMS=wrapped), STOP)
 
     def test_everything_allow_listed_leaves_nothing_to_compare(self):
         self.assertEqual(self.run_check("issue_comment", comment_event("hello"), PRIVATE_TERMS="Op Name", PRIVATE_TERMS_ALLOW="op  name"), STOP)
@@ -322,10 +430,32 @@ class Strangers(Base):
         self.assertEqual(stranger, PASS)
         self.assertEqual((self.api.deleted, self.api.calls, self.posts), ([], [], []))
 
-    def test_unjudged_pr_and_issue_are_untouched(self):
-        ev = pr_event(title=CANARY, author="stranger", sender="stranger")
-        self.assertEqual(self.run_check("pull_request_target", ev, FakeApi()), PASS)
-        self.assertEqual(self.api.calls, [])
+    def test_unjudged_pr_is_byte_identical_to_a_clean_one_and_never_compared(self):
+        calls = []
+
+        class Spy:
+            @staticmethod
+            def scan(*args, **kw):
+                calls.append(args)
+                return preflight.scan(*args, **kw)
+
+        clean = self.run_check("pull_request_target", pr_event(), FakeApi(pr_routes()))
+        ev = pr_event(title=CANARY, body=CANARY, ref=CANARY, author="stranger", sender="stranger")
+        loud = dict(
+            commits=[commit(msg=CANARY, ae=f"{CANARY}@example.com")],
+            files=[fileent(name=f"{CANARY}.md", patch=f"@@ -0,0 +1 @@\n+{CANARY}")],
+            commit_files={"c1": [fileent(patch=f"@@ -0,0 +1 @@\n+{CANARY}")]},
+        )
+        saved, check.preflight = check.preflight, Spy
+        try:
+            stranger = self.run_check("pull_request_target", ev, FakeApi(pr_routes(ev, **loud)))
+        finally:
+            check.preflight = saved
+        self.assertEqual((stranger, clean), (PASS, PASS))
+        self.assertEqual((calls, self.posts, self.api.deleted), ([], [], []))
+        self.assertEqual(self.api.calls, [f"{P}/pulls/7/files"])  # only the file list, for the path guard
+
+    def test_unjudged_issue_is_untouched(self):
         self.assertEqual(self.run_check("issues", issue_event(body=CANARY, author="stranger", sender="stranger")), PASS)
 
     def test_a_stranger_run_does_not_depend_on_the_term_list(self):
@@ -343,7 +473,7 @@ class Failures(Base):
                 raise RuntimeError(CANARY)
 
         self.assertEqual(self.run_check("issue_comment", comment_event(CANARY), NoDelete()), STOP)
-        self.assertEqual(len(self.posts), 1)
+        self.assertEqual(self.posts, [("https://ntfy.sh/phone-topic", f"private-terms stop: comment (could not delete) https://github.com/{REPO}/issues/3#issuecomment-55")])
 
     def test_broken_matcher_import_is_a_stop(self):
         saved, check.preflight = check.preflight, None
@@ -361,12 +491,15 @@ class Failures(Base):
                 print("noise", file=sys.stderr)
                 return super().get(path, params)
 
-        self.assertEqual(self.run_check("pull_request_target", pr_event(), Chatty(pr_routes())), PASS)
+        self.assertEqual(self.run_check("pull_request_target", pr_event(), Chatty(pr_routes(pr_event()))), PASS)
 
 
 def sweep_routes(**over):
     routes = {
         f"{P}/issues/comments": [],
+        f"{P}/issues": [],
+        f"{P}/comments": [],
+        f"{P}/tags": [],
         f"{P}/pulls": lambda params: [] if params.get("state") == "open" else [{"number": 7, "updated_at": RECENT, "head": {"ref": "b"}}],
         f"{P}/pulls/7/reviews": [],
         f"{P}/pulls/7/comments": [],
@@ -393,6 +526,11 @@ class Sweep(Base):
         self.assertEqual(self.api.deleted, [f"{P}/pulls/comments/77"])
         self.assertEqual(self.posts, [("https://ntfy.sh/phone-topic", f"private-terms stop: review comment https://github.com/{REPO}/pull/7#discussion_r77")])
 
+    def test_the_window_is_26_hours(self):
+        self.assertEqual(self.sweep(**{f"{P}/pulls/7/comments": [review_comment(CANARY, updated=MIDDLE)]}), STOP)
+        pr = lambda params: [] if params.get("state") == "open" else [{"number": 7, "updated_at": MIDDLE, "head": {"ref": "b"}}]  # noqa: E731
+        self.assertEqual(self.sweep(**{f"{P}/pulls": pr, f"{P}/pulls/7/comments": [review_comment(CANARY, updated=MIDDLE)]}), STOP)
+
     def test_unjudged_or_old_review_comments_are_ignored(self):
         self.assertEqual(self.sweep(**{f"{P}/pulls/7/comments": [review_comment(CANARY, login="stranger"), review_comment(CANARY, updated=OLD)]}), PASS)
         self.assertEqual(self.api.deleted, [])
@@ -408,16 +546,17 @@ class Sweep(Base):
         self.assertEqual(self.sweep(**{f"{P}/issues/comments": [c]}), STOP)
         self.assertEqual(self.api.deleted, [f"{P}/issues/comments/9"])
 
-    def branch_routes(self, commits, files=None, committed=RECENT, name="work", **extra):
+    def branch_routes(self, commits, files=None, name="work", commit_files=None, **extra):
         routes = {
             f"{P}/branches": [{"name": "main", "commit": {"sha": "m0"}}, {"name": name, "commit": {"sha": "b1"}}],
-            f"{P}/commits/b1": {"commit": {"committer": {"date": committed}}},
             f"{P}/compare/m0...b1": lambda params: {
                 "commits": commits if params["page"] == 1 else [],
                 "files": (files or [])[(params["page"] - 1) * params["per_page"] : params["page"] * params["per_page"]],
                 "total_commits": len(commits),
             },
         }
+        for c in commits:
+            routes[f"{P}/commits/{c['sha']}"] = {"files": (commit_files or {}).get(c["sha"], [])}
         routes.update(extra)
         return routes
 
@@ -430,6 +569,7 @@ class Sweep(Base):
             "line": dict(commits=[commit()], files=[fileent(patch=f"@@ -0,0 +1 @@\n+{CANARY}")]),
             "path": dict(commits=[commit()], files=[fileent(name=f"{CANARY}.txt")]),
             "branch": dict(commits=[commit()], name=f"wip/{CANARY}"),
+            "commit's own diff": dict(commits=[commit()], commit_files={"c1": [fileent(patch=f"@@ -0,0 +1 @@\n+{CANARY}")]}),
         }.items():
             self.posts.clear()
             self.assertEqual(self.sweep(**self.branch_routes(**kw)), STOP, label)
@@ -449,8 +589,26 @@ class Sweep(Base):
             short[f"{P}/compare/m0...b1"] = lambda params, total=total: dict(listed(params), total_commits=total)
             self.assertEqual(self.sweep(**short), STOP, total)
 
-    def test_old_branches_and_branches_with_an_open_pr_are_skipped(self):
-        self.assertEqual(self.sweep(**self.branch_routes([commit(msg=CANARY)], committed=OLD)), PASS)
+    def test_a_branch_is_scanned_whatever_its_age(self):
+        # No date filter: the commit is old by any measure, and the branch still stops the sweep.
+        old = commit(msg=CANARY)
+        old["commit"]["committer"]["date"] = OLD
+        self.assertEqual(self.sweep(**self.branch_routes([old])), STOP)
+
+    def test_more_than_a_hundred_branches_is_a_stop(self):
+        def many(n):
+            return [{"name": "main", "commit": {"sha": "m0"}}] + [{"name": f"b{i}", "commit": {"sha": f"s{i}"}} for i in range(n)]
+
+        def routes(n):
+            r = {f"{P}/branches": many(n)}
+            for i in range(n):
+                r[f"{P}/compare/m0...s{i}"] = {"commits": [], "files": [], "total_commits": 0}
+            return r
+
+        self.assertEqual(self.sweep(**routes(100)), PASS)
+        self.assertEqual(self.sweep(**routes(101)), STOP)
+
+    def test_branches_with_an_open_pr_are_skipped(self):
         open_pr = [{"number": 8, "head": {"ref": "work", "repo": {"full_name": REPO}}}]
         routes = self.branch_routes([commit(msg=CANARY)])
         routes[f"{P}/pulls"] = lambda params: open_pr if params.get("state") == "open" else []
@@ -459,6 +617,56 @@ class Sweep(Base):
     def test_branch_by_a_stranger_login_is_not_judged_but_an_unlinked_one_is(self):
         self.assertEqual(self.sweep(**self.branch_routes([commit(msg=CANARY, login="stranger")])), PASS)
         self.assertEqual(self.sweep(**self.branch_routes([commit(msg=CANARY, login=None)])), STOP)
+
+    def test_tags_are_all_judged(self):
+        tag = lambda name, sha="t1": {"name": name, "commit": {"sha": sha}}  # noqa: E731
+        self.assertEqual(self.sweep(**{f"{P}/tags": [tag("v1.0.0")]}), PASS)
+        self.assertEqual(self.sweep(**{f"{P}/tags": [tag("v1.0.0"), tag(f"rel-{CANARY}", "t2")]}), STOP)
+        self.assertEqual(self.posts[-1][1], f"private-terms stop: tag https://github.com/{REPO}/commit/t2")
+        self.assertEqual(self.sweep(**{f"{P}/tags": [tag(f"v{i}") for i in range(100)]}), PASS)
+        self.assertEqual(self.sweep(**{f"{P}/tags": [tag(f"v{i}") for i in range(101)]}), STOP)
+
+    def test_commit_comments_are_deleted_when_judged_and_ignored_otherwise(self):
+        mine = {"id": 31, "body": CANARY, "user": {"login": OP}, "updated_at": RECENT, "html_url": f"https://github.com/{REPO}/commit/c#commitcomment-31"}
+        self.assertEqual(self.sweep(**{f"{P}/comments": [mine]}), STOP)
+        self.assertEqual(self.api.deleted, [f"{P}/comments/31"])
+        self.api.deleted.clear()
+        theirs = dict(mine, user={"login": "stranger"})
+        self.assertEqual(self.sweep(**{f"{P}/comments": [theirs, dict(mine, updated_at=OLD)]}), PASS)
+        self.assertEqual(self.api.deleted, [])
+
+    def test_titles_and_bodies_of_recent_issues_and_prs_are_reread_by_author(self):
+        issue = lambda **kw: dict({"title": "t", "body": "b", "labels": [], "user": {"login": OP}, "html_url": f"https://github.com/{REPO}/issues/3"}, **kw)  # noqa: E731
+        self.assertEqual(self.sweep(**{f"{P}/issues": [issue(title=CANARY)]}), STOP)
+        self.assertEqual(self.sweep(**{f"{P}/issues": [issue(body=CANARY)]}), STOP)
+        self.assertEqual(self.sweep(**{f"{P}/issues": [issue(labels=[{"name": CANARY}])]}), STOP)
+        self.assertEqual(self.posts[-1][1], f"private-terms stop: issue https://github.com/{REPO}/issues/3")
+        self.assertEqual(self.sweep(**{f"{P}/issues": [issue(title=CANARY, pull_request={})]}), STOP)
+        self.assertIn("pull request https://", self.posts[-1][1])
+        self.assertEqual(self.sweep(**{f"{P}/issues": [issue(title=CANARY, user={"login": "stranger"})]}), PASS)
+        self.assertEqual(self.api.deleted, [])
+
+    def test_strangers_are_byte_identical_to_a_clean_sweep_on_every_surface(self):
+        clean = self.sweep()
+        s = {"login": "stranger"}
+        loud = {
+            f"{P}/issues/comments": [{"id": 9, "body": CANARY, "user": s, "html_url": "u"}],
+            f"{P}/issues": [{"title": CANARY, "body": CANARY, "labels": [{"name": CANARY}], "user": s, "html_url": "u"}],
+            f"{P}/comments": [{"id": 4, "body": CANARY, "user": s, "updated_at": RECENT, "html_url": "u"}],
+            f"{P}/pulls/7/reviews": [{"id": 5, "body": CANARY, "user": s, "submitted_at": RECENT, "html_url": "u"}],
+            f"{P}/pulls/7/comments": [review_comment(CANARY, login="stranger")],
+        }
+        stranger = self.sweep(**loud)
+        self.assertEqual((stranger, clean), (PASS, PASS))
+        self.assertEqual((self.api.deleted, self.posts), ([], []))
+
+    def test_sweep_pagination_with_a_non_list_page_is_a_stop(self):
+        for path in (f"{P}/issues/comments", f"{P}/issues", f"{P}/comments", f"{P}/tags", f"{P}/branches", f"{P}/pulls/7/reviews"):
+            for bad in ({}, {"message": "Server Error"}):
+                self.assertEqual(self.sweep(**{path: bad}), STOP, (path, bad))
+        for bad in ({}, {"message": "Server Error"}):
+            only_recent = lambda params, bad=bad: [] if params.get("state") == "open" else bad  # noqa: E731
+            self.assertEqual(self.run_check("schedule", None, FakeApi(sweep_routes(**{f"{P}/pulls": only_recent}))), STOP)
 
     def test_sweep_with_empty_terms_is_a_stop(self):
         self.assertEqual(self.run_check("workflow_dispatch", None, FakeApi(sweep_routes()), PRIVATE_TERMS=""), STOP)
@@ -484,6 +692,14 @@ class WorkflowFile(unittest.TestCase):
             self.assertIn(line, self.text)
         self.assertEqual(self.text.count(": write"), 2)
         self.assertNotIn("ref:", self.text)  # default ref only: never the pull request's head
+
+    def test_checkout_is_pinned_to_a_full_commit_in_both_workflows(self):
+        for name in ("terms-check.yml", "ci.yml"):
+            text = (Path(__file__).resolve().parents[1] / "workflows" / name).read_text()
+            uses = re.findall(r"uses: actions/checkout@(\S+)", text)
+            self.assertTrue(uses, name)
+            for ref in uses:
+                self.assertRegex(ref, r"^[0-9a-f]{40}$", name)
 
 
 class MatcherOwnTests(unittest.TestCase):

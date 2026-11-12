@@ -5,6 +5,12 @@ Run by .github/workflows/terms-check.yml. Compares text the repository owner's l
 private term list held in the `private-terms` environment, using preflight.py, which is copied unchanged from the author's own
 tooling. Standard library only. Nothing in this file may name a private term: the only term used in tests is a made-up canary.
 
+SECRETS. PRIVATE_TERMS (one term per line) and PRIVATE_TERMS_ALLOW (terms this repository may publish, one per line, optional)
+are each stored as ONE base64 line, so the runner's log masking (it masks a multi-line secret whole and line by line, and masks
+substrings) cannot turn a term that also appears in other log text into "***" and give it away by a diff. Upload with:
+    base64 -w0 private-terms.txt | gh secret set PRIVATE_TERMS --env private-terms --repo <owner>/<repo>
+Invalid base64 or text that is not UTF-8 is a stop. NTFY_TOPIC is a plain secret.
+
 PUBLIC-LOG RULE. The whole run prints exactly one line to stdout and nothing to stderr:
     private-terms: pass
     private-terms: stop
@@ -13,13 +19,34 @@ Exit 0 for pass, 1 for stop. Any exception, API error, partial read or misconfig
 are never printed, because an HTTP error can carry a URL with a branch name and a traceback can carry text. The event is read
 from GITHUB_EVENT_PATH; no event text is ever put in the workflow's run:, env: or with: (Actions echoes those into the log).
 
-WHO IS JUDGED. Decided here, not by a job-level `if:`. Content counts when its author, or the person who triggered the event,
-is in TERMS_CHECK_LOGINS. Anything else gives the same single "pass" line as a clean scan, with no API call, so a stranger
-cannot test guesses. An empty TERMS_CHECK_LOGINS, or an empty term list after the allow list, is a stop.
+WHO IS JUDGED. Decided here, not by a job-level `if:`. Content counts when its author is in TERMS_CHECK_LOGINS. Anything else
+gives the same single "pass" line as a clean scan, with no comparison against the terms, so a stranger cannot test guesses.
+Exceptions, each deliberate:
+- A pull request touching .github/ or .claude/ is a stop whoever wrote it, so a stranger's fork PR cannot change the check and
+  get a green required check. The path guard reads only the PR's file list; it never loads or compares terms for a stranger.
+- When a judged login edits a stranger's issue, pull request or comment, only the edited text (title and body, or the comment
+  body) is judged, and a judged login's label on a stranger's issue is judged: that is the operator's own publication.
+- Commits a judged login pushes onto a stranger's pull request are NOT judged. Commit author and committer emails can be forged
+  to look like the operator, which would turn a stranger's PR red on demand and give them a way to probe the list.
+An empty TERMS_CHECK_LOGINS, or an empty term list after the allow list, is a stop.
 
-FAIL CLOSED. Unread text is never a pass: see `_no_patch_is_harmless` for the rule on diff entries without a patch, and `_paged`
-for API limits (250 commits and 3000 files on a pull request).
+FAIL CLOSED. Unread text is never a pass: see `_no_patch_is_harmless` for the rule on diff entries without a patch, `_paged` for
+list limits (250 commits and 3000 files on a pull request; a page that is not a list), and MAX_REQUESTS for the per-run budget.
+
+WHAT IS READ. For a judged pull request: title, body, branch name, fresh from the API; every commit's message, author and
+committer name and email, and each commit's own diff (added lines and paths), so a term added in one commit and removed in the
+next is still caught; and the net diff. The hourly sweep (also run by hand with workflow_dispatch) looks back 26 hours, so a
+missed or failed run leaves nothing unread, and re-reads: conversation comments, titles and bodies of issues and pull requests,
+review summaries, review line comments, commit comments, every tag name, and every branch that has no open pull request and
+differs from the default branch (no date filter; more than 100 such branches is a stop).
+
+NOT COVERED: wiki, discussions, releases, gists, CI logs, the cloud session's transcript, annotated tag messages, and an edited
+review summary (the API exposes no edit time, so only a summary submitted inside the sweep window is read). A review summary,
+a title or body, a tag or a branch cannot be deleted through this check: a hit there is a stop and an alert, cleaned by hand.
+A stranger's pull request with 3000 or more files cannot be fully read for the path guard, so it is a stop, not a pass.
 """
+import base64
+import binascii
 import contextlib
 import json
 import os
@@ -41,9 +68,13 @@ PER_PAGE = 100
 MAX_PR_COMMITS = 250  # the pull request commits endpoint stops listing here
 MAX_PR_FILES = 3000  # and the files endpoint here
 MAX_COMPARE_FILES = 300  # the compare endpoint lists at most this many files; at the cap the list may be cut short
+MAX_COMMIT_FILES = 300  # so does the single-commit endpoint
 MAX_LIST = 300  # bound for every other list the check pages through
+MAX_BRANCHES = 100  # branches to sweep; more than this is a stop
+MAX_TAGS = 100
+MAX_REQUESTS = 900  # GitHub allows 1000 an hour to the workflow token; past this the read is incomplete
 MAX_PAGES = 31
-SWEEP_WINDOW = timedelta(hours=2)
+SWEEP_WINDOW = timedelta(hours=26)
 PROTECTED_DIRS = {".github", ".claude"}
 
 
@@ -59,15 +90,26 @@ def _normalized(s):
     return " ".join(s.split()).casefold()
 
 
-def load_terms(raw, allow_raw):
-    """One term per line, minus the allow-listed ones (exact term, case-folded, whitespace-normalised). Nothing left to
-    compare is a stop, never a pass."""
-    raw = (raw or "").lstrip("﻿")
-    allow_raw = (allow_raw or "").lstrip("﻿")
-    if "\x00" in raw or "\x00" in allow_raw:
+def _decode_secret(raw):
+    """A secret stored as one base64 line, decoded as strict UTF-8 (a byte-order mark is fine). Empty decodes to empty."""
+    raw = "".join((raw or "").split())
+    if not raw:
+        return ""
+    try:
+        text = base64.b64decode(raw, validate=True).decode("utf-8-sig")
+    except (binascii.Error, ValueError):  # UnicodeDecodeError is a ValueError
+        raise Incomplete
+    if "\x00" in text:
         raise Incomplete  # UTF-16 or binary: its terms could never match
-    allowed = {_normalized(a) for a in allow_raw.splitlines()}
-    terms = [t for t in raw.splitlines() if t.strip() and _normalized(t) not in allowed]
+    return text
+
+
+def load_terms(raw, allow_raw):
+    """One term per line, minus the allow-listed ones (exact term, case-folded, whitespace-normalised). Both arguments are
+    the base64 secrets. Nothing left to compare is a stop, never a pass."""
+    text = _decode_secret(raw)
+    allowed = {_normalized(a) for a in _decode_secret(allow_raw).splitlines()}
+    terms = [t for t in text.splitlines() if t.strip() and _normalized(t) not in allowed]
     if not terms:
         raise Incomplete
     return terms
@@ -111,7 +153,7 @@ def _ts(s):
 
 
 class Api:
-    """The three GitHub calls the check makes. Tests inject an object with the same get/delete methods."""
+    """The two GitHub calls the check makes. Tests inject an object with the same get/delete methods."""
 
     def __init__(self, token, base="https://api.github.com"):
         self.token = token
@@ -156,11 +198,14 @@ class Run:
         self.poster = poster
         self.now = now
         self.repo = env.get("GITHUB_REPOSITORY", "")
+        self.server = env.get("GITHUB_SERVER_URL") or "https://github.com"
         self.logins = set()
         self.terms = None
         self.hits = []  # (kind of surface, html_url, API path to delete or None)
         self.checks_changed = False
         self.failed = False
+        self.requests = 0
+        self._commit_diffs = {}  # sha -> that commit's files, so a commit shared by several branches is read once
 
     # -- judging and matching
     def judged(self, *logins):
@@ -182,13 +227,22 @@ class Run:
     def hit(self, kind, url, delete=None):
         self.hits.append((kind, url, delete))
 
+    def commit_url(self, sha):
+        return f"{self.server}/{self.repo}/commit/{sha}"
+
     # -- reading
+    def _get(self, path, params=None):
+        self.requests += 1
+        if self.requests > MAX_REQUESTS:
+            raise Incomplete
+        return self.api.get(path, params)
+
     def _paged(self, path, params=None, cap=MAX_LIST):
-        """Every item of a list endpoint. At the cap, or with no end in sight, the list may be longer than what was read:
-        that is Incomplete, not a pass."""
+        """Every item of a list endpoint. At the cap, with no end in sight, or with a page that is not a list, the list may be
+        longer than what was read: that is Incomplete, not a pass. `cap` is the first count that is too many."""
         out = []
         for page in range(1, MAX_PAGES):
-            chunk = self.api.get(path, dict(params or {}, per_page=PER_PAGE, page=page))
+            chunk = self._get(path, dict(params or {}, per_page=PER_PAGE, page=page))
             if not isinstance(chunk, list):
                 raise Incomplete
             out.extend(chunk)
@@ -198,15 +252,10 @@ class Run:
                 return out
         raise Incomplete
 
-    def _scan_range(self, commits, files, protect):
-        """Commits (message, author and committer name and email) and diff entries (paths, added lines)."""
+    def _scan_files(self, files, protect):
+        """Diff entries: paths (new and previous) and added lines. With `protect`, a path under .github/ or .claude/ marks the
+        run as one that changes the checks."""
         found = False
-        for c in commits:
-            cm = c.get("commit") or {}
-            texts = [cm.get("message")]
-            for who in ("author", "committer"):
-                texts += [(cm.get(who) or {}).get("name"), (cm.get(who) or {}).get("email")]
-            found |= any([self.dirty(t) for t in texts])
         for f in files:
             names = [f.get("filename"), f.get("previous_filename")]
             if protect and any(_protected(n) for n in names):
@@ -222,19 +271,48 @@ class Run:
                 raise Incomplete
         return found
 
+    def _commit_files(self, sha):
+        if sha not in self._commit_diffs:
+            detail = self._get(f"/repos/{self.repo}/commits/{sha}")
+            files = detail.get("files") if isinstance(detail, dict) else None
+            if not isinstance(files, list) or len(files) >= MAX_COMMIT_FILES:
+                raise Incomplete
+            self._commit_diffs[sha] = files
+        return self._commit_diffs[sha]
+
+    def _scan_commits(self, commits, protect):
+        """Each commit's message, author and committer name and email, and its own diff."""
+        found = False
+        for c in commits:
+            cm = c.get("commit") or {}
+            texts = [cm.get("message")]
+            for who in ("author", "committer"):
+                texts += [(cm.get(who) or {}).get("name"), (cm.get(who) or {}).get("email")]
+            found |= any([self.dirty(t) for t in texts])
+            found |= self._scan_files(self._commit_files(c["sha"]), protect)
+        return found
+
     # -- event surfaces
     def on_issue(self, ev):
         issue = ev["issue"]
-        if not self.judged(_login(issue.get("user")), _login(ev.get("sender"))):
+        action = ev.get("action")
+        sender_judged = self.judged(_login(ev.get("sender")))
+        if self.judged(_login(issue.get("user"))):
+            texts = [issue.get("title"), issue.get("body")] + [(lb or {}).get("name") for lb in issue.get("labels") or []]
+        elif sender_judged and action == "edited":
+            texts = [issue.get("title"), issue.get("body")]
+        elif sender_judged and action == "labeled":
+            texts = [(ev.get("label") or {}).get("name")]
+        else:
             return
         self.arm()
-        texts = [issue.get("title"), issue.get("body")] + [(lb or {}).get("name") for lb in issue.get("labels") or []]
         if any([self.dirty(t) for t in texts]):
             self.hit("issue", issue["html_url"])
 
     def on_comment(self, ev):
         c = ev["comment"]
-        if not self.judged(_login(c.get("user")), _login(ev.get("sender"))):
+        edited_by_judged = ev.get("action") == "edited" and self.judged(_login(ev.get("sender")))
+        if not (self.judged(_login(c.get("user"))) or edited_by_judged):
             return
         self.arm()
         if self.dirty(c.get("body")):
@@ -242,19 +320,29 @@ class Run:
 
     def on_pull_request(self, ev):
         pr = ev["pull_request"]
-        if not self.judged(_login(pr.get("user")), _login(ev.get("sender"))):
-            return
-        self.arm()
-        n = pr["number"]
-        commits = self._paged(f"/repos/{self.repo}/pulls/{n}/commits", cap=MAX_PR_COMMITS)
+        n, url = pr["number"], pr["html_url"]
+        author_judged = self.judged(_login(pr.get("user")))
+        edit_judged = ev.get("action") == "edited" and self.judged(_login(ev.get("sender")))
+        # The file list is read for every pull request: the path guard does not depend on who wrote it.
         files = self._paged(f"/repos/{self.repo}/pulls/{n}/files", cap=MAX_PR_FILES)
-        texts = [pr.get("title"), pr.get("body"), (pr.get("head") or {}).get("ref")]
-        found = any([self.dirty(t) for t in texts])
-        found |= self._scan_range(commits, files, protect=True)
+        found = False
+        if author_judged or edit_judged:
+            self.arm()
+            fresh = self._get(f"/repos/{self.repo}/pulls/{n}")
+            texts = [fresh.get("title"), fresh.get("body")]
+            if author_judged:
+                texts.append((fresh.get("head") or {}).get("ref"))
+            found = any([self.dirty(t) for t in texts])
+        if author_judged:
+            commits = self._paged(f"/repos/{self.repo}/pulls/{n}/commits", cap=MAX_PR_COMMITS)
+            found |= self._scan_commits(commits, protect=True)
+            found |= self._scan_files(files, protect=True)
+        else:
+            self.checks_changed |= any(_protected(f.get("filename")) or _protected(f.get("previous_filename")) for f in files)
         if found:
-            self.hit("pull request", pr["html_url"])
+            self.hit("pull request", url)
         if self.checks_changed:
-            self.hit("pull request that changes the checks", pr["html_url"])
+            self.hit("pull request that changes the checks", url)
 
     # -- the hourly sweep
     def sweep(self):
@@ -268,6 +356,13 @@ class Run:
             if self.judged(_login(c.get("user"))) and self.dirty(c.get("body")):
                 self.hit("comment", c["html_url"], f"/repos/{repo}/issues/comments/{c['id']}")
 
+        # Titles and bodies of issues and pull requests updated in the window (the issues list holds both kinds).
+        for i in self._paged(f"/repos/{repo}/issues", {"state": "all", "since": since}):
+            if self.judged(_login(i.get("user"))):
+                texts = [i.get("title"), i.get("body")] + [(lb or {}).get("name") for lb in i.get("labels") or []]
+                if any([self.dirty(t) for t in texts]):
+                    self.hit("pull request" if "pull_request" in i else "issue", i["html_url"])
+
         # Review summaries (cannot be deleted by API) and review line comments (can be) on recently updated pull requests.
         for pr in self._recent_pulls(cutoff):
             n = pr["number"]
@@ -279,8 +374,18 @@ class Run:
                 if _ts(c["updated_at"]) >= cutoff and self.judged(_login(c.get("user"))) and self.dirty(c.get("body")):
                     self.hit("review comment", c["html_url"], f"/repos/{repo}/pulls/comments/{c['id']}")
 
-        # Branches with recent commits and no open pull request (an open one is covered by its own event).
-        default = self.api.get(f"/repos/{repo}")["default_branch"]
+        # Commit comments.
+        for c in self._paged(f"/repos/{repo}/comments"):
+            if _ts(c["updated_at"]) >= cutoff and self.judged(_login(c.get("user"))) and self.dirty(c.get("body")):
+                self.hit("commit comment", c["html_url"], f"/repos/{repo}/comments/{c['id']}")
+
+        # Tags: only collaborators can push them, so every tag is judged. The alert links the commit, not the name.
+        for t in self._paged(f"/repos/{repo}/tags", cap=MAX_TAGS + 1):
+            if self.dirty(t.get("name")):
+                self.hit("tag", self.commit_url(t["commit"]["sha"]))
+
+        # Branches that have no open pull request (an open one is covered by its own event) and differ from the default.
+        default = self._get(f"/repos/{repo}")["default_branch"]
         branches = self._paged(f"/repos/{repo}/branches")
         base = next(b["commit"]["sha"] for b in branches if b["name"] == default)
         open_heads = set()
@@ -288,27 +393,26 @@ class Run:
             head = pr.get("head") or {}
             if ((head.get("repo") or {}).get("full_name") or "").lower() == repo.lower():
                 open_heads.add(head.get("ref"))
-        for b in branches:
+        todo = [b for b in branches if b["name"] != default and b["name"] not in open_heads and b["commit"]["sha"] != base]
+        if len(todo) > MAX_BRANCHES:
+            raise Incomplete
+        for b in todo:
             sha = b["commit"]["sha"]
-            if b["name"] == default or b["name"] in open_heads or sha == base:
-                continue
-            head_commit = self.api.get(f"/repos/{repo}/commits/{sha}")
-            if _ts(head_commit["commit"]["committer"]["date"]) < cutoff:
-                continue
             commits, files = self._compare(base, sha)
             # Only people with write access push branches here, so a commit with no linked login is judged too.
             if not any(self.judged(_login(c.get("author")), _login(c.get("committer"))) or not _login(c.get("author")) for c in commits):
                 continue
             found = self.dirty(b["name"])
-            found |= self._scan_range(commits, files, protect=False)
+            found |= self._scan_commits(commits, protect=False)
+            found |= self._scan_files(files, protect=False)
             if found:
                 # The alert link is the commit, not the branch: a branch name could itself hold a term.
-                self.hit("branch", f"{self.env.get('GITHUB_SERVER_URL', 'https://github.com')}/{repo}/commit/{sha}")
+                self.hit("branch", self.commit_url(sha))
 
     def _recent_pulls(self, cutoff):
         out = []
         for page in range(1, 4):
-            chunk = self.api.get(
+            chunk = self._get(
                 f"/repos/{self.repo}/pulls",
                 {"state": "all", "sort": "updated", "direction": "desc", "per_page": PER_PAGE, "page": page},
             )
@@ -325,7 +429,9 @@ class Run:
     def _compare(self, base, head):
         commits, files = {}, {}
         for page in range(1, MAX_PAGES):
-            r = self.api.get(f"/repos/{self.repo}/compare/{base}...{head}", {"per_page": PER_PAGE, "page": page})
+            r = self._get(f"/repos/{self.repo}/compare/{base}...{head}", {"per_page": PER_PAGE, "page": page})
+            if not isinstance(r, dict):
+                raise Incomplete
             cs, fs = r.get("commits") or [], r.get("files") or []
             for c in cs:
                 commits[c["sha"]] = c
@@ -372,15 +478,15 @@ class Run:
         except Exception:
             self.failed = True
         for kind, url, delete in self.hits:  # act on what was found even if a later read failed
+            deleted = True
             if delete:
                 try:
                     self.api.delete(delete)
                 except Exception:
-                    pass
-            self.alert(kind, url)
+                    deleted = False
+            self.alert(kind if deleted else kind + " (could not delete)", url)
         if self.failed and not self.hits:
-            server = self.env.get("GITHUB_SERVER_URL", "https://github.com")
-            self.alert("check could not finish", f"{server}/{self.repo}/actions/runs/{self.env.get('GITHUB_RUN_ID', '')}")
+            self.alert("check could not finish", f"{self.server}/{self.repo}/actions/runs/{self.env.get('GITHUB_RUN_ID', '')}")
         if self.checks_changed:
             return STOP_CHANGES_LINE
         return STOP_LINE if (self.failed or self.hits) else PASS_LINE

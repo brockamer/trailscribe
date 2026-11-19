@@ -4,7 +4,7 @@
     {
       "imei": "300052030374220",
       "messageCode": 3,
-      "freeText": "!mail to:brockamer@gmail.com subj:burn-in body:P1-21 staging burn-in test",
+      "freeText": "!mail to:hiker@example.com subj:burn-in body:P1-21 staging burn-in test",
       "timeStamp": 1666666666000,
       "addresses": [
         {

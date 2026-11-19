@@ -181,7 +181,7 @@ describe("P2-18 !postimg — happy path", () => {
       const u = typeof url === "string" ? url : url.toString();
       fetchCalls.push({ url: u, init });
       if (u.includes("nominatim")) {
-        return jsonResponse({ address: { locality: "Lake Sabrina", state: "California" } });
+        return jsonResponse({ address: { locality: "Lake Sabrina", state: "Washington" } });
       }
       if (u.includes("api.open-meteo.com")) {
         return jsonResponse({
@@ -268,7 +268,7 @@ describe("P2-18 !postimg — happy path", () => {
     globalThis.fetch = vi.fn(async (url: URL | RequestInfo, init?: RequestInit) => {
       const u = typeof url === "string" ? url : url.toString();
       if (u.includes("nominatim")) {
-        return jsonResponse({ address: { locality: "Lake Sabrina", state: "California" } });
+        return jsonResponse({ address: { locality: "Lake Sabrina", state: "Washington" } });
       }
       if (u.includes("api.open-meteo.com")) {
         return jsonResponse({ current: { temperature_2m: 42, weather_code: 0 } });
@@ -346,7 +346,7 @@ describe("P2-18 !postimg — image-gen failure fallback", () => {
     fetchSpy = vi.fn(async (url: URL | RequestInfo) => {
       const u = typeof url === "string" ? url : url.toString();
       if (u.includes("nominatim")) {
-        return jsonResponse({ address: { locality: "Lake Sabrina", state: "California" } });
+        return jsonResponse({ address: { locality: "Lake Sabrina", state: "Washington" } });
       }
       if (u.includes("api.open-meteo.com")) {
         return jsonResponse({ current: { temperature_2m: 42, weather_code: 0 } });
@@ -398,7 +398,7 @@ describe("P2-18 !postimg — idempotency across re-delivery and duplicate callba
     fetchSpy = vi.fn(async (url: URL | RequestInfo, init?: RequestInit) => {
       const u = typeof url === "string" ? url : url.toString();
       if (u.includes("nominatim")) {
-        return jsonResponse({ address: { locality: "Lake Sabrina", state: "California" } });
+        return jsonResponse({ address: { locality: "Lake Sabrina", state: "Washington" } });
       }
       if (u.includes("api.open-meteo.com")) {
         return jsonResponse({ current: { temperature_2m: 42, weather_code: 0 } });
@@ -591,8 +591,8 @@ describe("P2-18 !postimg — bare, no caption (#150)", () => {
   });
 });
 
-const MALIBU_PDT = JSON.parse(
-  readFileSync(join(__dirname, "fixtures/open-meteo/malibu-pdt-2026-10-02.json"), "utf8"),
+const AVALON_PDT = JSON.parse(
+  readFileSync(join(__dirname, "fixtures/open-meteo/avalon-pdt-2026-10-02.json"), "utf8"),
 ) as unknown;
 
 describe("P2-18 !postimg — narrative and image share one time of day (#240)", () => {
@@ -605,7 +605,7 @@ describe("P2-18 !postimg — narrative and image share one time of day (#240)", 
     fetchSpy = vi.fn(async (url: URL | RequestInfo, init?: RequestInit) => {
       const u = typeof url === "string" ? url : url.toString();
       if (u.includes("nominatim")) {
-        return jsonResponse({ address: { locality: "Malibu", state: "California" } });
+        return jsonResponse({ address: { locality: "Avalon", state: "Washington" } });
       }
       if (u.includes("api.open-meteo.com")) {
         return jsonResponse(weatherBody);
@@ -653,10 +653,10 @@ describe("P2-18 !postimg — narrative and image share one time of day (#240)", 
     return { narrativeUser, image: seen.image! };
   }
 
-  test("the 2026-10-02 Malibu case: both prompts carry the device's civil clock time (#274)", async () => {
+  test("the 2026-10-02 Avalon case: both prompts carry the device's civil clock time (#274)", async () => {
     // Device timeStamp 1790936886000 = 10:28:06Z = 03:28 PDT. Mean solar time said 02:33.
     const { narrativeUser, image } = await runBarePostimg(
-      MALIBU_PDT,
+      AVALON_PDT,
       { lat: 34.026, lon: -118.76 },
       1790936886000,
     );

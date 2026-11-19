@@ -35,7 +35,7 @@
 | 20   | Mail Check      | normal                                                          |
 | 21   | Am I Alive      | normal                                                          |
 
-The **2026-05-02 PCH/Malibu session** (~50 min, real movement: 0.25mi run + beach walking + return — well past the 100m power-saving threshold) produced 0 Position Reports. Yesterday's session is the load-bearing data point because it had unambiguous movement.
+The **2026-05-02 PCH/Avalon session** (~50 min, real movement: 0.25mi run + beach walking + return — well past the 100m power-saving threshold) produced 0 Position Reports. Yesterday's session is the load-bearing data point because it had unambiguous movement.
 
 **Diagnostics ruling out our-side bugs:**
 
@@ -422,8 +422,8 @@ track:
   elevation_gain_m: 60
   activity_hint: run
   route_shape: out-and-back
-  start_place: "PCH near Pepperdine, Malibu"
-  end_place: "PCH near Pepperdine, Malibu"
+  start_place: "PCH near Pepperdine, Avalon"
+  end_place: "PCH near Pepperdine, Avalon"
   pings: 14
   close_reason: stop
 location: { lat: 34.0265, lon: -118.7603, place: "<endPlace>" }

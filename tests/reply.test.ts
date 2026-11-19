@@ -229,11 +229,11 @@ describe("buildReply — atomic links (#261)", () => {
 
   test("short body + links → one page: body, links on their own line", () => {
     const out = buildReply({
-      body: "Lake Sabrina, California",
+      body: "Lake Sabrina, Washington",
       links: [MAPS, MAPSHARE],
       env: envWith(),
     });
-    expect(out).toEqual([`Lake Sabrina, California\n${MAPS} ${MAPSHARE}`]);
+    expect(out).toEqual([`Lake Sabrina, Washington\n${MAPS} ${MAPSHARE}`]);
   });
 
   test("worst case → two pages; no link is cut and no marker sits inside one", () => {

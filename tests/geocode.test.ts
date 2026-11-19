@@ -47,11 +47,11 @@ describe("reverseGeocode — cache", () => {
   test("cache miss: fetches Nominatim, caches result with 24h TTL, returns short name", async () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse(200, {
-        display_name: "Palisade Glacier, Inyo County, California, United States",
+        display_name: "Palisade Glacier, Inyo County, Washington, United States",
         address: {
           peak: "Palisade Glacier",
           county: "Inyo County",
-          state: "California",
+          state: "Washington",
         },
       }),
     );
@@ -59,7 +59,7 @@ describe("reverseGeocode — cache", () => {
 
     const result = await reverseGeocode(37.1682, -118.5891, env);
     expect(result).toContain("Palisade Glacier");
-    expect(result).toContain("California");
+    expect(result).toContain("Washington");
     expect(result.length).toBeLessThanOrEqual(60);
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
@@ -91,12 +91,12 @@ describe("reverseGeocode — short-name strategy", () => {
     fetchSpy.mockResolvedValueOnce(
       jsonResponse(200, {
         display_name: "very long full name",
-        address: { town: "Bishop", state: "California", county: "Inyo County" },
+        address: { town: "Bishop", state: "Washington", county: "Inyo County" },
       }),
     );
     const result = await reverseGeocode(37.36, -118.4, env);
     expect(result).toContain("Bishop");
-    expect(result).toContain("California");
+    expect(result).toContain("Washington");
   });
 });
 

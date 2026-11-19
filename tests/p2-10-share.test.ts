@@ -118,7 +118,7 @@ describe("P2-10 !share — alias resolution", () => {
     fetchSpy = makeFetchRouter([
       {
         match: (u) => u.includes("nominatim.openstreetmap.org"),
-        respond: () => jsonResponse({ address: { locality: "Lake Sabrina", state: "California" } }),
+        respond: () => jsonResponse({ address: { locality: "Lake Sabrina", state: "Washington" } }),
       },
       {
         match: (u) => u.includes("api.resend.com"),

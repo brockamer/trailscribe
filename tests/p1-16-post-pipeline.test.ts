@@ -25,8 +25,8 @@ import { monthlyTotals } from "../src/core/ledger.js";
 import { sendReply } from "../src/adapters/outbound/garmin-ipc-inbound.js";
 
 /** Open-Meteo `timezone=auto` response recorded live 2026-10-02 (#274). */
-const MALIBU_PDT = JSON.parse(
-  readFileSync(join(__dirname, "fixtures/open-meteo/malibu-pdt-2026-10-02.json"), "utf8"),
+const AVALON_PDT = JSON.parse(
+  readFileSync(join(__dirname, "fixtures/open-meteo/avalon-pdt-2026-10-02.json"), "utf8"),
 ) as unknown;
 
 vi.mock("../src/adapters/outbound/garmin-ipc-inbound.js", () => ({
@@ -155,7 +155,7 @@ describe("P1-16 !post — happy path with GPS", () => {
     fetchSpy = makeFetchRouter([
       {
         match: (u) => u.includes("nominatim.openstreetmap.org"),
-        respond: () => jsonResponse({ display_name: "Lake Sabrina, Inyo County, California" }),
+        respond: () => jsonResponse({ display_name: "Lake Sabrina, Inyo County, Washington" }),
       },
       {
         match: (u) => u.includes("api.open-meteo.com"),
@@ -274,7 +274,7 @@ describe("#124 bare !post — narrative built from metadata, no caption", () => 
     fetchSpy = makeFetchRouter([
       {
         match: (u) => u.includes("nominatim.openstreetmap.org"),
-        respond: () => jsonResponse({ display_name: "Lake Sabrina, Inyo County, California" }),
+        respond: () => jsonResponse({ display_name: "Lake Sabrina, Inyo County, Washington" }),
       },
       {
         match: (u) => u.includes("api.open-meteo.com"),
@@ -331,7 +331,7 @@ describe("#124 bare !post — narrative built from metadata, no caption", () => 
     fetchSpy = makeFetchRouter([
       {
         match: (u) => u.includes("nominatim.openstreetmap.org"),
-        respond: () => jsonResponse({ display_name: "Malibu, Los Angeles County, California" }),
+        respond: () => jsonResponse({ display_name: "Avalon, San Joaquin County, Washington" }),
       },
       {
         match: (u) => u.includes("api.open-meteo.com"),
@@ -363,10 +363,10 @@ describe("#124 bare !post — narrative built from metadata, no caption", () => 
     return orBody.messages.find((m) => m.role === "user")?.content ?? "";
   }
 
-  test("bare !post states the device's civil clock time — the 2026-10-02 Malibu case (#274)", async () => {
+  test("bare !post states the device's civil clock time — the 2026-10-02 Avalon case (#274)", async () => {
     // Device timeStamp 1790936886000 = 10:28:06Z = 03:28 PDT. Mean solar time said 02:33.
     const userMsg = await barePostUserPrompt(
-      MALIBU_PDT,
+      AVALON_PDT,
       { lat: 34.026, lon: -118.76 },
       1790936886000,
     );

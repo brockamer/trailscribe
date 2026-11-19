@@ -1,0 +1,13 @@
+name: kc-env
+on:
+  push:
+    branches: [test/kc-env]
+  pull_request:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    environment: private-terms
+    steps:
+      - run: echo "len=${#S}"
+        env:
+          S: ${{ secrets.PRIVATE_TERMS }}

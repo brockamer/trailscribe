@@ -41,7 +41,7 @@ describe("addTask — happy path", () => {
 
     expect(result).toEqual({
       id: "t_8675309",
-      url: "https://todoist.com/showTask?id=t_8675309",
+      url: "https://app.todoist.com/app/task/t_8675309",
     });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
 
@@ -58,6 +58,22 @@ describe("addTask — happy path", () => {
     expect(body.description).toContain("37.1682,-118.5891");
     expect(body.description).toContain("2025-02-17");
     expect(body.due_string).toBeUndefined();
+  });
+
+  // Regression for the dead `todoist.com/showTask?id=` deep link (404 after
+  // Todoist's v1 migration) — asserts the host structurally so a future
+  // Todoist URL change fails CI instead of surfacing as a field 404 report.
+  test("reply URL host is the live app.todoist.com app, not a legacy deep link", async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, { id: "t_host_check" }));
+
+    const result = await addTask({
+      task: "check the url host",
+      timestamp: 0,
+      env,
+      delay: noDelay,
+    });
+
+    expect(new URL(result.url).host).toBe("app.todoist.com");
   });
 
   test("without lat/lon: description omits coords; only timestamp shown", async () => {

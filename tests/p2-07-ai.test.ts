@@ -173,7 +173,10 @@ describe("P2-07 !ai — long reply email path", () => {
       subject: string;
       text: string;
     };
-    expect(sentBody.to).toBe(env.RESEND_FROM_EMAIL);
+    // Overflow mail must land in the operator's real inbox, not the
+    // send-only RESEND_FROM_EMAIL identity (see PRD §8 D13).
+    expect(sentBody.to).toBe(env.OPERATOR_EMAIL);
+    expect(sentBody.to).not.toBe(env.RESEND_FROM_EMAIL);
     expect(sentBody.subject).toContain("TrailScribe !ai");
     expect(sentBody.subject).toContain("explain mineralogy");
     expect(sentBody.text).toContain(longAnswer);

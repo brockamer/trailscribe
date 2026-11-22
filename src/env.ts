@@ -57,6 +57,7 @@ export interface Env {
   IMAGE_API_KEY: string;
   MAPSHARE_KEY: string;
   MAPSHARE_PASSWORD: string;
+  OPERATOR_EMAIL: string;
 }
 
 /**
@@ -141,6 +142,11 @@ export const EnvSchema = z.object({
   LLM_API_KEY: z.string().min(8),
   TODOIST_API_TOKEN: z.string().min(8),
   RESEND_API_KEY: z.string().min(8),
+  // Inbox the operator actually reads, for overflow mail (!brief/!ai/!camp).
+  // RESEND_FROM_EMAIL is a send-only envelope-From identity with no mailbox
+  // behind it — mail "sent" there vanishes. A secret, not a var, so a personal
+  // address never lands in this public repo (see PRD §8 D13).
+  OPERATOR_EMAIL: trimmed(z.string().email()),
   GITHUB_JOURNAL_TOKEN: z.string().min(8),
   GITHUB_JOURNAL_REPO: trimmed(z.string().regex(/^[\w.-]+\/[\w.-]+$/, "owner/repo format")),
   GITHUB_JOURNAL_BRANCH: z.string().min(1),

@@ -148,6 +148,7 @@ plans/                          # per-milestone sprint plans (none active; all a
 - `LLM_API_KEY` — OpenRouter API key (provider-neutral; supersedes `OPENAI_API_KEY` per #31). Two keys since 2026-10-03: prod on the production Worker only, dev in `.dev.vars` and on staging. Set with `scripts/set-llm-key.sh dev|prod`, never by pasting the value into a command.
 - `TODOIST_API_TOKEN`
 - `RESEND_API_KEY` — outbound email transactional
+- `OPERATOR_EMAIL` — the inbox that `!brief`/`!ai`/`!camp` overflow mail goes to (a real mailbox, never `RESEND_FROM_EMAIL`, which has none). A secret so a personal address stays out of this public repo (PRD §8 D13)
 - `GITHUB_JOURNAL_TOKEN` — fine-grained PAT with `contents:write` on journal repo
 - `GITHUB_JOURNAL_REPO` — e.g. `brockamer/trailscribe-journal`
 - `GITHUB_JOURNAL_BRANCH` — `main`

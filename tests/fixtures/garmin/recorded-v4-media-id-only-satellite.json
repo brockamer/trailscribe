@@ -1,0 +1,28 @@
+{
+  "Version": "4.0",
+  "Events": [
+    {
+      "addresses": [],
+      "mediaId": "01082758-4cfb-451d-a273-2e4bf462c37d",
+      "transportMode": "Satellite",
+      "imei": "123456789012345",
+      "messageCode": 1,
+      "freeText": "",
+      "timeStamp": 1793822259826,
+      "point": {
+        "latitude": 37.1682,
+        "longitude": -118.5891,
+        "altitude": 3307,
+        "gpsFix": 0,
+        "course": 0,
+        "speed": 0
+      },
+      "status": {
+        "autonomous": 0,
+        "lowBattery": 2,
+        "intervalChange": 0,
+        "resetDetected": 0
+      }
+    }
+  ]
+}

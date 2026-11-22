@@ -37,6 +37,14 @@ TODOIST_API_TOKEN=
 # Create an API key at https://resend.com/api-keys with 'Send' permission.
 RESEND_API_KEY=
 
+# ---- Operator inbox (overflow mail destination) ----
+# !brief / !ai / !camp email their full answer here when it is too long for a
+# reply (>320 chars). Must be a real inbox you read — NOT RESEND_FROM_EMAIL,
+# which is a send-only sender identity with no mailbox behind it. A secret,
+# so a personal address stays out of the repo:
+# `echo -n "<address>" | wrangler secret put OPERATOR_EMAIL --env <env>`.
+OPERATOR_EMAIL=
+
 # ---- GitHub Pages journal ----
 # Fine-grained PAT scoped to exactly the journal repo with `contents:write`.
 # Create at https://github.com/settings/personal-access-tokens/new.
